@@ -1,0 +1,85 @@
+{
+  "$comment": "Office layout for the 3D view: departments (grid rectangles) and one desk per agent key. Coordinates are the owner's own floor plan from the legacy build (rooms + desk positions); edit here to move desks.",
+  "departments": [
+    {
+      "key": "research",
+      "name": "RESEARCH",
+      "rect": {
+        "x1": 0,
+        "y1": 0,
+        "x2": 17,
+        "y2": 10
+      }
+    },
+    {
+      "key": "design",
+      "name": "DESIGN",
+      "rect": {
+        "x1": 6,
+        "y1": 11,
+        "x2": 12,
+        "y2": 15
+      }
+    },
+    {
+      "key": "office",
+      "name": "OFFICE",
+      "rect": {
+        "x1": 18,
+        "y1": 3,
+        "x2": 25,
+        "y2": 8
+      }
+    }
+  ],
+  "desks": {
+    "evidence-checker": {
+      "x": 4,
+      "y": 1,
+      "w": 3,
+      "h": 1
+    },
+    "demand-researcher": {
+      "x": 12,
+      "y": 1,
+      "w": 3,
+      "h": 1
+    },
+    "designer": {
+      "x": 10,
+      "y": 12,
+      "w": 3,
+      "h": 1
+    },
+    "qa-design": {
+      "x": 10,
+      "y": 14,
+      "w": 3,
+      "h": 1
+    },
+    "qa-listing": {
+      "x": 18,
+      "y": 4,
+      "w": 3,
+      "h": 1
+    },
+    "lister": {
+      "x": 18,
+      "y": 6,
+      "w": 3,
+      "h": 1
+    },
+    "rejects-desk": {
+      "x": 18,
+      "y": 8,
+      "w": 3,
+      "h": 1
+    },
+    "overseer": {
+      "x": 22,
+      "y": 5,
+      "w": 3,
+      "h": 1
+    }
+  }
+}

@@ -1,0 +1,168 @@
+// main.js — wires the scene, the labels and the panels together. Engine view: live over SSE (/api/events, no polling
+// while connected); the only writes are the e-stop and its typed resume, sent with the per-launch action token.
+// Legacy view: read-only, polled. The scene renders on demand; labels re-layout only when the camera, data or size change.
+import { createOffice } from './scene/office.js';
+import { createLabels } from './ui/labels.js';
+import { createTaskPanel } from './ui/taskpanel.js';
+import { createSidePanel } from './ui/sidepanel.js';
+import { createBoard } from './ui/board.js';
+import { createCalendar } from './ui/calendar.js';
+import { createLedgerView } from './ui/ledger.js';
+import { esc, money, dateTime, hhmm } from './ui/format.js';
+import { PALETTE } from './config/palette.js';
+
+const q = new URLSearchParams(location.search);
+const $ = (s) => document.querySelector(s);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* private mode */ } } };
+let theme = q.get('theme') || store.get('office-theme') || 'light';
+document.body.dataset.theme = theme;
+
+const office = createOffice({ canvas: $('#scene'), theme, onPick: handlePick, options: { ao: q.get('ao') !== '0', animate: q.get('anim') !== '0', msaa: q.get('msaa') !== '0', msaaSamples: Number(q.get('msaa')) || 4, aoQuality: q.get('aoq') ? Object.fromEntries(['samples', 'pdSamples', 'rings'].map((k, i) => [k, Number(q.get('aoq').split(',')[i])])) : null } });
+const labels = createLabels({ container: $('#labels'), office, onDept: focusDept, onHub: openLedger });
+const sidepanel = createSidePanel({ root: $('#sidepanel'), onOpenJob: openJob, onOpenAgent: openAgent, onClose: () => { office.setSelected(null); labelsDirty = true; }, getNow: () => (snap ? snap.generatedAt : Date.now()) });
+const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob });
+const board = createBoard({ root: $('#board'), onOpenJob: openJob });
+const calendar = createCalendar({ root: $('#calendar'), onOpenJob: openJob });
+const ledger = createLedgerView({ root: $('#ledger') });
+let snap = null, ready = false, labelsDirty = true, perfOn = q.get('fps') === '1';
+
+function handlePick(hit) {
+  if (!hit) return;
+  if (hit.kind === 'agent') openAgent(hit.id);
+  else if (hit.kind === 'hub') openLedger();
+  else if (hit.kind === 'dept') focusDept(hit.id);
+}
+// open a desk: select it, open the panel, and pan so the desk sits in the visible area left of the panel
+function openAgent(id, zoom) {
+  closeOverlays();
+  const d = office.anchors.desks[id]; if (!d) return;
+  office.setSelected(id); labelsDirty = true;
+  sidepanel.showAgent(id);
+  const panelW = $('#sidepanel').offsetWidth || 400, W = office.size.x, H = office.size.y;
+  office.focus({ x: d.x, z: d.z + 0.4 }, zoom || Math.max(office.view.wantZoom, 2.0), { x: Math.max(160, (W - panelW) / 2), y: H / 2 + 70 });
+}
+function openJob(id) { office.setSelected(null); labelsDirty = true; sidepanel.showJob(id); }
+function focusDept(key, zoom = 1.7) { const a = office.anchors.depts[key]; if (a) office.focus(a, zoom); taskpanel.setDept(key); }
+// the 3D scene is paused (no renders, no animation) while an overlay covers the stage
+function syncPause() { office.setPaused(board.isOpen() || calendar.isOpen() || ledger.isOpen()); }
+function closeOverlays() { board.hide(); calendar.hide(); ledger.hide(); syncPause(); }
+function openLedger() { closeOverlays(); ledger.render(snap); ledger.show(); syncPause(); }
+function openBoard() { closeOverlays(); board.render(snap); board.show(); syncPause(); }
+function openCalendar() { closeOverlays(); calendar.render(snap); calendar.show(); syncPause(); }
+function setTheme(t) { theme = t; document.body.dataset.theme = t; store.set('office-theme', t); office.setTheme(t); labelsDirty = true; }
+
+const SVC_ICON = { anthropic: 'A', openrouter: 'OR', realesrgan: 'ES', etsy: 'Et', mock: 'M' };
+function renderTopbar(s) {
+  $('#station-name').textContent = s.station.name;
+  // services: compact icon + status dot, details in the tooltip (they are also on the services rack)
+  $('#services').innerHTML = s.services.map((sv) => '<span class="svc" title="' + esc(sv.label + ' — ' + sv.status + '\n' + sv.detail + '\nsource: ' + sv.source) + '"><b style="background:' + (PALETTE.services[sv.id] || '#999') + '">' + esc(SVC_ICON[sv.id] || sv.label.slice(0, 2)) + '</b><i style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i></span>').join('');
+  // engine status badge; the runtime line (engine, Node, host) lives in its tooltip
+  const badge = $('#source-badge');
+  const eng = s.engine || { state: 'legacy', label: 'legacy view' };
+  badge.textContent = eng.label;
+  badge.className = 'badge ' + (eng.state === 'halted' ? 'badge-halt' : eng.state === 'running' ? 'badge-on' : eng.state === 'legacy' ? 'badge-muted' : 'badge-off');
+  badge.title = (eng.detail ? eng.detail + '\n' : '') + s.station.runtime + '\n' + (s.station.host || '') + '\nread from: ' + (s.source.root || '');
+  let mock = $('#mock-badge');
+  if (s.source.mode === 'fixtures') { if (!mock) { mock = document.createElement('span'); mock.id = 'mock-badge'; mock.className = 'badge badge-muted'; badge.after(mock); } mock.textContent = 'mock · snapshot ' + (s.source.snapshotAt ? dateTime(s.source.snapshotAt) : '—'); mock.title = 'fixtures/station-root: a read-only snapshot of the legacy build files (npm run snapshot-fixtures)'; }
+  else if (mock) mock.remove();
+  const syn = $('#synthetic-badge'); const items = s.source.synthetic || [];
+  syn.classList.toggle('hidden', !items.length); syn.title = 'Synthetic test states (fixtures/synthetic/overlay.json, not real data):\n• ' + items.join('\n• ');
+  // spend: calendar day, from the ledger, against the per-day cap
+  const sp = s.spend.today, cap = s.spend.caps && s.spend.caps.perDay;
+  $('#spend-today').innerHTML = 'Today <b>' + money(sp.usd) + '</b>' + (cap ? ' / ' + money(cap) + ' cap' : '') + ' · ' + sp.runs + ' runs';
+  $('#spend-today').title = sp.label + ' · source: ' + sp.source + (s.spend.caps ? ' · cap: ' + s.spend.caps.source : '');
+  const w = $('#warnings'); const msgs = [...(s.warnings || []), ...(s.errors || []).map((e) => 'read error: ' + e.what + ' (' + e.error + ')')];
+  if (msgs.length) { w.innerHTML = '<b>⚠ ' + msgs.length + ' notice' + (msgs.length > 1 ? 's' : '') + '</b><br>' + msgs.slice(0, 4).map(esc).join('<br>'); w.classList.remove('hidden'); } else w.classList.add('hidden');
+}
+
+async function load() {
+  const r = await fetch('/api/office/snapshot' + (q.has('fresh') ? '?fresh' : ''));
+  snap = await r.json();
+  renderEstop(snap);
+  if (snap.source.mode === 'engine' && !live) connectLive();
+  office.setData(snap); labels.build(snap); taskpanel.setSnapshot(snap); renderTopbar(snap);
+  if (board.isOpen()) board.render(snap); if (calendar.isOpen()) calendar.render(snap);
+  labelsDirty = true; ready = true;
+}
+
+function togglePerf(v) { perfOn = v == null ? !perfOn : v; $('#perf').classList.toggle('hidden', !perfOn); }
+let lastPerf = 0;
+function renderPerf() {
+  const s = office.getStats();
+  $('#perf').innerHTML = '<b>' + s.fps + '</b> fps <span class="muted">rendered/s</span><br>' + (s.frameMs ? s.frameMs.toFixed(1) + ' ms' : '—') + ' <span class="muted">frame</span> · ' + s.cpuMs.toFixed(1) + ' ms <span class="muted">cpu</span><br>' + s.calls + ' <span class="muted">calls</span> · ' + (s.tris / 1000).toFixed(1) + 'k <span class="muted">tris</span><br><span class="muted">' + s.mode + ' · dpr ' + s.dpr + ' · AO ' + s.ao + '</span>';
+}
+
+// keyboard: B board, C calendar, T today, arrows pan, +/- zoom, R reset, D dark, F fps, W/M calendar mode, Esc close
+window.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key;
+  if (k === 'Escape') { if (calendar.hasPopover()) calendar.closePopover(); else if (sidepanel.isOpen()) sidepanel.close(); else closeOverlays(); }
+  else if (k === 'b' || k === 'B') { if (board.isOpen()) { board.hide(); syncPause(); } else openBoard(); }
+  else if (k === 'c' || k === 'C') { if (calendar.isOpen()) { calendar.hide(); syncPause(); } else openCalendar(); }
+  else if (k === 't' || k === 'T') { if (!calendar.isOpen()) openCalendar(); calendar.today(); }
+  else if ((k === 'w' || k === 'W') && calendar.isOpen()) calendar.toggleMode('week');
+  else if ((k === 'm' || k === 'M') && calendar.isOpen()) calendar.toggleMode('month');
+  else if (k === 'ArrowLeft') office.pan(60, 0); else if (k === 'ArrowRight') office.pan(-60, 0); else if (k === 'ArrowUp') office.pan(0, 60); else if (k === 'ArrowDown') office.pan(0, -60);
+  else if (k === '+' || k === '=') office.zoomBy(1.2); else if (k === '-' || k === '_') office.zoomBy(1 / 1.2);
+  else if (k === 'r' || k === 'R') office.resetView();
+  else if (k === 'd' || k === 'D') setTheme(theme === 'dark' ? 'light' : 'dark');
+  else if (k === 'f' || k === 'F') togglePerf();
+  else return;
+  e.preventDefault();
+});
+$('#zoom-in').addEventListener('click', () => office.zoomBy(1.2)); $('#zoom-out').addEventListener('click', () => office.zoomBy(1 / 1.2)); $('#reset-view').addEventListener('click', () => office.resetView());
+$('#theme-toggle').addEventListener('click', () => setTheme(theme === 'dark' ? 'light' : 'dark'));
+window.addEventListener('resize', () => { office.resize(); labelsDirty = true; });
+
+// clock (24h) + the on-demand loop: rAF is cheap when nothing changed (no render, no layout)
+const clock = () => { $('#clock').textContent = hhmm(Date.now()); };
+clock(); setInterval(clock, 10000);
+function loop(now) {
+  const r = office.tick();
+  if (r.cameraChanged || labelsDirty) { labels.update(); labelsDirty = false; }
+  if (perfOn && now - lastPerf > 250) { lastPerf = now; renderPerf(); }
+  requestAnimationFrame(loop);
+}
+togglePerf(perfOn);
+load().then(() => requestAnimationFrame(loop)).catch((e) => { console.error(e); $('#source-badge').textContent = 'snapshot failed: ' + e.message; });
+setInterval(() => { if (!document.hidden && !liveOk) load().catch(() => {}); }, 15000);   // polling only without a live stream
+
+// ---- live: every engine event refreshes the snapshot (debounced); a reconnect replays what was missed
+let live = null, liveOk = false, pending = null, session = null, lastSeq = 0;
+function connectLive() {
+  live = new EventSource('/api/events');
+  live.onopen = () => { liveOk = true; };
+  live.onerror = () => { liveOk = false; };
+  const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
+  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered']) live.addEventListener(t, onEv);
+}
+async function action(pathname, body) {
+  if (!session) session = await (await fetch('/api/session')).json();
+  const r = await fetch(pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-station-action': session.actionToken }, body: JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+// the e-stop: one click (with a confirm) stops everything; resuming needs the typed word
+function renderEstop(s) {
+  const b = $('#estop'), eng = s.engine || {};
+  if (s.source.mode !== 'engine') { b.classList.add('hidden'); return; }
+  b.classList.remove('hidden');
+  b.textContent = eng.halted ? 'RESUME…' : 'E-STOP';
+  b.classList.toggle('btn-estop-on', !!eng.halted);
+  b.title = eng.halted ? 'E-stop is ON (' + (eng.haltedBy || '') + '). Resuming needs a typed confirmation; stopped jobs are not restarted.' : 'E-stop: abort every model and image call now and stop the scheduler';
+}
+$('#estop').addEventListener('click', async () => {
+  try {
+    if (snap && snap.engine && snap.engine.halted) { const w = window.prompt('Type ' + ((session && session.resumeWord) || 'RESUME') + ' to resume the engine. Stopped jobs stay stopped.'); if (w == null) return; await action('/api/engine/resume', { confirm: w.trim() }); }
+    else { if (!window.confirm('E-STOP: abort every model and image call now and stop all routines?')) return; await action('/api/engine/halt', { reason: 'office button' }); }
+    await load();
+  } catch (e) { window.alert('Not done: ' + e.message); }
+});
+
+// test hooks for the screenshot script (read-only helpers)
+window.__office = {
+  ready: () => ready, reload: () => load(), closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap,
+  setAnimate: (v) => office.setAnimate(v), bench: (ms, opts) => office.bench(ms, opts), stats: () => office.getStats(), togglePerf, settled: () => { const v = office.view; return v.target.distanceTo(v.wantTarget) < 0.002 && Math.abs(v.zoom - v.wantZoom) < 0.0005; }
+};

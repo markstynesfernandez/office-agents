@@ -1,0 +1,37 @@
+// config.mjs — loads the engine's config files (ENGINE-PLAN.md §1.2). Read-only. Config is edited as files in the
+// repository (DECISIONS.md Q7, Q8); the page can only change an agent's on/off, tier and effort (an overlay in SQLite).
+//   config/engine.json            caps, tiers, prices, providers, runtime
+//   config/station.config.json    business settings ported from the station (fees, digital terms, originality lists)
+//   config/products.json          digital product specs (one entry per product type; nothing in code names a product)
+//   config/agents/<key>.json      one file per agent
+//   config/lines/<id>.json        the written line specs
+//   config/office.json            the office layout (departments and desks)
+import fs from 'node:fs';
+import path from 'node:path';
+
+const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
+const readDir = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => n.endsWith('.json')).sort().map((n) => readJson(path.join(d, n))) : []);
+
+export function validateEngine(e) {
+  const bad = [];
+  for (const k of ['perRunUsd', 'perJobUsd', 'perDayUsd']) if (!(e.caps && e.caps[k] > 0)) bad.push('caps.' + k + ' must be a positive number');
+  if (!e.tiers || !e.tiers.cheap || !e.tiers.strong) bad.push('tiers.cheap and tiers.strong are required');
+  if (!e.pricing) bad.push('pricing is required');
+  if (!e.runtime) bad.push('runtime is required');
+  return bad;
+}
+
+// overrides (the dry run only): { productsFile: {products:[...]}, stationSet: { 'dotted.key': value } } on top of the files
+export function applySet(obj, set) { const out = structuredClone(obj); for (const [k, v] of Object.entries(set || {})) { const parts = k.split('.'); let o = out; for (const p of parts.slice(0, -1)) { if (!o[p] || typeof o[p] !== 'object') throw new Error('override path not found: ' + k); o = o[p]; } if (!(parts[parts.length - 1] in o)) throw new Error('override key not found: ' + k); o[parts[parts.length - 1]] = v; } return out; }
+
+export function loadConfig({ configDir, promptsDir, overrides = null }) {
+  const engine = readJson(path.join(configDir, 'engine.json'));
+  const bad = validateEngine(engine); if (bad.length) throw new Error('config/engine.json: ' + bad.join('; '));
+  const opt = (f) => (fs.existsSync(path.join(configDir, f)) ? readJson(path.join(configDir, f)) : null);
+  const agents = Object.fromEntries(readDir(path.join(configDir, 'agents')).map((a) => [a.key, a]));
+  const lines = Object.fromEntries(readDir(path.join(configDir, 'lines')).map((l) => [l.id, l]));
+  const products = overrides && overrides.productsFile ? overrides.productsFile : opt('products.json');
+  const bl = path.join(configDir, 'blocklist.txt');
+  const blocklist = fs.existsSync(bl) ? fs.readFileSync(bl, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
+  return { configDir, promptsDir, engine, blocklist, station: overrides && overrides.stationSet ? applySet(opt('station.config.json') || {}, overrides.stationSet) : (opt('station.config.json') || {}), overridden: !!overrides, products: (products && products.products) || [], productsFile: products, agents, lines, office: opt('office.json') || { departments: [] } };
+}

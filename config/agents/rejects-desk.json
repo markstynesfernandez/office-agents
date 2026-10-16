@@ -1,0 +1,26 @@
+{
+  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/rejects-desk.md (+ the skills its front-matter names). tier: config/engine.json tiers. The page may change enabled, tier and effort only.",
+  "key": "rejects-desk",
+  "name": "REJECTS-DESK",
+  "department": "OFFICE",
+  "tier": "cheap",
+  "effort": "low",
+  "tools": [
+    "fs_read",
+    "fs_list",
+    "fs_write"
+  ],
+  "folder": "job",
+  "writes": [
+    "REJECTED.md"
+  ],
+  "limits": {
+    "maxTurns": 40,
+    "maxOutputTokens": 8000,
+    "maxWebCalls": 0,
+    "maxImages": 0
+  },
+  "color": "#ffd34a",
+  "enabled": true,
+  "role": "Records why a job was stopped (REJECTED.md)."
+}

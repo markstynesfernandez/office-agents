@@ -1,0 +1,27 @@
+{
+  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/lister.md (+ the skills its front-matter names). tier: config/engine.json tiers. The page may change enabled, tier and effort only.",
+  "key": "lister",
+  "name": "LISTER",
+  "department": "OFFICE",
+  "tier": "cheap",
+  "effort": "low",
+  "tools": [
+    "fs_read",
+    "fs_list",
+    "fs_write"
+  ],
+  "folder": "job",
+  "writes": [
+    "outbox/listing.json",
+    "outbox/listing.md"
+  ],
+  "limits": {
+    "maxTurns": 40,
+    "maxOutputTokens": 8000,
+    "maxWebCalls": 0,
+    "maxImages": 0
+  },
+  "color": "#cf7d96",
+  "enabled": true,
+  "role": "Writes the Etsy listing text for a QA-approved set."
+}

@@ -1,0 +1,53 @@
+{
+  "$comment": "Engine settings (ENGINE-PLAN.md §1.2). Caps and prices live here only (DECISIONS.md Q7): never raise a cap without the owner. Prices marked confirmBeforeE6 must be checked against the provider's price page before any real call.",
+  "timezone": "Europe/Dublin",
+  "provider": "mock",
+  "tiers": {
+    "cheap": { "model": "claude-haiku-5-5", "provider": "anthropic" },
+    "strong": { "model": "claude-sonnet-5-5", "provider": "anthropic" }
+  },
+  "effortLevels": ["low", "medium", "high"],
+  "image": {
+    "provider": "openrouter",
+    "allowedModels": ["openai/gpt-5-image-mini"],
+    "opaqueModelApproved": false,
+    "opaqueModel": "google/gemini-3.1-flash-image",
+    "source": "station.config.json imagePolicy (owner OpenRouter guardrail 15/10/2026)"
+  },
+  "pricing": {
+    "anthropic": {
+      "models": {
+        "claude-haiku-5-5": { "inPerM": 0.1, "outPerM": 0.5, "source": "station.config.json models (owner 14/10/2026)", "confirmBeforeE6": true },
+        "claude-sonnet-5-5": { "inPerM": 2, "outPerM": 10, "source": "station.config.json models (owner 14/10/2026)", "confirmBeforeE6": true }
+      }
+    },
+    "anthropic-web": {
+      "$comment": "Anthropic server-side web search and fetch (Q6). Price per call not set: web calls are refused until it is confirmed at E6.",
+      "models": {}
+    },
+    "openrouter": {
+      "models": {
+        "openai/gpt-5-image-mini": { "perImage": 0.043, "estimated": true, "source": "Virtual-workers/USAGE.md note (StarNet era); the provider's reported cost is used when it gives one", "confirmBeforeE6": true }
+      }
+    },
+    "mock": {
+      "models": { "*": { "inPerM": 0, "outPerM": 0, "perImage": 0, "perCall": 0, "source": "mock provider: no model is called" } }
+    }
+  },
+  "caps": {
+    "$comment": "Carried over unchanged from the StarNet era (station.config.json caps, owner-set): $1 per run and per job (was per run and per message), $10 per day, $10 per line per day, per-agent 0 = off, 12 hops. imagesPerDay 0 = no count cap (image spend still counts in every USD cap); a count is the owner's call (Q2).",
+    "perRunUsd": 1,
+    "perJobUsd": 1,
+    "perDayUsd": 10,
+    "perLineDayUsd": { "default": 10 },
+    "perAgentDayUsd": { "default": 0 },
+    "imagesPerDay": 0,
+    "maxHops": 12
+  },
+  "runtime": {
+    "resumeOnRestart": 1,
+    "maxConcurrentJobsPerLine": 1,
+    "maxReadBytes": 200000,
+    "promptCaching": true
+  }
+}

@@ -1,0 +1,17 @@
+# dependencies and local caches
+node_modules/
+.cache/
+
+# secrets: settings come from env vars only (.env.example is the template)
+.env
+
+# runtime data, demo data and generated output
+data/
+data-demo/
+dry-run/
+logs/
+*.log
+screenshots/
+
+# fixtures (legacy snapshots and dry-run fixtures stay local)
+fixtures/

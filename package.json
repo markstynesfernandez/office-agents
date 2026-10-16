@@ -1,0 +1,29 @@
+{
+  "name": "station",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Station: the station's own agent engine and its live 3D office view (E1-E3: mock provider only).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server/index.mjs",
+    "mock": "node src/server/index.mjs --fixtures",
+    "test": "node --test",
+    "screenshots": "node scripts/screenshots.mjs",
+    "snapshot-fixtures": "node scripts/snapshot-fixtures.mjs",
+    "estop": "node scripts/estop.mjs",
+    "legacy-view": "node src/server/index.mjs --legacy",
+    "dry-run": "node scripts/dry-run.mjs",
+    "port-drift": "node scripts/port-drift.mjs"
+  },
+  "dependencies": {
+    "croner": "10.0.1",
+    "sharp": "0.34.5",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}

@@ -1,0 +1,7 @@
+## SKILL: BRIEF PRICE RULES (Research Lab, digital; the floor is in the PRICE FLOOR skill and is a fixed fact)
+
+- BRIEF FLOOR: the LOWEST price in a brief's "## Price range" section (USD, the top-5 prices from Demand evidence) must be at or above the BRIEF FLOOR (digital).
+- DEMAND RESEARCHER: do not write a brief whose lowest top-5 price is below the BRIEF FLOOR. A niche whose prices are all below it is not worth a brief. Quote only prices Etsy actually showed; never raise or round a price to pass.
+- EVIDENCE CHECKER: if a brief's lowest price is below the BRIEF FLOOR, or it has no USD price, set `status: rejected` and write it to `rejected/<id>.md` with the first line of its Evidence check reading `PRICE FLOOR: returned to demand-researcher. Lowest price USD <x> is below the floor USD <y>.` Never tighten a price range yourself to make a brief pass.
+- OWNER PRICE: a line `owner price: EUR <min>–<max> (recorded by owner, YYYY-MM-DD)` in "## Price range" is the owner's price decision. It replaces the lowest-price rule: its minimum must be at or above the floor in EUR. An optional `owner price point: EUR <price> (recorded by owner, YYYY-MM-DD)` inside that range is the price the listing uses (without it: the range's low end; never the top-5 high). Only the owner writes these lines; never write, copy or edit them.
+- Returned briefs are not duplicates: the researcher may resubmit the same niche under a NEW id once the evidence shows prices at or above the floor.

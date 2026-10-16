@@ -1,0 +1,30 @@
+{
+  "$comment": "The research line (ENGINE-PLAN.md §3.1). Started by a research routine or from the task box. There is no folder trigger: a brief file never starts anything by itself. A brief that passes the checks is copied to research/briefs/ (verified); one that fails goes to research/rejected/ with the reasons.",
+  "id": "research",
+  "label": "Research",
+  "maxConcurrentJobs": 1,
+  "maxHops": 4,
+  "start": "demand-researcher",
+  "kind": "research",
+  "steps": {
+    "demand-researcher": {
+      "kind": "agent",
+      "agent": "demand-researcher",
+      "column": "brief",
+      "next": "evidence-checker"
+    },
+    "evidence-checker": {
+      "kind": "agent",
+      "agent": "evidence-checker",
+      "column": "brief",
+      "next": "brief-check"
+    },
+    "brief-check": {
+      "kind": "mechanical",
+      "fn": "briefCheck",
+      "column": "brief",
+      "next": null,
+      "end": "research-done"
+    }
+  }
+}

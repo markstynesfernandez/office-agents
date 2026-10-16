@@ -1,0 +1,30 @@
+{
+  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/designer.md (+ the skills its front-matter names). tier: config/engine.json tiers. The page may change enabled, tier and effort only.",
+  "key": "designer",
+  "name": "DESIGNER",
+  "department": "DESIGN",
+  "tier": "strong",
+  "effort": "low",
+  "tools": [
+    "fs_read",
+    "fs_list",
+    "fs_write",
+    "image_generate",
+    "image_analyze"
+  ],
+  "folder": "job",
+  "writes": [
+    "set-v*/design.md",
+    "set-v*/assets.json"
+  ],
+  "limits": {
+    "maxTurns": 40,
+    "maxOutputTokens": 8000,
+    "maxWebCalls": 0,
+    "maxImages": 8
+  },
+  "color": "#a888c0",
+  "enabled": true,
+  "tierNote": "strong since 16/10/2026 (owner, station.config.json)",
+  "role": "Turns a verified brief into one complete, original set of files."
+}
