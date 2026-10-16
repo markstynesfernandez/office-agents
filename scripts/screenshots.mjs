@@ -4,6 +4,9 @@
 //   npm run screenshots                                  -> screenshots/e1/*.png, legacy view of the fixtures (headless)
 //   node scripts/screenshots.mjs --headed                -> same, in a visible Google Chrome window (fps as you'd see it)
 //   node scripts/screenshots.mjs --out e1b --live        -> legacy view of .env STATION_LEGACY_ROOT (read-only)
+//   node scripts/screenshots.mjs --set r1 --headed --out redesign-r1   -> the Redesign R1 views (overview light/dark,
+//                                                           each room, the lounge, a desk panel, the board) + fps-headed.json
+//   --only 01,03                                          -> just those views (by file-name prefix)
 // FPS: after each capture the page renders continuously for --bench-ms (default 3000) twice: once with the camera moving
 // every frame (the real pan/zoom path; AO is skipped while moving) and once at full quality with AO on (the cost of each
 // animation tick or settled frame). At rest the page renders on demand only. Overlay views pause the 3D scene, so their
@@ -124,7 +127,33 @@ async function main() {
   const problems = [], fpsRows = [];
   const view = makeViewer({ browser, base, outDir, log, problems, fpsRows, benchMs, noShots });
   const files = [];
+  const only = arg('--only', null), want = (name) => !only || only.split(',').some((p) => name.startsWith(p));
+  const setR1 = arg('--set', null) === 'r1';
   try {
+    if (setR1) {
+      // Redesign R1: rooms and the lounge zoomed in dark mode (the main look); the desk panel and the board in light
+      const room = (key, zoom) => async (page) => { await page.evaluate(([k, z]) => { const o = window.__office.office, a = o.anchors.depts[k]; window.__office.focusDept(k, z); o.focus({ x: a.x - 0.9, z: a.z - 0.9 }, z); }, [key, zoom]); };   // aimed a little behind the centre so the back walls are in frame
+      const R1 = [
+        ['01-overview-light.png', 'theme=light', null, ''],
+        ['02-overview-dark.png', 'theme=dark', null, ''],
+        ['03-research-room.png', 'theme=dark', room('research', 1.9), '(zoomed)'],
+        ['04-design-room.png', 'theme=dark', room('design', 2.0), '(zoomed)'],
+        ['05-office-room.png', 'theme=dark', room('office', 1.8), '(zoomed)'],
+        ['06-lounge-idle.png', 'theme=dark', async (page) => {
+          await page.evaluate(() => { const o = window.__office.office; o.focus(o.anchors.lounge, 2.3); });
+          const seated = await page.evaluate(() => window.__office.office.people().filter((p) => p.place === 'lounge').map((p) => p.agentId));
+          console.log('  lounge: ' + seated.length + ' agents seated (' + seated.join(', ') + ')');
+        }, '(zoomed)'],
+        ['07-desk-panel.png', 'theme=light', async (page) => {
+          const id = await page.evaluate(() => window.__office.snapshot().agents.find((a) => a.name === 'DESIGNER').id);
+          await page.evaluate((id) => window.__office.openAgent(id, 2.4), id);
+          await page.waitForSelector('#sidepanel:not(.hidden) .sp-head', { timeout: 15000 });
+          await page.waitForFunction(() => [...document.querySelectorAll('#sidepanel img')].every((i) => i.complete), null, { timeout: 15000 });
+        }, ''],
+        ['08-board.png', 'theme=light', async (page) => { await page.keyboard.press('b'); await page.waitForSelector('#board:not(.hidden) .lanes', { timeout: 15000 }); }, '(scene behind the board overlay)']
+      ];
+      for (const [name, query, act, note] of R1) if (want(name)) files.push(await view(name, query, act, note));
+    } else {
     files.push(await view('01-overview.png', 'theme=light'));
     files.push(await view('02-desk-panel.png', 'theme=light', async (page) => {
       const id = await page.evaluate(() => window.__office.snapshot().agents.find((a) => a.name === 'DESIGNER').id);
@@ -144,6 +173,7 @@ async function main() {
     files.push(await view('06-overview-zoomed.png', 'theme=light', async (page) => {
       await page.evaluate(() => window.__office.focusDept('office', 3.3));
     }));
+    }
     console.log('\nScreenshots:\n' + files.join('\n'));
     const summary = { at: new Date().toISOString(), browser: browserLabel, gl, viewport: W + 'x' + H, benchMs, mode, views: fpsRows };
     fs.writeFileSync(outJail(path.join(outDir, headed ? 'fps-headed.json' : 'fps.json')), JSON.stringify(summary, null, 2) + '\n');

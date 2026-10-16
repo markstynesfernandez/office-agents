@@ -1,59 +1,62 @@
-// palette.js — the one place colours live (spec: "One config file holds the palette"). Muted pastels, warm light
-// platforms on a cooler, lighter backdrop so they separate; one soft accent per department, used as a floor tint and
-// on the bevelled edge. Dark mode: deep blue-charcoal backdrop (not black), platforms lifted to a readable dark tone with
-// a faint rim, glowing monitors and hub.
+// palette.js — the one place colours live (spec: "One config file holds the palette"). Redesign R1:
+// light mode: warm white walls with a soft department tint, a light wood floor, pale stone in the atrium, daylight from
+//   one side; LED strips read as pale aluminium profiles and give no glow.
+// dark mode: charcoal walls, a warm wood floor, dark rugs, warm LED strips (emissive lines plus soft additive washes),
+//   glowing monitors and desk lamps. One warm accent (ledGlowColour / --accent) runs through the scene and the UI.
 export const PALETTE = {
   light: {
-    background: ['#fafcfe', '#e2e9f2'],   // vertical gradient, top -> bottom (cooler and lighter than the platforms)
-    shadowOpacity: 0.2,                   // ground shadow catcher
-    blobOpacity: 0.44,                     // soft drop shadow under each platform
-    platform: '#ede6db',                   // warm light floor, tinted per department
-    platformTint: 0.3,                    // how much of the department accent goes into the floor
-    platformEdge: '#cfc4b4',               // darker bevelled edge (also tinted)
-    rim: '#cfc5b6', rimOpacity: 0.0,       // rim line (dark mode only)
-    walkway: '#dcd4c7',                    // a little darker than the platforms
-    plinth: '#e8e2d8', plinthEdge: '#cfc6b8',
-    desk: '#ffffff',
-    deskLeg: '#dcd6cc',
-    chair: '#c9c2b7',
-    monitorFrame: '#3b3d42',
-    glass: '#d4e6ee', glassOpacity: 0.34,
-    plantPot: '#c8b49c',
-    plantLeaf: '#93bf8d',
+    background: ['#f6f3ee', '#e2dcd2'],   // vertical gradient, top -> bottom
+    shadowOpacity: 0.16, blobOpacity: 0.32,
+    slabEdge: '#d8d0c3', slabFoot: '#c4baab',
+    tile: '#ede9e2', wood: '#f2d6ae',      // multiplied by the plank / tile textures
+    wall: '#f7f2ea', wallTint: 0.15, wallCap: '#d3cabd', baseboard: '#e8e1d5',
+    rug: '#c4bbae', rugBorder: '#aca291', loungeRug: '#ddd4c6', loungeRugBorder: '#c6baa8',
+    shelf: '#f1ebe1', shelfBack: '#e7e0d5', shelfObject: '#cbbfae', label: '#f6f3ec',
+    potSmall: '#d9cdbb', leafSmall: '#82ad7b',
+    frame: '#3a3633', mat: '#f8f5ef',
+    metal: '#2f3034', leather: '#b77a50', sofa: '#d8cec0', sofaBase: '#bfb4a5', lampShade: '#2f3034', bulb: '#fff3dc', lampGlow: '#ffd9a0',
+    led: '#efeae2', ledGlow: 0, ledGlowColour: '#ffb15f',
+    seam: '#a0988c', locker: '#cdcac4', credenza: '#ebe5db', woodSolid: '#c99c6b', whiteboardFrame: '#babdc2',
+    closetFloor: '#bdbab5', closetWall: '#dedad3', closetLED: '#e9f2ff', rackLedA: '#79d98f', rackLedB: '#f0c35a',
+    plinth: '#ece6dd', plinthEdge: '#d3cabd', inlay: '#cdbfa9', plaza: '#e3dcd1',
+    deskTop: '#ddba90', deskMetal: '#2e2f33', chair: '#45464c', monitorFrame: '#2b2c30', keyboard: '#e6e3de', trousers: '#4a4d55',
+    plantPot: '#dacfbf', plantPotTall: '#cfc6b9', plantLeaf: '#7dab76', plantLeafTall: '#6e9f6a',
     worker: '#ecdccb',
-    terminal: '#eceff3', terminalScreen: 0.55,
+    terminal: '#d3d6db', terminalScreen: 0.55,
     hubCore: '#5f9fe6', hubGlow: 0.6,
+    screenPool: 0, lampPool: 0,
     text: '#2b2a28',
-    hemiSky: '#fff6e8', hemiGround: '#cdd6e4', hemiIntensity: 1.25,
-    sunIntensity: 1.85, sunColour: '#fff3e0',
-    rimLight: 0.0, exposure: 1.0, aoBlend: 0.8
+    hemiSky: '#fff7ec', hemiGround: '#d6cfc3', hemiIntensity: 1.2,
+    sunIntensity: 2.0, sunColour: '#fff1dc',
+    exposure: 1.0, aoBlend: 0.85
   },
   dark: {
-    background: ['#253045', '#151b28'],   // deep blue-charcoal
-    shadowOpacity: 0.32,
-    blobOpacity: 0.55,
-    platform: '#3d4556',
-    platformTint: 0.2,
-    platformEdge: '#2b313e',
-    rim: '#8fa6c8', rimOpacity: 0.55,
-    walkway: '#404a5c',
-    plinth: '#3a4252', plinthEdge: '#272d39',
-    desk: '#c4c7cd',
-    deskLeg: '#7e838d',
-    chair: '#666c78',
-    monitorFrame: '#16181d',
-    glass: '#6f8ba0', glassOpacity: 0.28,
-    plantPot: '#7a6a58',
-    plantLeaf: '#6fa572',
-    worker: '#c9b8a6',
-    terminal: '#4a5263', terminalScreen: 0.9,
+    background: ['#2a2a2d', '#111113'],   // charcoal
+    shadowOpacity: 0.3, blobOpacity: 0.45,
+    slabEdge: '#1d1d20', slabFoot: '#151517',
+    tile: '#7a756e', wood: '#eab47c',
+    wall: '#3c3d42', wallTint: 0.08, wallCap: '#111113', baseboard: '#232427',
+    rug: '#4a4a4e', rugBorder: '#36363a', loungeRug: '#403d3a', loungeRugBorder: '#2f2d2b',
+    shelf: '#26262a', shelfBack: '#303034', shelfObject: '#3b3a37', label: '#d9d4ca',
+    potSmall: '#4b4844', leafSmall: '#5f9a63',
+    frame: '#141414', mat: '#e8e2d8',
+    metal: '#18191c', leather: '#93603e', sofa: '#5b5a61', sofaBase: '#38383d', lampShade: '#1b1b1e', bulb: '#ffd89c', lampGlow: '#ffae5e',
+    led: '#ffd394', ledGlow: 1.0, ledGlowColour: '#ffab58',
+    seam: '#19191b', locker: '#55565c', credenza: '#38383d', woodSolid: '#a06f47', whiteboardFrame: '#575a60',
+    closetFloor: '#222225', closetWall: '#2a2b2f', closetLED: '#a4d2ff', rackLedA: '#5fe08a', rackLedB: '#ffcc66',
+    plinth: '#4a4846', plinthEdge: '#2c2c2f', inlay: '#806a4c', plaza: '#605b55',
+    deskTop: '#c99769', deskMetal: '#141518', chair: '#3a3b40', monitorFrame: '#111215', keyboard: '#2d2e32', trousers: '#2e3036',
+    plantPot: '#4a4743', plantPotTall: '#3f3d3a', plantLeaf: '#5e9b63', plantLeafTall: '#4f8a56',
+    worker: '#dccab6',
+    terminal: '#34373c', terminalScreen: 0.9,
     hubCore: '#8fc0f2', hubGlow: 1.0,
+    screenPool: 0.55, lampPool: 0.9,
     text: '#e7e4df',
-    hemiSky: '#9aa9d6', hemiGround: '#2a3040', hemiIntensity: 1.05,
-    sunIntensity: 0.95, sunColour: '#d6e0ff',
-    rimLight: 0.9, exposure: 1.05, aoBlend: 0.6
+    hemiSky: '#d9ccbc', hemiGround: '#3b342d', hemiIntensity: 1.35,
+    sunIntensity: 1.5, sunColour: '#ffd9b0',
+    exposure: 1.05, aoBlend: 0.7
   },
-  // one soft accent per department (keyed by the department key from the office layout)
+  // one soft accent per department (keyed by the department key from the office layout): card edges, wall tint
   departments: {
     research: '#8fb5d6',
     design: '#c7a4d6',
