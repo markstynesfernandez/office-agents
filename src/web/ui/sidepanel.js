@@ -1,6 +1,6 @@
 // ui/sidepanel.js — the slide-in panel for a desk (agent: role, model, recent jobs, outputs, costs, latest design) or a
 // job. Model, provider and role come from the roster; the system prompt is never sent to the page.
-import { esc, money, price, when, duration, statusLabel, jobStatusLabel, statusPill, synthTag } from './format.js';
+import { esc, money, price, when, duration, statusLabel, jobStatusLabel, statusPill, synthTag, legacyTag } from './format.js';
 import { PALETTE } from '../config/palette.js';
 
 export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => {}, getNow = () => Date.now() }) {
@@ -11,6 +11,8 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
   const dot = (status) => '<i style="background:' + (PALETTE.status[status] || '#999') + '"></i>';
   const imgs = (list) => (list && list.length ? '<div class="design">' + list.slice(-2).map((im) => '<img src="' + esc(im.url) + '" alt="' + esc(im.file) + '" title="' + esc(im.file) + '">').join('') + '</div>' : '');
   const warnBox = (list) => (list && list.length ? '<div class="warnbox">' + list.map((w) => '<div>⚠ ' + esc(w) + '</div>').join('') + '</div>' : '');
+  // a legacy job: where each part came from in the legacy station, imported as it was (read only)
+  const legacyBox = (j, now) => (j.legacy ? '<div class="legbox"><b>Legacy record</b> · imported ' + esc(when(Date.parse(j.legacy.importedAt), now)) + ', read only' + Object.entries(j.legacy.sources || {}).map(([k, v]) => '<br><span class="m">' + esc(k) + '</span> ' + esc(v)).join('') + (j.legacy.trackerStatus ? '<br><span class="m">tracker</span> ' + esc(j.legacy.trackerStatus) : '') + '<br><span class="muted">' + j.legacy.runs + ' legacy run' + (j.legacy.runs === 1 ? '' : 's') + ' attributed · data/' + esc(j.folder) + '</span></div>' : '');
   const synthBox = (o) => (o && o.synthetic ? '<div class="synthbox"><b>synthetic test state</b> · ' + esc(o.syntheticWhat || '') + '<br><span class="muted">fixtures/synthetic/overlay.json, not real data</span></div>' : '');
 
   async function showAgent(id) {
@@ -42,17 +44,17 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
     current = { kind: 'job', id };
     const r = await fetch('/api/office/jobs/' + encodeURIComponent(id)); if (!r.ok) return;
     const j = await r.json(); const now = getNow();
-    const hops = j.hops.length ? j.hops.map((h) => '<div class="hop"><span class="i">' + (h.i + 1) + '</span><span><b data-agent="' + esc(h.agentId) + '" class="lnk">' + esc(h.agentName) + '</b> · ' + esc(h.stage || '') + ' pass ' + h.pass + (h.verdict ? ' · <span class="tag ' + (h.verdict === 'approved' ? 'tag-ok' : 'tag-warn') + '">' + esc(h.verdict) + '</span>' : '') + (h.live ? ' <span class="tag tag-ok">live</span>' : '') + '</span><span class="m">' + (h.live ? '…' : money(h.usd) + ' · ' + duration(h.ms)) + '</span>' + (h.output ? '<span class="o">' + esc(h.output) + '</span>' : '') + '</div>').join('') : '<div class="muted">No line hops recorded (not started on the line).</div>';
+    const hops = j.hops.length ? j.hops.map((h) => '<div class="hop"><span class="i">' + (h.i + 1) + '</span><span><b data-agent="' + esc(h.agentId) + '" class="lnk">' + esc(h.agentName) + '</b> · ' + esc(h.stage || '') + (h.pass != null ? ' pass ' + h.pass : h.run ? ' · run ' + h.run : '') + (h.verdict ? ' · <span class="tag ' + (h.verdict === 'approved' ? 'tag-ok' : 'tag-warn') + '">' + esc(h.verdict) + '</span>' : '') + (h.live ? ' <span class="tag tag-ok">live</span>' : '') + '</span><span class="m">' + (h.live ? '…' : money(h.usd) + ' · ' + duration(h.ms)) + '</span>' + (h.output ? '<span class="o">' + esc(h.output) + '</span>' : '') + '</div>').join('') : '<div class="muted">No line hops recorded (not started on the line).</div>';
     const qa = (list, label) => (list && list.length ? '<h4>' + label + '</h4>' + list.map((p) => '<div class="row"><span>pass ' + p.pass + ' <span class="tag ' + (p.verdict === 'approved' ? 'tag-ok' : 'tag-warn') + '">' + esc(p.verdict || '?') + '</span><br><span class="muted" style="font-size:11px">' + esc((p.reasons || []).join(' · ')) + '</span></span></div>').join('') : '');
     const active = j.progress != null;
     open('<div class="sp">'
-      + '<div class="sp-head"><div class="ell"><h2 class="ell" title="' + esc(j.title) + '">' + esc(j.title) + synthTag(j) + '</h2><div class="sp-sub mono">' + esc(j.id) + '</div></div><span class="close btn-icon" title="close (Esc)">×</span></div>'
+      + '<div class="sp-head"><div class="ell"><h2 class="ell" title="' + esc(j.title) + '">' + esc(j.title) + synthTag(j) + legacyTag(j) + '</h2><div class="sp-sub mono">' + esc(j.id) + '</div></div><span class="close btn-icon" title="close (Esc)">×</span></div>'
       + '<div class="sp-status">' + (active ? esc(j.stageLabel) + ' · ' + esc(jobStatusLabel[j.status] || j.status) + ' · ' + j.progress + '%' : statusPill(j) + ' <span class="muted">' + esc(j.stageLabel) + '</span>') + (j.flag === 'error' ? ' <span class="tag tag-err">error</span>' : '') + '</div>'
       + (j.statusReason ? '<div class="quote" style="margin-top:6px">' + esc(j.statusReason) + '</div>' : '')
       + (j.qaPassedGateFailed ? '<div class="srcnote">both QA stages approved; the deterministic package gate blocked it (tracker status_reason)</div>' : '')
-      + synthBox(j) + warnBox(j.warnings)
+      + synthBox(j) + warnBox(j.warnings) + legacyBox(j, now)
       + '<dl class="kv"><dt>agent</dt><dd>' + (j.agentId ? '<a data-agent="' + esc(j.agentId) + '" class="lnk">' + esc(j.agentName) + '</a>' : '—') + ' · ' + esc(j.dept || '—') + '</dd>'
-      + '<dt>slogan</dt><dd>' + esc(j.slogan || '—') + '</dd><dt>cost</dt><dd>' + money(j.costUsd) + ' <span class="muted">(' + (j.queue ? 'approval-queue cost' : j.hops.length ? 'line session total' : 'tracker') + ')</span></dd>'
+      + '<dt>slogan</dt><dd>' + esc(j.slogan || '—') + '</dd><dt>cost</dt><dd>' + money(j.costUsd) + ' <span class="muted">(' + (j.costSource || (j.queue ? 'approval-queue cost' : j.hops.length ? 'line session total' : 'tracker')) + ')</span></dd>'
       + '<dt>started</dt><dd>' + esc(when(j.startedAt, now)) + '</dd><dt>stage changed</dt><dd>' + esc(when(j.stageChangedAt, now)) + '</dd>' + (j.elapsedMs != null ? '<dt>elapsed</dt><dd>' + duration(j.elapsedMs) + '</dd>' : '') + (j.endedAt ? '<dt>ended</dt><dd>' + esc(when(j.endedAt, now)) + '</dd>' : '')
       + (j.priceRange ? '<dt>brief price</dt><dd>' + price('USD ' + j.priceRange.min + (j.priceRange.max !== j.priceRange.min ? ' – ' + j.priceRange.max : '')) + '</dd>' : '')
       + (j.listing ? '<dt>listing</dt><dd>' + esc(j.listing.title) + ' · ' + j.listing.tags + ' tags · ' + price('EUR ' + (j.listing.priceEur ?? '—')) + '</dd>' : '')

@@ -7,6 +7,7 @@ import { dublinDay, dublinDayStart, dmyOfDay } from '../engine/time.mjs';
 import { nextRuns } from '../engine/scheduler.mjs';
 import { cronWords } from './model.mjs';
 import { latestSet } from '../engine/lib/digital-prep.mjs';
+import { loadLegacy, legacyJobView, legacyMemory } from './legacy-view.mjs';
 
 const PROGRESS = { brief: 0.08, design: 0.25, 'qa-design': 0.42, listing: 0.6, 'qa-listing': 0.75, 'approval-queue': 0.9, done: 1 };
 const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
@@ -46,7 +47,9 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
 
   // ---- jobs
   const approvals = Object.fromEntries(store.listApprovals().map((a) => [a.job_id, a]));
+  const LEG = loadLegacy(J.dataRoot);   // the imported legacy station (E4), or null before the first import
   const jobs = store.listJobs().map((j) => {
+    if (j.legacy) return LEG ? legacyJobView(j, LEG, { nameOf, deptOf }) : null;
     const dir = path.join(J.dataRoot, j.kind === 'research' ? 'research' : 'jobs', j.kind === 'research' ? '' : j.id);
     const def = stepDef(j, j.step) || {};
     const myRuns = runs.filter((r) => r.job_id === j.id).sort((a, b) => a.started_at - b.started_at);
@@ -92,7 +95,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     out.stageLabel = COLUMN_LABEL[out.stage] || out.stage;
     out.folder = j.kind === 'research' ? 'research/' : 'jobs/' + j.id + '/';
     return out;
-  }).sort((a, b) => (b.stageChangedAt || 0) - (a.stageChangedAt || 0));
+  }).filter(Boolean).sort((a, b) => (b.stageChangedAt || 0) - (a.stageChangedAt || 0));
 
   const board = { columns: columns.map((c) => ({ ...c, jobIds: jobs.filter((j) => !j.lane && j.stage === c.key).map((j) => j.id) })), lanes: { blocked: jobs.filter((j) => j.lane === 'blocked').map((j) => j.id), rejected: jobs.filter((j) => j.lane === 'rejected').map((j) => j.id), parked: jobs.filter((j) => j.lane === 'parked').map((j) => j.id) } };
 
@@ -125,10 +128,11 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
 
   for (const d of departments) {
     d.agentCount = d.agents.length;
-    d.counts.doing = jobs.filter((j) => j.status === 'in_progress' && j.dept === d.key).length;
-    d.counts.next = jobs.filter((j) => (j.status === 'backlog' || j.status === 'waiting') && j.dept === d.key).length;
-    d.counts.done = jobs.filter((j) => (j.status === 'done' || j.lane) && j.dept === d.key).length;
-    const lineJobs = jobs.filter((j) => j.kind !== 'research');
+    const ownJobs = jobs.filter((j) => j.kind !== 'legacy');   // current work only; legacy history is on the board and in the job panels
+    d.counts.doing = ownJobs.filter((j) => j.status === 'in_progress' && j.dept === d.key).length;
+    d.counts.next = ownJobs.filter((j) => (j.status === 'backlog' || j.status === 'waiting') && j.dept === d.key).length;
+    d.counts.done = ownJobs.filter((j) => (j.status === 'done' || j.lane) && j.dept === d.key).length;
+    const lineJobs = jobs.filter((j) => j.kind !== 'research' && j.kind !== 'legacy');   // engine work only; legacy history is not counted here
     if (d.key === 'research') d.metrics = [{ label: 'research jobs', value: jobs.filter((j) => j.kind === 'research').length, source: 'engine store' }, { label: 'verified briefs', value: fs.existsSync(path.join(J.dataRoot, 'research', 'briefs')) ? fs.readdirSync(path.join(J.dataRoot, 'research', 'briefs')).length : 0, source: 'data/research/briefs' }];
     else if (d.key === 'design') { const all = lineJobs.flatMap((j) => j.qaDesign || []); d.metrics = [{ label: 'sets made', value: lineJobs.reduce((s, j) => s + new Set(j.images.map((i) => i.n)).size, 0), source: 'jobs/*/set-vN' }, { label: 'QA pass rate', value: all.length ? Math.round(100 * all.filter((p) => p.verdict === 'approved').length / all.length) + '%' : 'n/a', source: 'jobs/*/qa/design-passN.json' }]; }
     else d.metrics = [{ label: 'listings drafted', value: lineJobs.filter((j) => j.listing).length, source: 'jobs/*/outbox/listing.json' }, { label: 'approval queue', value: jobs.filter((j) => j.state === 'approval').length, source: 'approvals' }];
@@ -145,10 +149,14 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     last7days: Array.from({ length: 7 }, (_, i) => { const d = dublinDay(dayStart - (6 - i) * 86400000 + 3600000); return { date: d, usd: r6(ledger.spent.day(d)) }; })
   };
   if (!g.ledgerOk) warnings.push('LEDGER UNREADABLE: every paid call is refused. ' + g.ledgerError);
+  // the legacy station's spend: imported history on its own keys, never counted in the engine's caps
+  spend.legacy = LEG ? { rows: LEG.ledger.length, usd: LEG.ledgerUsd, source: 'data/legacy/ledger.jsonl (imported ' + (LEG.importedAt || '?') + ')', note: 'legacy station spend; not counted in the engine caps' } : null;
+  const legacyConflicts = jobs.filter((j) => j.kind === 'legacy' && j.warnings.length).length;
+  if (legacyConflicts) warnings.push(legacyConflicts + ' legacy job' + (legacyConflicts > 1 ? 's have' : ' has') + ' sources that disagree (tracker vs rejected/), imported as they are; open a job for details');
   if (halted) warnings.unshift('E-STOP ON since ' + new Date(halt.state.at || now).toISOString() + ' (by ' + (halt.state.by || 'unknown') + '): no call can start');
 
   // ---- routines and the calendar (one entry per job, on the day of its latest stage change)
-  const routines = store.listRoutines().map((r) => { const up = r.enabled ? nextRuns(r.schedule, 6, new Date(now)) : []; return { id: r.id, name: r.name, prompt: String(r.input || '').slice(0, 200), schedule: r.schedule, scheduleWords: cronWords(r.schedule) + ' (Dublin)', scheduleDisplay: r.schedule, agentId: r.target, agentName: r.target, dept: null, enabled: r.enabled, state: r.enabled ? 'scheduled' : 'paused', needsOk: !r.enabled, nextRun: up[0] || null, nextRunIsProjection: false, upcoming: up, ghostRuns: r.enabled ? [] : nextRuns(r.schedule, 6, new Date(now)), lastRunAt: r.last_fire_at, lastStatus: r.last_status, lastUsd: 0, live: false, version: r.version, source: 'engine routines' }; });
+  const routines = store.listRoutines().map((r) => { const up = r.enabled ? nextRuns(r.schedule, 6, new Date(now)) : []; return { id: r.id, name: r.name, prompt: String(r.input || '').slice(0, 200), schedule: r.schedule, scheduleWords: cronWords(r.schedule) + ' (Dublin)', scheduleDisplay: r.schedule, agentId: r.target, agentName: r.legacy && /^legacy:agent:/.test(r.target) ? (nameOf[r.target.slice(13)] || r.target.slice(13)) + ' (legacy)' : r.target, dept: null, enabled: r.enabled, state: r.enabled ? 'scheduled' : 'paused', needsOk: !r.enabled, nextRun: up[0] || null, nextRunIsProjection: false, upcoming: up, ghostRuns: r.enabled ? [] : nextRuns(r.schedule, 6, new Date(now)), lastRunAt: r.last_fire_at, lastStatus: r.last_status, lastUsd: 0, live: false, version: r.version, source: 'engine routines' }; });
   const events = [];
   for (const j of jobs) if (j.stageChangedAt) events.push({ date: dublinDay(j.stageChangedAt), at: j.stageChangedAt, kind: 'job', jobId: j.id, title: j.title, stage: j.lane || j.stage, stageLabel: j.lane || j.stageLabel, status: j.status, dept: j.dept, agent: j.agentName, reason: j.statusReason, synthetic: false });
   for (const r of routines) for (const t of r.upcoming) events.push({ date: dublinDay(t), at: t, kind: 'routine', routineId: r.id, title: r.name, dept: null, agent: r.agentName, projected: false });
@@ -165,7 +173,10 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   ];
 
   const lastRow = rows[rows.length - 1];
-  const hub = { label: 'Station memory', notebooks: { entries: 0, byAgent: {}, lastRecalledBy: null, lastRecalledAt: null, source: 'none: agent memory is the prompt and the job folder (owner Q9)' }, ledger: { rows: rows.length, last: lastRow ? { at: lastRow.ts, agent: nameOf[lastRow.agentKey] || lastRow.agentKey, usd: lastRow.usd, model: lastRow.model } : null, source: ledger.label }, recent: [] };
+  // engine agents keep no memory beyond the prompt and the job folder (owner Q9); the notebooks shown are the imported
+  // legacy history, read only
+  const mem = legacyMemory(LEG);
+  const hub = { label: 'Station memory', notebooks: mem ? { entries: mem.entries, byAgent: mem.byAgent, lastRecalledBy: mem.lastRecalledBy, lastRecalledAt: mem.lastRecalledAt, source: mem.source + '; engine agents: none (owner Q9)', legacy: true } : { entries: 0, byAgent: {}, lastRecalledBy: null, lastRecalledAt: null, source: 'none: agent memory is the prompt and the job folder (owner Q9)' }, ledger: { rows: rows.length, last: lastRow ? { at: lastRow.ts, agent: nameOf[lastRow.agentKey] || lastRow.agentKey, usd: lastRow.usd, model: lastRow.model } : null, source: ledger.label }, legacyLedger: LEG ? { rows: LEG.ledger.length, usd: LEG.ledgerUsd, source: 'data/legacy/ledger.jsonl' } : null, recent: mem ? mem.recent : [] };
 
   return {
     generatedAt: now, warnings, errors: [], sourcesRead: 0,

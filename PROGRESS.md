@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 16/10/2026, about 21:05 Irish time (E4 in progress). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 16/10/2026, about 21:15 Irish time (E4 done). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -12,12 +12,53 @@ Last updated: 16/10/2026, about 21:05 Irish time (E4 in progress). Plan: `ENGINE
 | **E3** Port, line and dry run | Done, and **approved by the owner** (16/10/2026). Agent runtime, tools, line orchestrator and package. Job A reaches the approval queue after one QA-DESIGN rework; job B is blocked by originality ("garfield"). Screenshots in `screenshots/e3/01`–`13`. |
 | Post-E3 re-port | Done (16/10/2026). The keyword-source rule was ported at a 3rd moment and the enclosed-background change (packaged products) at a 4th. Dry run re-verified. See below. |
 | Demo mode | Done (16/10/2026). `npm run demo`, presenter view, `npm run demo:record`. Demo hardening done at the start of E4 (see below). |
-| E4 Import | **In progress** (owner go-ahead 16/10/2026). Item 0 (demo hardening) done. Importer built and tested; first import into `data/` reconciled ($8.5000719, 162 rows); second run changed nothing. Next: the legacy rows in the office view, screenshots. |
+| **E4** Legacy import | Done (16/10/2026), awaiting the owner's review. `npm run import-legacy`; the legacy history imported into `data/` and reconciled with the source ($8.5000719, 162 ledger rows); a second run changes nothing. Legacy jobs on the board (Blocked, Rejected, Parked lanes), in the job panel and the calendar; legacy notebooks and ledger in the memory-core viewer. Screenshots in `screenshots/e4/`. See below. |
 | E5 Live UI | Not started |
 | E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### E4 legacy import (16/10/2026)
+
+- **`npm run import-legacy -- --from C:\Users\marks\projects\Virtual-workers`** (`scripts/import-legacy.mjs`; all logic in `src/engine/import/legacy.mjs` and `backup.mjs`), as ENGINE-PLAN.md §7.1 and §7.3 describe:
+  - **Read only on the source.** Every read goes through `openSource().abs()`, which refuses anything outside `station-workspace/` and refuses `.secrets/`, `.env*`, provider keys and `.git/` by name (never opened; listed in the report). The roster is read for its agentId to name pairs only and is not copied. The §7.1 "Not imported" list is skipped and listed.
+  - **Every write through the data jail**, with the engine lock held (an import refuses to run while an engine is on the data root).
+  - **The backup comes first**, every run: `data/.backups/<stamp>/` (the database by SQLite `VACUUM INTO`; ledger, events, import record and the engine's job folders copied; `data/legacy/` hard-linked) with `BACKUP.json`. Restoring means swapping the folder back by hand.
+  - **Staging, then a swap.** The run builds `data/.import-staging-<stamp>/legacy/` starting from what is already imported and merges by source id (ledger `entryId`, run `runId`, listing id, cron id, file path). It then verifies every staged file's sha256, the row counts and the ledger total. If nothing differs, it discards the staging folder. Otherwise it swaps the folder in for `data/legacy/` and upserts the legacy jobs, tracker rows and routines in one transaction; a failed transaction puts the old folder back.
+  - **`data/import/IMPORT.json`**: every source path read, with its size, sha256 and mtime; every imported file with its size and sha256; row counts; refusals; the incident record. Each run also writes `data/import/runs/<stamp>.json` and `.md` (the reconciliation report with workings).
+  - **Legacy rows are tagged.** Ledger and run rows carry `source: "legacy"`; jobs, tracker rows and routines carry `legacy = 1` in the store. Legacy jobs are on the line `legacy:room1-etsy` with `room: etsy-pod`. Routines are imported **disabled** (one was enabled in the source).
+- **Where it lands:** `data/legacy/` (`jobs/<id>/{work,outbox,rejected,package}/`, `research/`, `notebooks/`, `archive/` (transcripts, task briefs), `incidents/`, `routines/`, `tracker/`, `room1-etsy/`, `ledger.jsonl`, `runs.jsonl`, `agents.json`, `jobs.json`) and the store.
+- **Disagreements are not resolved.** Where the tracker and `rejected/` disagree, both are imported as they are. The job's state follows its tracker row, and the disagreement is a warning on the job, so 8 jobs carry one: 7 tracker "blocked" jobs, and the "parked" camping r5, all of which `rejected/` also holds ("pre-originality-gate brief, archived 2026-10-16").
+- **Reconciliation on 16/10/2026** (the source as it stood; it has grown since the plan: 153 to 162 ledger rows, 105 to 108 runs, 97 to 98 task briefs, 6 to 7 drafts):
+
+  | Source | Source | Imported |
+  |---|---|---|
+  | `starnet/ledger.jsonl` | 162 rows, $8.5000719 | 162 rows, $8.5000719 (match) |
+  | `starnet/runs.jsonl` | 108 | 108 |
+  | `tracker/listings.csv` | 11 (7 blocked, 3 rejected_by_owner, 1 parked) | 11 |
+  | `*.notebook.json` | 21 records in 4 files | 21 (memory-core viewer) |
+  | `cron.jobs.json` | 2 | 2, both disabled |
+  | `transcript-history-v2/` | 1,319 rows, 2 files | archive |
+  | `task-briefs.json` | 98 briefs | archive |
+  | job folders | work 13 (160 files), outbox 7 (28), rejected 15 (79), approval-queue 1 (14) | 16 legacy jobs: 7 blocked, 3 rejected_by_owner, 4 rejected, 1 parked, 1 unfinished |
+  | research-lab | 11 files (1 brief, 7 drafts, 1 scouting, 1 rejected, products.json) | `data/legacy/research/` |
+  | `_aborted-trigger-20261015` | 1 folder | incident record |
+
+  **Ledger workings:** every amount is summed as integer nano-dollars (exact). By Dublin day: 14/10 $1.4483402, 15/10 $6.1821201, 16/10 $0.8696117. By model: anthropic/claude-haiku-5.5 $0.7305996, anthropic/claude-sonnet-5.5 $2.0211921, claude-haiku-5-5 $0.8886839, claude-sonnet-5-5 $4.8595964, openai/gpt-5-mini $0.0000000. Each breakdown, and the breakdowns by agent and by job, sums to $8.5000719. Attributed to a job: 131 rows, $8.2075351; unattributed: 31 rows, $0.2925369. A run is attributed only where an artifact path or its title names one known legacy job id. Image cost is not in the legacy rows and stays unknown.
+- **Idempotency:**
+  - Run 1 (20261016T195941264Z) imported everything: 162 ledger rows, 108 runs, 313 files and 29 store rows.
+  - Run 2 (20261016T200005961Z) reported "nothing changed: 0 rows added, 0 rows upserted, 0 files added or changed, 0 store rows inserted or updated". The tree hash of `data/legacy/` and the bytes of IMPORT.json were identical.
+  - Run 3 (after the job record's system label was changed to "legacy station", to keep the old system's name out of the UI) updated the 16 job rows, with before and after values logged, and added 0 rows and 0 files.
+  - Run 4 (20261016T200456338Z) changed nothing again.
+  - Each run took a backup first. A stat of all 2,348 non-secret files in `station-workspace/` before the first run and after the last run shows no file added, removed or changed.
+- **The office on the engine (`data/`, mock provider):**
+  - The board has Blocked (7), Rejected (7) and Parked (1) side by side; the unfinished pngtuber job sits in the design column.
+  - Legacy jobs show a LEGACY tag, their warnings, a "Legacy record" box (each source folder, the tracker status, attributed runs), the legacy runs as hops, QA passes, designs (thumbnails from `data/legacy/`), the listing and the attributed legacy cost.
+  - The memory-core viewer shows the 21 legacy notebook records (read only, never fed to agents, Q9) and the legacy ledger beside the engine's, which is still empty.
+  - Legacy spend is never in the engine's totals, caps or "Today". Department counts and metrics count engine work only.
+- **Screenshots** (`node scripts/screenshots.mjs --engine --out e4`, 1600x1000): `screenshots/e4/01-overview.png`, `02-board.png`, `03-calendar-month.png`, `04-memory-core.png`, `05-legacy-job-panel.png` (outdoors-dad-camping-tee-r5: parked, with its disagreement warning).
+- **Port drift:** none, before and after (all 50 sources match).
 
 ### Demo hardening (E4 item 0, 16/10/2026)
 
@@ -53,7 +94,11 @@ Everything so far ran on the mock provider: $0, with no API keys read.
 The repository was initialised on 16/10/2026 on branch `main`. Each milestone gets a commit.
 
 - `8d55a57`: E1–E3 complete (mock engine, dry run passing)
-- The next commit: the keyword-source re-port and the re-verified dry run, including this file
+- `df26478`: the keyword-source re-port and the re-verified dry run
+- `3a075d8`: demo mode
+- `63e18bd`: demo hardening (E4 item 0)
+- `939385e`: E4 milestone: the importer, backup and tests
+- The next commit: "E4 legacy import" (the office view of the legacy data, screenshots, this file)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -68,11 +113,12 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - **Routines**: `engine.runRoutine` supports only `line:research`. The research line config exists, but no test or dry run covers it.
 - **Live providers** are locked (`ProviderLocked`). The Anthropic SDK is not installed and the effort mapping is not written (E6).
 - **Web search and fetch** return canned text in the mock, and the `anthropic-web` price is unset, so a live web call would be refused (E6).
-- **Legacy import** (transcripts and task-briefs as a read-only archive, Q10) has not been started (E4).
+- **Legacy archive** (Q10): the transcripts and task briefs are imported to `data/legacy/archive/`, but no page shows them yet (E5, if wanted).
+- **Parity check** (§7.2 step 3), which replays every legacy job folder through the ported gates and compares the results: not done in E4.
 
 ## Test status
 
-`npm test`: **175 passed, 0 failed** in 13 suites, after demo mode (16/10/2026, about 20:45 Irish time). Before demo mode it was 168/168, and `npm run port-drift` showed no drift.
+`npm test`: **182 passed, 0 failed** in 14 suites, after E4 (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -121,7 +167,10 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-1. **The owner reviews demo mode** (the video and stills in `screenshots/demo/`).
-2. **E4 Import:** build `import-legacy` into `data/`. It reads `Virtual-workers` only, is idempotent and takes a backup first. Then produce the reconciliation report: counts, and a $ total that reconciles with the source.
+1. **The owner reviews E4**: the reconciliation above, `data/import/runs/*.md`, and the screenshots in `screenshots/e4/`. The build choices to confirm are in DECISIONS.md, under "E4 build record".
+2. **E5 Live UI**, after the owner's go-ahead.
+3. E6 stays blocked on Q1 (billing), Q2 (caps) and Q3/§4.3 (products).
+
+Re-run `npm run import-legacy` at any time to pick up legacy deltas; it backs up first and changes nothing when there is nothing new.
 
 Before each, run `npm run port-drift` and `npm test`, and commit at the milestone.

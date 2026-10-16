@@ -34,7 +34,7 @@ export function createLabels({ container, office, onDept, onHub, onService }) {
       container.appendChild(el); els.depts[d.key] = el; leader('dept:' + d.key);
     }
     const h = s.hub, hub = document.createElement('div'); hub.className = 'hub-card';
-    hub.innerHTML = '<h3>' + esc(h.label.toUpperCase()) + '</h3><div class="row"><span>notebook entries</span><b>' + h.notebooks.entries + '</b></div><div class="row"><span>ledger rows</span><b>' + h.ledger.rows + '</b></div><div class="row"><span>last recalled by</span><b>' + (h.notebooks.lastRecalledBy ? esc(h.notebooks.lastRecalledBy) : '—') + '</b></div>' + (h.notebooks.lastRecalledAt ? '<div class="row sub"><span></span><span>' + esc(when(h.notebooks.lastRecalledAt, s.generatedAt)) + '</span></div>' : '');
+    hub.innerHTML = '<h3>' + esc(h.label.toUpperCase()) + '</h3><div class="row"><span>notebook entries</span><b>' + h.notebooks.entries + '</b></div><div class="row"><span>ledger rows</span><b>' + h.ledger.rows + '</b></div>' + (h.legacyLedger ? '<div class="row"><span>legacy ledger rows</span><b>' + h.legacyLedger.rows + '</b></div>' : '') + '<div class="row"><span>last recalled by</span><b>' + (h.notebooks.lastRecalledBy ? esc(h.notebooks.lastRecalledBy) : '—') + '</b></div>' + (h.notebooks.lastRecalledAt ? '<div class="row sub"><span></span><span>' + esc(when(h.notebooks.lastRecalledAt, s.generatedAt)) + '</span></div>' : '');
     hub.title = 'open the ledger viewer · source: ' + h.notebooks.source + ' + ' + h.ledger.source;
     hub.addEventListener('click', onHub); container.appendChild(hub); els.hub = hub; leader('hub');
     const rack = document.createElement('div'); rack.className = 'lbl rack-lbl';

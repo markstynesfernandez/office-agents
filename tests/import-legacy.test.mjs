@@ -164,3 +164,23 @@ test('import refuses while an engine holds the data root, and refuses a source t
   const inner = path.join(L.root, 'data');
   assert.throws(() => createJail({ dataRoot: inner, extraRoots: [], legacyRoots: [L.root] }), /overlap/);
 });
+
+test('after an import the engine shows the legacy jobs, lanes and memory, and legacy spend never reaches its caps', async (t) => {
+  const { L, J, log } = setup(t);
+  await runImport({ from: L.root, J, log });
+  const { buildEngineSnapshot } = await import('../src/server/engine-model.mjs');
+  const engine = createEngine({ J, log, startScheduler: false });
+  t.after(() => engine.close());
+  const s = buildEngineSnapshot(engine);
+  assert.deepEqual(Object.fromEntries(Object.entries(s.board.lanes).map(([k, v]) => [k, v.length])), { blocked: 1, rejected: 1, parked: 1 });
+  const a = s.jobs.find((j) => j.id === A);
+  assert.equal(a.kind, 'legacy'); assert.equal(a.lane, 'blocked'); assert.equal(a.warnings.length, 1); assert.equal(a.hops.length, 1); assert.equal(a.hops[0].agentId, 'designer');
+  assert.equal(a.costUsd, 0.1234605); assert.ok(a.images.some((i) => i.file === 'work/design-v1.png')); assert.equal(a.qaDesign[0].verdict, 'revise');
+  assert.equal(s.jobs.find((j) => j.id === D).status, 'legacy');
+  // the memory core: legacy notebooks, read only; the engine ledger stays empty and legacy spend is separate
+  assert.equal(s.hub.notebooks.entries, 2); assert.equal(s.hub.notebooks.legacy, true); assert.equal(s.hub.legacyLedger.rows, 4);
+  assert.equal(s.hub.ledger.rows, 0); assert.equal(engine.ledger.totals.rows, 0); assert.equal(s.spend.today.usd, 0); assert.equal(engine.guard.status().spentToday, 0);
+  assert.ok(s.spend.legacy.usd > 0.46 && /not counted in the engine caps/.test(s.spend.legacy.note));
+  assert.equal(s.routines.find((r) => r.id === 'legacy-c1').enabled, false);
+  for (const d of s.departments) assert.deepEqual(d.counts, { doing: 0, next: 0, done: 0 }, 'legacy history is not counted as current work');
+});

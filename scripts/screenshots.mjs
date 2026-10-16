@@ -67,9 +67,48 @@ export function makeViewer({ browser, base, outDir, log, problems, fpsRows, benc
   };
 }
 
+// --engine: the real engine on the station data root (data/, or STATION_DATA_ROOT) on the MOCK provider, as `npm start`
+// runs it, after the legacy import (E4). Five views into screenshots/<--out, default e4>/; no fps bench.
+async function engineMain(arg, headed) {
+  if (process.env.STATION_PROVIDER && process.env.STATION_PROVIDER !== 'mock') throw new Error('engine screenshots run on the mock provider only (STATION_PROVIDER=' + process.env.STATION_PROVIDER + ')');
+  const { createJail } = await import('../src/engine/store/jail.mjs');
+  const { createEngine } = await import('../src/engine/engine.mjs');
+  const { createEngineServer } = await import('../src/server/engine-server.mjs');
+  const outDir = String(arg('--out', 'e4')).replace(/^screenshots[/\\]/, '');
+  fs.mkdirSync(outJail(outDir), { recursive: true });
+  const J = createJail();
+  const log = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-engine', jail: J });
+  const engine = createEngine({ J, log });
+  if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
+  const { server, closeAll } = createEngineServer({ engine, log });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  console.log('station engine for screenshots:', base, '(data root ' + J.dataRoot + ', provider ' + engine.providers.mode + ')');
+  const { browser } = await launch({ headed });
+  const problems = [], files = [];
+  const view = makeViewer({ browser, base, outDir, log, problems, fpsRows: [], fps: false });
+  const legacyJob = arg('--job', '2026-10-14--outdoors-dad-camping-tee-r5');
+  try {
+    files.push(await view('01-overview.png', 'theme=light'));
+    files.push(await view('02-board.png', 'theme=light', async (page) => { await page.keyboard.press('b'); await page.waitForSelector('#board:not(.hidden) .lanes .lane.parked', { timeout: 15000 }); }));
+    files.push(await view('03-calendar-month.png', 'theme=light', async (page) => { await page.evaluate(() => { window.__office.openCalendar(); window.__office.calendar.toggleMode('month'); }); await page.waitForSelector('#calendar .cal-grid', { timeout: 15000 }); }));
+    files.push(await view('04-memory-core.png', 'theme=light', async (page) => { await page.evaluate(() => window.__office.openLedger()); await page.waitForSelector('#ledger-body .ledger-grid', { timeout: 15000 }); await page.waitForTimeout(400); }));
+    files.push(await view('05-legacy-job-panel.png', 'theme=light', async (page) => {
+      await page.evaluate((id) => window.__office.showJob(id), legacyJob);
+      await page.waitForSelector('#sidepanel:not(.hidden) .legbox', { timeout: 15000 });
+      await page.waitForFunction(() => [...document.querySelectorAll('#sidepanel img')].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 30000 });
+    }));
+    console.log('\nScreenshots:\n' + files.join('\n'));
+    if (problems.length) { console.error('\nPage problems:\n' + problems.join('\n')); process.exitCode = 1; }
+  } catch (e) {
+    console.error('screenshot run failed:', e.message); if (problems.length) console.error(problems.join('\n')); process.exitCode = 1;
+  } finally { await browser.close(); closeAll(); server.close(); engine.close(); }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
+  if (argv.includes('--engine')) return engineMain(arg, argv.includes('--headed'));
   const live = argv.includes('--live'), headed = argv.includes('--headed'), noShots = argv.includes('--fps-only');
   const outDir = outJail(String(arg('--out', 'e1')).replace(/^screenshots[/\\]/, ''));
   const benchMs = Number(arg('--bench-ms', 3000));

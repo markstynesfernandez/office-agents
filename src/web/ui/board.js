@@ -1,13 +1,13 @@
 // ui/board.js — jobs by stage, using the line's stage names (the column subtitle names the agent that owns the stage), plus the
 // rejected and blocked lanes. Active jobs show progress; lane jobs show a status pill and the status reason.
-import { esc, money, duration, when, statusPill, synthTag } from './format.js';
+import { esc, money, duration, when, statusPill, synthTag, legacyTag } from './format.js';
 import { PALETTE } from '../config/palette.js';
 
 export function createBoard({ root, onOpenJob }) {
   const body = root.querySelector('#board-body');
   function card(j, agents, now) {
     const a = agents.find((x) => x.id === j.agentId);
-    const head = j.progress != null ? '<span class="pct">' + j.progress + '%</span>' : statusPill(j);
+    const head = (j.progress != null ? '<span class="pct">' + j.progress + '%</span>' : statusPill(j)) + legacyTag(j);
     return '<div class="card' + (j.lane ? ' card-' + j.lane : '') + '" data-id="' + esc(j.id) + '"><div class="top">' + head + synthTag(j) + (j.warnings && j.warnings.length ? '<span class="warn-dot" title="' + esc(j.warnings.join('\n')) + '">⚠</span>' : '') + '</div>'
       + '<div class="t" title="' + esc(j.title + (j.niche ? '\n' + j.niche : '')) + '">' + esc(j.title) + '</div><div class="id">' + esc(j.id) + '</div>'
       + (j.statusReason ? '<div class="r" title="' + esc(j.statusReason) + '">' + esc(j.statusReason) + '</div>' : '')

@@ -13,6 +13,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { send, sendJson, serveStatic } from './index.mjs';
 import { buildEngineSnapshot } from './engine-model.mjs';
+import { loadLegacy } from './legacy-view.mjs';
 import { RESUME_WORD } from '../engine/halt.mjs';
 
 const MAX_BODY = 16 * 1024;
@@ -46,6 +47,22 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     const buf = await sharp(f).resize({ width: 512, height: 512, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
     thumbs.set(key, buf); if (thumbs.size > 300) thumbs.delete(thumbs.keys().next().value);
     return buf;
+  }
+
+  // imported legacy images (data/legacy/jobs/<id>/...), thumbnailed in memory only; the path must stay inside the job folder
+  async function legacyThumb(id, rel) {
+    const key = 'legacy/' + id + '/' + rel; if (thumbs.has(key)) return thumbs.get(key);
+    const base = path.join(engine.J.dataRoot, 'legacy', 'jobs', id), f = path.resolve(base, rel);
+    if (!f.startsWith(base + path.sep) || !fs.existsSync(f)) return null;
+    const { default: sharp } = await import('sharp');
+    const buf = await sharp(f, { limitInputPixels: 40000 * 40000 }).resize({ width: 512, height: 512, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+    thumbs.set(key, buf); if (thumbs.size > 300) thumbs.delete(thumbs.keys().next().value);
+    return buf;
+  }
+  function legacyCost(id) {
+    const L = loadLegacy(engine.J.dataRoot); if (!L) return null;
+    const rows = L.ledger.filter((r) => r.jobId === id);
+    return { totalUsd: Math.round(rows.reduce((s, r) => s + r.usd, 0) * 1e7) / 1e7, rows: rows.length, byKind: { text: rows.length }, mock: false, legacy: true, note: 'legacy ledger rows attributed to this job; image cost not recorded' };
   }
 
   const ACTIONS = {
@@ -84,11 +101,13 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       }
       if (p === '/api/office/health') { const g = engine.guard.status(); return sendJson(res, { ok: true, view: 'engine', provider: engine.providers.mode, halted: engine.halt.isHalted(), ledgerOk: g.ledgerOk, spentToday: g.spentToday, inFlight: g.inFlight, seq: engine.bus.seq, logs: log.counts, uptimeS: Math.round(process.uptime()) }); }
       if (p === '/api/office/snapshot') return sendJson(res, ext && ext.snapshotExtra ? { ...snapshot(url.searchParams.has('fresh')), ...ext.snapshotExtra() } : snapshot(url.searchParams.has('fresh')));
+      if (p === '/api/office/ledger' && url.searchParams.get('source') === 'legacy') { const L = loadLegacy(engine.J.dataRoot); const all = L ? L.ledger : []; const rows = all.slice(-Math.min(500, Number(url.searchParams.get('limit')) || 100)).reverse().map((r) => ({ at: r.ts, agent: r.agentName || r.legacyAgentId, runId: r.runId, jobId: r.jobId, model: r.model, provider: r.provider, kind: r.kind, tokens: r.tokens ?? null, usd: r.usd, legacy: true })); return sendJson(res, { total: all.length, usd: L ? L.ledgerUsd : 0, rows, source: 'data/legacy/ledger.jsonl (imported legacy history; not in the engine caps)' }); }
       if (p === '/api/office/ledger') { const rows = engine.ledger.rows().slice(-Math.min(500, Number(url.searchParams.get('limit')) || 100)).reverse().map((r) => ({ at: r.ts, agent: r.agentKey, runId: r.runId, jobId: r.jobId, model: r.model, provider: r.provider, kind: r.kind, tokens: r.tokens ? r.tokens.in + r.tokens.out : null, usd: r.usd, estimated: !!r.estimated })); return sendJson(res, { total: engine.ledger.totals.rows, rows, source: engine.ledger.label }); }
       let m;
-      if ((m = /^\/api\/office\/jobs\/([^/]+)$/.exec(p))) { const job = snapshot().jobs.find((j) => j.id === m[1]); if (!job) return sendJson(res, { error: 'no such job' }, 404); const cost = job.kind === 'research' ? null : engine.orchestrator.costRecord(job.id); return sendJson(res, { ...job, cost: cost && { totalUsd: cost.totalUsd, rows: cost.rows, byKind: cost.byKind, mock: cost.mock } }); }
+      if ((m = /^\/api\/office\/jobs\/([^/]+)$/.exec(p))) { const job = snapshot().jobs.find((j) => j.id === m[1]); if (!job) return sendJson(res, { error: 'no such job' }, 404); const cost = job.kind === 'research' ? null : job.kind === 'legacy' ? legacyCost(job.id) : engine.orchestrator.costRecord(job.id); return sendJson(res, { ...job, cost: cost && { totalUsd: cost.totalUsd, rows: cost.rows, byKind: cost.byKind, mock: cost.mock } }); }
       if ((m = /^\/api\/office\/agents\/([^/]+)$/.exec(p))) { const s = snapshot(); const a = s.agents.find((x) => x.id === m[1]); if (!a) return sendJson(res, { error: 'no such agent' }, 404); const runs = engine.store.runsOf({ agentKey: a.id, limit: 12 }).map((r) => ({ at: r.ended_at || r.started_at, title: (r.step || '') + ' pass ' + (r.pass || 1) + ' · ' + (r.job_id || ''), reason: r.status === 'done' ? 'done' : r.status, usd: r.usd, tokens: r.tokens_in + r.tokens_out, durationMs: r.ended_at ? r.ended_at - r.started_at : null, failureCode: ['failed', 'cap', 'refused'].includes(r.status) ? r.status : null })); const jobs = a.recentJobs.map((id) => s.jobs.find((j) => j.id === id)).filter(Boolean); return sendJson(res, { ...a, runs, jobs }); }
       if ((m = /^\/api\/office\/image\/job\/([^/]+)\/(set-v\d+)\/([a-z0-9][a-z0-9._-]*\.(?:png|jpg))$/.exec(p))) { const buf = await thumb(m[1], m[2], m[3]); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=60' }) : send(res, 404, 'no such image', 'text/plain'); }
+      if ((m = /^\/api\/office\/image\/legacy\/(\d{4}-\d{2}-\d{2}--[a-z0-9-]+)\/((?:work|package|rejected)\/[a-z0-9][a-z0-9._/-]*\.png)$/.exec(p)) && !m[2].includes('..')) { const buf = await legacyThumb(m[1], m[2]); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=300' }) : send(res, 404, 'no such image', 'text/plain'); }
       if (p.startsWith('/api/')) return sendJson(res, { error: 'unknown route' }, 404);
       return serveStatic(res, p);
     } catch (e) {

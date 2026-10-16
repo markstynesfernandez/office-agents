@@ -253,7 +253,7 @@ export function legacyJobs(S) {
     return {
       id, line: 'legacy:room1-etsy', title: titleFromId(id), product_key: product, state, reason,
       created_at: Number.isFinite(first) ? first : lastChange, updated_at: lastChange, started_at: Number.isFinite(first) ? first : null, ended_at: endedAt,
-      data: { legacy: { system: 'legacy station (StarNet)', room: 'etsy-pod', folder: 'legacy/jobs/' + id + '/', sources: Object.fromEntries(Object.entries(dirs).map(([k, v]) => [k, 'station-workspace/' + v.from + '/'])), tracker: tr ? { status: tr.status, status_reason: tr.status_reason || null, updated_at: tr.updated_at || null, cost_usd: tr.cost_usd || null, qa_design: tr.qa_design || null, qa_listing: tr.qa_listing || null } : null, rejected: rej ? { firstLine: rej.line, at: rej.at } : null, stage, lane, warnings, runs: runs.map((r) => r.runId), ledgerUsd: usdOf(usdNano), niche: (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || (tr && tr.niche) || null } }
+      data: { legacy: { system: 'legacy station', room: 'etsy-pod', folder: 'legacy/jobs/' + id + '/', sources: Object.fromEntries(Object.entries(dirs).map(([k, v]) => [k, 'station-workspace/' + v.from + '/'])), tracker: tr ? { status: tr.status, status_reason: tr.status_reason || null, updated_at: tr.updated_at || null, cost_usd: tr.cost_usd || null, qa_design: tr.qa_design || null, qa_listing: tr.qa_listing || null } : null, rejected: rej ? { firstLine: rej.line, at: rej.at } : null, stage, lane, warnings, runs: runs.map((r) => r.runId), ledgerUsd: usdOf(usdNano), niche: (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || (tr && tr.niche) || null } }
     };
   });
 }
