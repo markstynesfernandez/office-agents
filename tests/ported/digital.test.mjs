@@ -1,4 +1,4 @@
-// PORTED from Virtual-workers/station/tests/digital.test.mjs at 16/10/2026 19:16 Irish time, source sha256 3665e5b952418c8291457ae9344e6b0979386039788f196bd536285d5c0820cd.
+// PORTED from Virtual-workers/station/tests/digital.test.mjs at 16/10/2026 19:58 Irish time (re-ported: it changed after 19:42), source sha256 ba99e6da16a43c4f6ccd5d32622004e652c08503b66b4a8734ff9737fd8487a4.
 //   change: imports point at src/engine/lib
 //   change: job folders are jobs/<id>/ with outbox/ inside
 //   change: each temp room is the data root of a data jail (the ported writers write through it)
@@ -17,7 +17,7 @@ import { formatOf, imageSize, measureFile } from '../../src/engine/lib/digital-f
 import { prepareDigitalSet, pendingSet, runDigitalDesignHook } from '../../src/engine/lib/digital-prep.mjs';
 import { fillDigitalPrices } from '../../src/engine/lib/digital-prices.mjs';
 import { checkPackage } from '../../src/engine/lib/gates.mjs';
-import { demandEvidenceProblems, ownerPrice } from '../../src/engine/lib/demand-evidence.mjs';
+import { demandEvidenceProblems, keywordSourceProblems, ownerPrice } from '../../src/engine/lib/demand-evidence.mjs';
 import { createJail } from '../../src/engine/store/jail.mjs';
 import { useJail } from '../../src/engine/store/active.mjs';
 
@@ -218,4 +218,20 @@ test('demand evidence: owner-recorded evidence (marker line, notes column) is ac
   assert.equal(ownerPrice(brief()), null);
   assert.match(ownerPrice(withPrice('owner price: about EUR 7')).problem, /must read/);
   assert.match(ownerPrice(withPrice('owner price: EUR 12–7 (recorded by owner, 2026-10-16)')).problem, /above its maximum/);
+});
+
+test('keywords: at least 5 sourced phrases (owner Etsy search, or a URL/file listed under ## Sources); unsourced or uncited ones do not count', () => {
+  const SRC = '## Sources\n- https://example.org/kw/bingo — keyword volume\n- station-workspace/research-lab/scouting/scout.md — third-party figures\n';
+  const kw = (lines) => brief() + '## Keywords\n' + lines.join('\n') + '\n\n' + SRC;
+  const five = ['- bingo printable — recorded by owner, 2026-10-16: Etsy search, 1,000+ items', '- party bingo – recorded by owner, 2026-10-16', '- winter bingo — https://example.org/kw/bingo',
+    '- holiday bingo — station-workspace/research-lab/scouting/scout.md (third-party).', '- bingo cards — recorded by owner, 2026-10-16'];
+  const ok = keywordSourceProblems(kw(five)); assert.equal(ok.ok, true, ok.problems.join('; ')); assert.equal(ok.sourced, 5); assert.equal(ok.keywords[1].phrase, 'party bingo');
+  // plus an unsourced extra: still passes (the Evidence Checker removes it), counted as unsourced
+  const extra = keywordSourceProblems(kw([...five, '- bingo game'])); assert.equal(extra.ok, true); assert.equal(extra.keywords.length, 6); assert.equal(extra.sourced, 5);
+  // four sourced fails; a bare list, an undated owner line, and a URL or file not listed under ## Sources do not count
+  assert.match(keywordSourceProblems(kw(five.slice(0, 4))).problems.join(), /4 of 4 keyword\(s\) sourced, needs at least 5/);
+  assert.match(keywordSourceProblems(kw(['- a', '- b', '- c', '- d', '- e', '- f'])).problems.join(), /0 of 6/);
+  for (const bad of ['- bingo cards — recorded by owner', '- bingo cards — https://example.org/other', '- bingo cards — station-workspace/other.md', '- bingo cards (recorded by owner, 2026-10-16)'])
+    assert.match(keywordSourceProblems(kw([...five.slice(0, 4), bad])).problems.join(), /4 of 5/, bad);
+  assert.match(keywordSourceProblems(brief()).problems.join(), /no "## Keywords" section/);
 });

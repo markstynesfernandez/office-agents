@@ -1,4 +1,4 @@
-// PORTED from Virtual-workers/station/scripts/lib/demand-evidence.mjs (the owner's own code) at 16/10/2026 19:16 Irish time, source sha256 0c7cd7b238792a6903a1fd2d3d3a496b91f98cdf546a4fec577142dc0d6b4add.
+// PORTED from Virtual-workers/station/scripts/lib/demand-evidence.mjs (the owner's own code) at 16/10/2026 19:58 Irish time (re-ported: it changed after 19:42), source sha256 2ccf471ac9c3a99ae7ae88d42db9c18d4d7a3460e69c8f4ea90930ae83aff010.
 //   change: none
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // demand-evidence.mjs (lib) — the deterministic check that a research brief carries PROVEN demand (owner, 2026-10-16): the Etsy search
@@ -36,11 +36,32 @@ export function ownerPrice(briefText) {
   return out;
 }
 
-export function evidenceSection(briefText) {
-  const t = String(briefText || '').replace(/\r\n/g, '\n'), i = t.search(/^## Demand evidence\s*$/m);
+const section = (briefText, heading) => {
+  const t = String(briefText || '').replace(/\r\n/g, '\n'), i = t.search(new RegExp('^## ' + heading + '\\s*$', 'm'));
   if (i < 0) return null;
   const rest = t.slice(i).split('\n').slice(1).join('\n'), j = rest.search(/^## /m);
   return j < 0 ? rest : rest.slice(0, j);
+};
+export const evidenceSection = (briefText) => section(briefText, 'Demand evidence');
+
+// KEYWORD SOURCES (owner, 2026-10-16: a brief with fewer than MIN_SOURCED_KEYWORDS sourced keywords fails). One phrase per bullet in
+// "## Keywords": "- <phrase> — <source>" (em or en dash). A source counts if it is an owner Etsy search ("recorded by owner, YYYY-MM-DD")
+// or names a URL or file path that is listed in "## Sources" (the Evidence Checker re-opens those). A bullet without a source is unsourced.
+// Returns { ok, problems[], keywords: [{ phrase, source, sourced }], sourced }.
+export const MIN_SOURCED_KEYWORDS = 5;
+export function keywordSourceProblems(briefText, { min = MIN_SOURCED_KEYWORDS } = {}) {
+  const sec = section(briefText, 'Keywords');
+  if (sec === null) return { ok: false, problems: ['no "## Keywords" section'], keywords: [], sourced: 0 };
+  const refs = (s) => (s.match(/https:\/\/[^\s,;)]+|[\w.-]+(?:\/[\w.-]+)+\.\w+/g) || []).map((r) => r.replace(/[.:]+$/, ''));
+  const listed = new Set(refs(section(briefText, 'Sources') || ''));
+  const keywords = sec.split('\n').filter((l) => /^\s*[-*]\s+\S/.test(l)).map((l) => {
+    const m = /^\s*[-*]\s+(.+?)\s+[—–]\s+(.+)$/.exec(l), phrase = (m ? m[1] : l.replace(/^\s*[-*]\s+/, '')).trim(), source = m ? m[2].trim() : '';
+    const owner = /recorded by owner,\s*\d{4}-\d{2}-\d{2}\b/i.test(source);
+    return { phrase, source, sourced: owner || refs(source).some((r) => listed.has(r)) };
+  });
+  const sourced = keywords.filter((k) => k.sourced).length, problems = [];
+  if (sourced < min) problems.push(sourced + ' of ' + keywords.length + ' keyword(s) sourced, needs at least ' + min + ' ("- <phrase> — <source>": a URL or file listed under ## Sources, or an owner Etsy search "recorded by owner, YYYY-MM-DD")');
+  return { ok: problems.length === 0, problems, keywords, sourced };
 }
 
 const field = (sec, name) => { const m = new RegExp('^' + name + ':[ \\t]*(.*)$', 'mi').exec(sec); return m ? m[1].trim() : null; };

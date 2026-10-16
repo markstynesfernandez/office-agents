@@ -1,4 +1,4 @@
-// PORTED from Virtual-workers/station/scripts/lib/digital-build.mjs (the owner's own code) at 16/10/2026 19:42 Irish time (re-ported: it changed after 19:16), source sha256 263710873d43e4567b2df53dc44515969ea62113528ef4961c46551a973c97d5.
+// PORTED from Virtual-workers/station/scripts/lib/digital-build.mjs (the owner's own code) at 16/10/2026 20:04 Irish time (re-ported: it changed after 19:42), source sha256 b99fcc6fbd3052a25bece1ba74246c14866eb1d9ca2172d9c958a91f9a68ca51.
 //   change: only BUILD_VERSION, zipNameFor, isPackaged, previewDirOf, noticeFor, productFor, buildInputs, buildStatus are ported (read-only)
 //   change: esrganCfg copied in from esrgan.mjs; the build itself (Real-ESRGAN through a child process) is NOT ported: packaged products fail closed
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { config as defaultConfig, sha256, productsFile } from './common.mjs';
 // from esrgan.mjs (same port moment): the upscale settings that are part of a build's key
 const esrganCfg = (cfg = defaultConfig) => ({ method: 'lanczos', nativeScale: 4, model: 'realesrgan-x4plus', binary: null, ...(cfg.upscale || {}) });
-export const BUILD_VERSION = 2;   // bump when the processing changes, so earlier builds are redone
+export const BUILD_VERSION = 3;   // bump when the processing changes, so earlier builds are redone (3: enclosed background made transparent)
 const setDirOf = (roomDir, id, n) => path.join(roomDir, 'jobs', id, 'set-v' + n);
 export const zipNameFor = (id) => String(id).replace(/^\d{4}-\d{2}-\d{2}--/, '') + '.zip';
 export const isPackaged = (product) => !!(product && product.deliverables && product.deliverables.package && product.deliverables.package.kind === 'zip');

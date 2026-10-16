@@ -1,4 +1,4 @@
-// PORTED from Virtual-workers/station/scripts/lib/digital-gate.mjs (the owner's own code) at 16/10/2026 19:42 Irish time (re-ported: it changed after 19:16), source sha256 47e182799c07da47c325369fcb5a5301ed0142d48425a623fb4abb9e1aecdbde.
+// PORTED from Virtual-workers/station/scripts/lib/digital-gate.mjs (the owner's own code) at 16/10/2026 20:04 Irish time (re-ported: it changed after 19:42), source sha256 e833a1740a66ea0d693796a06c9e044b1093fd2b7bba76cfac9304c5022995e9.
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // digital-gate.mjs (lib) — the DIGITAL parts of the package gate (productType "digital"; checkPackage in gates.mjs calls these). Pure reads.
@@ -9,7 +9,8 @@
 //     .etsyFileLimits: files per listing, bytes per file), in a format the station can build and measure, never a font file, and they match
 //     the product spec in products.json (count, format, pixel size); a packaged product delivers ONE zip whose entries are the spec's files
 //     (read back and measured, png/jpg only) and NOTHING else (owner, 2026-10-16: the download is exactly the one zip), every entry the
-//     station built, cleaned up and upscaled (set-vN/build.json); its preview is a listing photo in set-vN/listing/, never in files/;
+//     station built, cleaned up and upscaled (set-vN/build.json), with no enclosed background-like region left (a handle hole that is not
+//     see-through: digital-build.mjs enclosedBackgroundRegions); its preview is a listing photo in set-vN/listing/, never in files/;
 //   - the design notes passed the originality screen (set-vN/originality.json, for the current design.md);
 //   - every asset the set used is in config.digital.assetRegister with commercialUse true and an owner-confirmed status;
 //   - the listing states the deliverables EXACTLY (name, format, pixel size, count), delivery "automatic download", the owner-approved
@@ -72,6 +73,13 @@ export function buildProblems(product, manifest, files, setDir = null, cfg = def
     if (!r) { out.push(e.name + ': not in the build record'); continue; }
     if (!r.output || r.output.sha256 !== e.sha256) { out.push(e.name + ': differs from the file the station built'); continue; }
     if (prep && prep.cleanup && !r.cleanup) out.push(e.name + ': no clean-up record (the AI disclosure says every file is cleaned up)');
+    // enclosed background (owner exception 2026-10-16, the mug's handle hole): the build re-checks every finished file; any enclosed
+    // background-like region left (opaque near-white inside a closed shape) is flagged, whatever its outline share
+    if (prep && prep.cleanup && r.cleanup) {
+      const enc = r.cleanup.enclosed, left = enc && Array.isArray(enc.remainingAfterBuild) ? enc.remainingAfterBuild : null;
+      if (!left) out.push(e.name + ': no enclosed-transparency check in the build record (built before it existed: rebuild the set)');
+      else if (left.length) out.push(e.name + ': ' + left.length + ' enclosed region(s) of background-like pixels, opaque near-white inside a closed shape (content px x,y,w,h: ' + left.map((x) => x.box.join(',')).join('; ') + '): a hole that should be see-through? Owner check; make it transparent or redraw');
+    }
     if (prep && prep.upscale && (!r.upscale || r.upscale.method !== prep.upscale)) out.push(e.name + ': upscaled with ' + ((r.upscale && r.upscale.method) || 'nothing') + ', not ' + prep.upscale + ' as the product spec requires');
   }
   if (setDir && product.deliverables.package && product.deliverables.package.preview) {

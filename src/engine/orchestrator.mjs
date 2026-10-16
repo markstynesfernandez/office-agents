@@ -71,7 +71,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (reasons.length) { log.warn('intake refused a brief', { id, reasons, by }); return { ok: false, id, reasons }; }
     const job = store.tx(() => {
       const j = store.insertJob({ id, line, kind: 'line', title: titleOf(id), product_key: chk.key, state: 'queued', step: L.start, data: { createdBy: by, brief: 'jobs/' + id + '/brief.md' } });
-      const sid = store.openStage(id, 'intake', 1); store.closeStage(sid, 'done', 'brief checked: demand evidence, product, originality, image policy, price');
+      const sid = store.openStage(id, 'intake', 1); store.closeStage(sid, 'done', 'brief checked: demand evidence, keyword sources, product, originality, image policy, price');
       return j;
     });
     J.put(path.join(jobDir(id), 'brief.md'), t);

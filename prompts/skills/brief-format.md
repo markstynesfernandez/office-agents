@@ -24,7 +24,8 @@ Who buys it, for what use (self / gift / their own projects), the occasion. No r
 (exactly as the DEMAND EVIDENCE skill sets out: search phrase, checked date, search URL, competitor count, saturation, top-5 table)
 
 ## Keywords
-5–13 search phrases buyers use. Plain words only — no brands, characters, teams, artists.
+5–13 search phrases buyers use, one per line: `- <phrase> — <source>`. Plain words only — no brands, characters, teams, artists.
+Source = a URL or file listed under ## Sources that shows the phrase in use (`recorded by owner, YYYY-MM-DD` = the owner's own Etsy search; only the owner writes it). Under 5 sourced phrases = the brief fails.
 
 ## Price range
 The range of the top-5 prices, in USD, e.g. "USD 4.99–9.50". Cite the Etsy listing URLs.

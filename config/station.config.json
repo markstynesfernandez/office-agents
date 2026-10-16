@@ -1462,6 +1462,8 @@
         "alphaFloor": 12,
         "alphaSolid": 244,
         "speckMaxPx": 48,
+        "enclosed": { "minLum": 240, "maxChroma": 24, "minRegionPx": 400, "minWidthPx": 12, "ringPx": 4, "outlineMaxLum": 110, "minOutlineShare": 0.5, "fringePx": 3, "fringeMaxDist": 40 },
+        "enclosedNote": "owner exception 2026-10-16 (the mug's handle hole was opaque off-white): first, an ENCLOSED region of opaque (alpha >= 128), light (luminance >= minLum) and nearly grey (max - min channel <= maxChroma) pixels, solid (>= minRegionPx, average width >= minWidthPx) with no clear pixel or image edge within ringPx, whose ring is at least minOutlineShare outline-dark (luminance <= outlineMaxLum), is made transparent; its anti-aliased edge within fringePx is unmixed into the outline colour. Calibrated on the mug: hole RGB 254,249,237 (luminance 249, chroma 17), body 255,237,193 (237, 62), steam fill 255,242,210 (chroma 45). The finished file is re-checked with the same colour and size thresholds at any outline share; the package gate refuses a file with one left. A genuinely white, outlined part (paper, eye whites) would also be cleared: the review images show it.",
         "note": "at the generator's size: alpha below alphaFloor -> fully clear (faint haze and fringe); alpha at or above alphaSolid -> fully solid; separate opaque specks of speckMaxPx pixels or fewer removed; colour under fully clear pixels zeroed; then trimmed to the artwork. alphaFloor is applied again after the upscale (resampling leaves faint ringing)."
       },
       "paddingPct": 6,
