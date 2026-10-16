@@ -6,22 +6,39 @@ starnetos.com. The StarNet name, logo, artwork and sprites are not licensed and 
 
 ## 3D assets
 
-All geometry is generated procedurally in Three.js at runtime (`src/web/scene/office.js`). No model files, textures
-or sprite sheets are bundled. Kenney's CC0 kits remain an allowed option for later and would be recorded here.
+All geometry is generated procedurally in Three.js at runtime and every texture is drawn with the 2D canvas API at
+start-up (`src/web/scene/`). No model files, image textures or sprite sheets are bundled, so there is no third-party
+asset licence file to ship. Kenney's CC0 kits remain an allowed option; Redesign R1 did not use them (procedural gave
+the control over instancing and merging that the frame budget needed, and no download or archive was involved). If a
+kit is added later, it is recorded here with its version, source URL and licence file in the repo.
 
-| Asset | Made with | Source / licence |
-|-------|-----------|------------------|
-| Department platforms (tinted top, darker bevelled base, rim line), walkways, services-rack platform, hub plinth | `RoundedBoxGeometry`, `CylinderGeometry`, `ShapeGeometry`, merged with `BufferGeometryUtils.mergeGeometries` into one vertex-coloured mesh | procedural, this project |
-| Desk tops, legs, chairs, monitor bodies, glass dividers | `RoundedBoxGeometry`, `CylinderGeometry`, instanced (`InstancedMesh`) | procedural, this project |
-| Workers (body, head, arms) and status lights | `CapsuleGeometry`, `SphereGeometry`, `RoundedBoxGeometry`, instanced | procedural, this project |
-| Plants | `CylinderGeometry` + merged `IcosahedronGeometry` leaves, instanced | procedural, this project |
-| Memory core (hub) | `OctahedronGeometry` crystal, `TorusGeometry` ring, radial-gradient `CanvasTexture` glow sprite | procedural, this project |
-| Services rack terminals, screens and status lights | `RoundedBoxGeometry`, `PlaneGeometry`, `SphereGeometry`, instanced | procedural, this project |
-| Monitor screens | status-colour glow at overview; `CanvasTexture` drawn with the 2D canvas API when zoomed in (`src/web/scene/monitor.js`) | procedural, this project |
-| Backdrop gradient, platform drop-shadow blobs | small `CanvasTexture`s (gradient / blurred rounded rectangle) | procedural, this project |
-| Activity lines | `QuadraticBezierCurve3` + `LineDashedMaterial` | procedural, this project |
+**Mood references (not assets).** `design-refs/01-main.png` to `05.png` are other people's renders, kept locally as mood
+references only and ignored by git. Nothing was traced or copied from them: no layout, model, artwork or texture.
 
-Palette: `src/web/config/palette.js` (own choice of muted pastels; one accent per department; light and dark themes).
+**Redesign R1 (16/10/2026).** All entries below are procedural and made for this project; licence: this project.
+
+| Asset | Made with | Where |
+|-------|-----------|-------|
+| Floor plan: three cutaway department rooms, lounge, server closet, atrium | own layout (`computeLayout`) | `scene/layout.js` |
+| Floor slab, back walls with caps, baseboards and cut ends, low closet partition | `BoxGeometry`, merged per room into one vertex-coloured mesh | `scene/rooms.js` |
+| Wood plank floors, atrium stone tiles | `CanvasTexture`s drawn from a seeded generator, planar UVs | `scene/textures.js` |
+| Library wall (bookcase, books, binders with blank label patches, flat stacks) | boxes; sizes and colours from a seeded generator; no text or titles | `scene/rooms.js` |
+| Mood board, whiteboard, framed pictures | one canvas atlas: seeded abstract compositions (circles, bands, blocks, arcs), colour swatches, wavy lines in place of writing; no text; not copies of any artwork | `scene/textures.js` |
+| Reading nook (armchair, arc lamp, side table), credenza, lockers, wall shelves with objects | boxes, `RoundedBoxGeometry`, cylinders, cones | `scene/rooms.js` |
+| Lounge: two sofas, two armchairs, coffee table, rug, arc lamp | `RoundedBoxGeometry`, boxes, cylinders | `scene/rooms.js` |
+| LED strips (emissive lines) and their soft glow (additive quads), lamp light pools | boxes; a canvas glow atlas (radial pool, vertical wash) | `scene/rooms.js`, `scene/textures.js` |
+| Desks (wood top, dark metal frame, L-shaped return), monitors, keyboards, desk lamps, office chairs | `RoundedBoxGeometry` (one bevel segment), cylinders, cones; instanced (`InstancedMesh`) | `scene/office.js` |
+| People (body, head, arms, legs), soft blob shadows | `CapsuleGeometry`, `SphereGeometry`, `RoundedBoxGeometry`, a radial canvas texture; instanced | `scene/office.js` |
+| Plants (tall and small) | cylinders + merged `IcosahedronGeometry` leaves; instanced | `scene/office.js` |
+| Server cabinets with status lights and LED blocks | `RoundedBoxGeometry`, planes, spheres; instanced | `scene/office.js`, `scene/rooms.js` |
+| Memory core | `OctahedronGeometry` crystal, `TorusGeometry` ring, radial-gradient glow sprite, octagonal plinth | `scene/office.js`, `scene/rooms.js` |
+| Monitor screens | status-colour glow at overview; `CanvasTexture` text when zoomed in or selected | `scene/monitor.js` |
+| Slab drop shadow | a blurred rounded rectangle on a canvas | `scene/office.js` |
+| Backdrop | a CSS linear gradient behind the transparent canvas (colours from the palette) | `scene/office.js` |
+| Activity lines | `QuadraticBezierCurve3` + `LineDashedMaterial` | `scene/office.js` |
+
+Palette: `src/web/config/palette.js` (own choice; one accent per department used as a soft wall tint and on the cards;
+light and dark themes; one warm accent in dark mode, shared with the UI's `--accent` in `src/web/styles.css`).
 
 ## Fonts
 

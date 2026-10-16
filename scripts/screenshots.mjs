@@ -137,7 +137,7 @@ async function main() {
         ['01-overview-light.png', 'theme=light', null, ''],
         ['02-overview-dark.png', 'theme=dark', null, ''],
         ['03-research-room.png', 'theme=dark', room('research', 1.9), '(zoomed)'],
-        ['04-design-room.png', 'theme=dark', room('design', 2.0), '(zoomed)'],
+        ['04-design-room.png', 'theme=dark', room('design', 2.3), '(zoomed)'],
         ['05-office-room.png', 'theme=dark', room('office', 1.8), '(zoomed)'],
         ['06-lounge-idle.png', 'theme=dark', async (page) => {
           await page.evaluate(() => { const o = window.__office.office; o.focus(o.anchors.lounge, 2.3); });
@@ -153,6 +153,22 @@ async function main() {
         ['08-board.png', 'theme=light', async (page) => { await page.keyboard.press('b'); await page.waitForSelector('#board:not(.hidden) .lanes', { timeout: 15000 }); }, '(scene behind the board overlay)']
       ];
       for (const [name, query, act, note] of R1) if (want(name)) files.push(await view(name, query, act, note));
+      // fps while people walk (animation on): every idle agent is set to working on the page, so they all walk from the
+      // lounge to their desks during the bench (full quality, camera still)
+      if (want('walk')) {
+        const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+        page.on('pageerror', (e) => problems.push('walk pageerror: ' + e.message));
+        try {
+          await page.goto(base + '/?theme=dark', { waitUntil: 'load', timeout: 60000 });
+          await page.waitForFunction(() => window.__office && window.__office.ready(), null, { timeout: 60000 });
+          await settle(page); await page.waitForTimeout(500);
+          const n = await page.evaluate(() => { const s = structuredClone(window.__office.snapshot()); let k = 0; for (const a of s.agents) if (a.status === 'idle') { a.status = 'working'; k++; } window.__office.office.setData(s); return k; });
+          const full = await page.evaluate((ms) => window.__office.bench(ms, { move: false }), benchMs);
+          const still = await page.evaluate(() => window.__office.stats().walking);
+          fpsRows.push({ view: 'walk (overview, dark, ' + n + ' agents walking lounge to desk)', moving: full, full, note: 'animation on; ' + still + ' still walking at the end of the bench' });
+          console.log('  fps walk (' + n + ' walking)'.padEnd(30), 'full quality', String(full.fps).padStart(6), '| avg', full.avgFrameMs + ' ms p95', full.p95FrameMs + ' ms');
+        } finally { await page.close(); }
+      }
     } else {
     files.push(await view('01-overview.png', 'theme=light'));
     files.push(await view('02-desk-panel.png', 'theme=light', async (page) => {

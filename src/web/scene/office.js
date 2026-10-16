@@ -35,7 +35,7 @@ const WALK_SPEED = 2.9;                // world units per second
 const SUN_POS = new THREE.Vector3(20, 30, 3);
 const CORE_Y = FLOOR + 2.65;           // memory core crystal centre
 
-const rbox = (w, h, d, r = 0.08, seg = 2) => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, Math.min(w, h, d) / 2));
+const rbox = (w, h, d, r = 0.08, seg = 1) => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, Math.min(w, h, d) / 2));   // one bevel segment: furniture is small on screen
 const std = (color, opts = {}) => new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.82, metalness: 0.02, ...opts });
 const clean = (g) => { const n = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(n.attributes)) if (k !== 'position' && k !== 'normal') n.deleteAttribute(k); return n; };
 const merge = (list) => mergeGeometries(list.map(clean));
@@ -63,18 +63,28 @@ class MSAARenderPass extends Pass {
 // GTAO at half resolution: the AO and its normal/depth pre-pass run at half size, the blend upsamples onto the full frame.
 // Overlays (glows, blob shadows, selection ring, activity lines) are hidden during its normal/depth pre-pass so they
 // cannot create AO halos; they are already in the frame from the main render pass.
+// The AO is multiplied straight onto the frame in the read buffer (no swap), which saves the full-screen copy GTAOPass's
+// default output makes first (~1 ms a frame on the iGPU).
 class HalfResGTAOPass extends GTAOPass {
+  constructor(...a) { super(...a); this.needsSwap = false; }
   setSize(w, h) { super.setSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2))); }
   render(renderer, writeBuffer, readBuffer, dt, mask) {
     const hidden = (this.hideDuringAO ? this.hideDuringAO() : []).filter((o) => o && o.visible);
     for (const o of hidden) o.visible = false;
-    try { super.render(renderer, writeBuffer, readBuffer, dt, mask); } finally { for (const o of hidden) o.visible = true; }
+    const output = this.output; this.output = GTAOPass.OUTPUT.Off;          // AO + denoise only
+    try { super.render(renderer, writeBuffer, readBuffer, dt, mask); } finally { this.output = output; for (const o of hidden) o.visible = true; }
+    this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
+    this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
+    this._renderPass(renderer, this.blendMaterial, readBuffer);
   }
 }
 
 export function createOffice({ canvas, theme = 'light', onPick = () => {}, options = {} }) {
   const P = () => PALETTE[theme];
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
+  // the canvas is transparent where nothing is drawn: the backdrop gradient is the canvas's CSS background, so the
+  // browser composites it (premultiplied alpha) instead of the GPU filling a full-screen plane in the MSAA target
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance', stencil: false });
+  renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;      // soft edges via shadow.radius
@@ -90,12 +100,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const view = { target: HOME.clone(), zoom: 1, wantTarget: HOME.clone(), wantZoom: 1, frustumH: 29, ease: 0.0005 };   // ease: fraction left after 1 s (the presenter tour uses a gentler one)
   const bounds = { minX: -22, maxX: 20, minZ: -16, maxZ: 18, minZoom: 0.55, maxZoom: 4.2 };
 
-  // ---- backdrop: soft vertical gradient on a camera-attached plane (always fills the view)
-  const bgCanvas = document.createElement('canvas'); bgCanvas.width = 4; bgCanvas.height = 256;
-  const bgTex = new THREE.CanvasTexture(bgCanvas); bgTex.colorSpace = THREE.SRGBColorSpace;
-  const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshBasicMaterial({ map: bgTex, depthWrite: false, toneMapped: false }));
-  backdrop.position.set(0, 0, -150); backdrop.renderOrder = -10; camera.add(backdrop);
-  function paintBackdrop() { const g = bgCanvas.getContext('2d'); const grad = g.createLinearGradient(0, 0, 0, 256); grad.addColorStop(0, P().background[0]); grad.addColorStop(1, P().background[1]); g.fillStyle = grad; g.fillRect(0, 0, 4, 256); bgTex.needsUpdate = true; }
+  // ---- backdrop: a soft vertical gradient behind the transparent canvas (CSS)
+  function paintBackdrop() { canvas.style.background = 'linear-gradient(' + P().background[0] + ', ' + P().background[1] + ')'; }
 
   // ---- lights: hemisphere + one sun from the right-hand side (soft daylight, baked shadows)
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1); scene.add(hemi);
@@ -106,9 +112,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.025; sun.shadow.radius = 4;
   scene.add(sun); scene.add(sun.target);
 
-  // ---- ground: an invisible shadow catcher round the slab
-  const groundMat = new THREE.ShadowMaterial({ opacity: 0.16 });
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), groundMat); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  // ---- ground: a soft drop shadow under the slab, thrown away from the sun (a full-screen shadow catcher cost ~2 ms a
+  // frame on the iGPU); people get small round blobs (they cast no shadow into the baked map)
+  const dropCanvas = document.createElement('canvas'); dropCanvas.width = dropCanvas.height = 128;
+  { const g = dropCanvas.getContext('2d'); g.filter = 'blur(10px)'; g.fillStyle = '#000'; g.beginPath(); g.roundRect(18, 18, 92, 92, 6); g.fill(); }
+  const dropMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(dropCanvas), color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false });
+  const drop = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), dropMat); drop.renderOrder = -1; scene.add(drop);
   const blobCanvas = document.createElement('canvas'); blobCanvas.width = blobCanvas.height = 64;
   { const g = blobCanvas.getContext('2d'); const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(0,0,0,1)'); r.addColorStop(0.5, 'rgba(0,0,0,0.55)'); r.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); }
   const blobMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blobCanvas), color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false });
@@ -116,10 +125,10 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // ---- textures and materials (kept so the theme can recolour them)
   const TX = { wood: woodTexture(), tile: tileTexture(), glow: glowTexture(), atlas: atlasTexture() };
   const M = {
-    static: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.0 }),
-    wood: new THREE.MeshStandardMaterial({ map: TX.wood, roughness: 0.62, metalness: 0.0 }),
-    tile: new THREE.MeshStandardMaterial({ map: TX.tile, roughness: 0.78, metalness: 0.0 }),
-    decal: new THREE.MeshStandardMaterial({ map: TX.atlas, roughness: 0.92, metalness: 0.0 }),
+    static: std('#fff', { vertexColors: true, roughness: 0.86, metalness: 0 }),
+    wood: std('#fff', { map: TX.wood, roughness: 0.62, metalness: 0 }),
+    tile: std('#fff', { map: TX.tile, roughness: 0.78, metalness: 0 }),
+    decal: std('#fff', { map: TX.atlas, roughness: 0.92, metalness: 0 }),
     emissive: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
     glow: new THREE.MeshBasicMaterial({ map: TX.glow, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     glowInst: new THREE.MeshBasicMaterial({ map: TX.glow, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
@@ -193,7 +202,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // ---- instanced furniture, people, plants, server cabinets (rebuilt when the structure changes)
   function makeInst(name, geo, material, count, { shadow = true, receive = false } = {}) {
     if (inst[name]) { world.remove(inst[name]); inst[name].dispose(); }
-    const m = new THREE.InstancedMesh(geo, material, Math.max(1, count)); m.count = count; m.castShadow = shadow; m.receiveShadow = receive; m.frustumCulled = false; world.add(m); inst[name] = m; return m;
+    const m = new THREE.InstancedMesh(geo, material, Math.max(1, count)); m.count = count; m.name = name; m.castShadow = shadow; m.receiveShadow = receive; m.frustumCulled = false; world.add(m); inst[name] = m; return m;
   }
   function setInst(m, i, x, y, z, ry = 0, rx = 0, s = 1, rz = 0) { dummy.position.set(x, y, z); dummy.rotation.set(rx, ry, rz, 'YXZ'); dummy.scale.setScalar(s); dummy.updateMatrix(); m.setMatrixAt(i, dummy.matrix); }
 
@@ -327,7 +336,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
           setInst(limbs, k * 4 + j * 2, ...at(side * 0.11, hs + 0.04, -0.19), yaw, Math.PI / 2);        // thigh, forward
           setInst(limbs, k * 4 + j * 2 + 1, ...at(side * 0.11, hs - 0.2, -0.38), yaw, 0.08);            // shin, down
           if (mode === 'desk') { const lift = animate && working ? Math.abs(side < 0 ? Math.sin(t * 7 + w.phase) : Math.cos(t * 7 + w.phase)) * 0.05 : 0; setInst(arms, k * 2 + j, ...at(side * 0.2, hs + 0.56 + lift + bob, -0.15), yaw, -0.25); }
-          else setInst(arms, k * 2 + j, ...at(side * 0.25, hs + 0.42 + bob, -0.12), yaw, Math.PI / 2 - 0.75);
+          else setInst(arms, k * 2 + j, ...at(side * 0.26, hs + 0.36 + bob, -0.08), yaw, Math.PI / 2 - 0.3);   // resting by the sides
         }
       }
       setInst(blobs, k, x, PT + 0.012, z, 0, 0, mode === 'walk' ? 0.85 : 1.1);
@@ -381,6 +390,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       L = computeLayout(depts, snap.services);
       if (L.dropped.length) console.warn('office: only three department rooms are drawn; not drawn:', L.dropped.join(', '));
       buildStatic(); buildFurniture(snap); buildServices(snap.services);
+      const b = L.base; drop.scale.set(b.w * 1.2, 1, b.d * 1.2); drop.position.set(b.cx - 0.6, 0.004, b.cz + 0.2);
       renderer.shadowMap.needsUpdate = true;
     }
     for (const w of workers) { const a = snap.agents.find((x) => x.id === w.agentId); if (a) { w.status = a.status; inst.light.setColorAt(w.i, new THREE.Color(PALETTE.status[a.status] || PALETTE.status.idle)); } }
@@ -403,7 +413,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     M.potTall.color.set(p.plantPotTall); M.potSmall.color.set(p.plantPot); M.leafTall.color.set(p.plantLeafTall); M.leafSmall.color.set(p.plantLeaf);
     M.head.color.set(p.worker); M.trousers.color.set(p.trousers); M.terminal.color.set(p.terminal);
     M.crystal.emissive.set(p.hubCore); M.coreRing.color.set(p.hubCore); glow.material.color.set(p.hubCore);
-    groundMat.opacity = p.shadowOpacity; blobMat.opacity = p.blobOpacity;
+    dropMat.opacity = p.shadowOpacity * 2; blobMat.opacity = p.blobOpacity;
     hemi.color.set(p.hemiSky); hemi.groundColor.set(p.hemiGround); hemi.intensity = p.hemiIntensity; sun.intensity = p.sunIntensity; sun.color.set(p.sunColour);
     renderer.toneMappingExposure = p.exposure;
     // dark mode: LED washes, lamp and screen pools; light mode: none of them (LED strips read as plain profiles)
@@ -444,11 +454,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       try {
         gtao = new HalfResGTAOPass(scene, camera, Math.round(w / 2), Math.round(h / 2));
         gtao.output = GTAOPass.OUTPUT.Default;
-        const aq = options.aoQuality || { samples: 8, pdSamples: 8, rings: 2 };
+        const aq = options.aoQuality || { samples: 6, pdSamples: 4, rings: 1 };   // R1: 8/8/2 -> 6/4/1 (frame budget; looks the same at this scale)
         gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1, thickness: 1, scale: 1, samples: aq.samples, distanceFallOff: 1, screenSpaceRadius: false });
         gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: aq.rings, samples: aq.pdSamples });
         gtao.blendIntensity = P().aoBlend;
-        gtao.hideDuringAO = () => [glow, glowMesh, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines];
+        // left out of the AO pre-pass: overlays (they would make halos) and small details that gain nothing from AO
+        gtao.hideDuringAO = () => [glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
         composer.addPass(gtao);
       } catch (e) { console.warn('GTAO unavailable, continuing without AO', e); gtao = null; }
     }

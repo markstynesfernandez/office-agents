@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 16/10/2026, about 21:15 Irish time (E4 done). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 16/10/2026, about 22:10 Irish time (Redesign R1 done, awaiting review). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -13,12 +13,38 @@ Last updated: 16/10/2026, about 21:15 Irish time (E4 done). Plan: `ENGINE-PLAN.m
 | Post-E3 re-port | Done (16/10/2026). The keyword-source rule was ported at a 3rd moment and the enclosed-background change (packaged products) at a 4th. Dry run re-verified. See below. |
 | Demo mode | Done (16/10/2026). `npm run demo`, presenter view, `npm run demo:record`. Demo hardening done at the start of E4 (see below). |
 | **E4** Legacy import | Done (16/10/2026), awaiting the owner's review. `npm run import-legacy`; the legacy history imported into `data/` and reconciled with the source ($8.5000719, 162 ledger rows); a second run changes nothing. Legacy jobs on the board (Blocked, Rejected, Parked lanes), in the job panel and the calendar; legacy notebooks and ledger in the memory-core viewer. Screenshots in `screenshots/e4/`. See below. |
-| **Redesign R1** Office scene look | In progress (16/10/2026): cutaway rooms, lounge walking, light and dark looks built; captures, fps and docs next. |
+| **Redesign R1** Office scene look | Done (16/10/2026), awaiting the owner's review. Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
 | E5 Live UI | Not started |
 | E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### Redesign R1: office scene look (16/10/2026)
+
+- **Scene** (`src/web/scene/layout.js`, `rooms.js`, `textures.js`, `office.js`): one floor slab with three cutaway department rooms (two back walls, open front, no ceiling): Research at the back (library wall with procedural spines, no titles; reading nook with lamp), Design on the right (pinboard, framed procedural abstract art, credenza), Office on the left (desk floor, one rug per desk row, lockers, whiteboard). Desks have wood tops on dark metal legs, monitors, lamps and chairs; the first desk column is L-shaped. Plants in every room. A lounge in the front corner, the memory core in a central atrium, and the services rack as a small server closet with status lights.
+- **Walking:** idle agents walk to lounge seat k and sit; when their status leaves idle they walk back. Paths are precomputed polylines (desk, lane, aisle, a ring round the core, the lounge gate, the seat), tweened at 2.9 units/s: no physics, no pathfinding library. `tests/scene-layout.test.mjs` checks the paths miss every obstacle and that no wall hides a desk, chair, seat, the core or a cabinet.
+- **Light and dark:** light has warm white walls with a soft department tint, light wood and daylight from one side; dark has charcoal walls, warm wood, warm LED strips (emissive lines plus additive glow quads, no bloom), glowing monitors and lamps, and one warm accent (`#e9a95c`) shared with the UI.
+- **Kept working:** department cards, desk labels, leader lines, collision avoidance and the monitor status glow are unchanged.
+- **Assets:** all procedural Three.js and canvas textures; no kit, so no third-party licence file (ASSETS.md, R1 table).
+- **fps** (`screenshots/redesign-r1/fps-headed.json`; headed Chrome, Intel UHD iGPU, 1600x1000, full quality = camera still, AO on):
+
+| View | Camera moving | Full quality | Frame avg / p95 |
+|---|---|---|---|
+| 01 overview light | 80.0 | 69.8 | 14.19 / 16.7 ms |
+| 02 overview dark | 79.2 | 69.1 | 14.37 / 16.7 ms |
+| 03 research room (zoomed) | 70.5 | 63.1 | 15.73 / 18.1 ms |
+| 04 design room (zoomed) | 76.7 | 68.2 | 14.55 / 16.9 ms |
+| 05 office room (zoomed) | 75.1 | 65.2 | 15.19 / 17.6 ms |
+| 06 lounge, idle agents seated (zoomed) | 79.7 | 68.8 | 14.45 / 16.7 ms |
+| 07 desk panel | 82.0 | 71.8 | 13.84 / 16 ms |
+| 08 board (scene paused behind it) | 165.2 | 165.2 | 6.05 / 6.2 ms |
+| walk: overview dark, 5 agents walking | 64.5 | 64.5 | 15.57 / 17.5 ms |
+
+- **Cut for performance** (first build: 53 to 58 fps, 48 while walking; details in DECISIONS.md, "Redesign R1 build record"): the full-screen backdrop and ground shadow catcher (now a CSS gradient and one drop-shadow quad), the AO frame copy, AO quality 8/8/2 to 6/4/1, two-segment bevels to one, small details left out of the AO pre-pass, and people casting into the baked shadow map (blob shadows instead).
+- **Captures:** `screenshots/redesign-r1/01`–`08` plus `fps-headed.json`; `npm run demo:record` re-run on the final code (`screenshots/demo/station-demo.webm` and 4 stills, problems: none). `screenshots/demo/station-demo.mp4` is an older file from 20:37 and was not remade (no pinned MP4 encoder).
+
+- **Files changed in R1:** new `src/web/scene/layout.js`, `rooms.js`, `textures.js` and `tests/scene-layout.test.mjs`; rewritten `src/web/scene/office.js` and `src/web/config/palette.js`; changed `src/web/styles.css` (charcoal dark tokens, warm accent), `scripts/screenshots.mjs` (`--set r1`, `--only`, the walk fps row), `.gitignore`, `ASSETS.md`, `DECISIONS.md`, `PROGRESS.md`; `fixtures/engine/` now committed.
 
 ### E4 legacy import (16/10/2026)
 
@@ -99,7 +125,10 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `3a075d8`: demo mode
 - `63e18bd`: demo hardening (E4 item 0)
 - `939385e`: E4 milestone: the importer, backup and tests
-- The next commit: "E4 legacy import" (the office view of the legacy data, screenshots, this file)
+- `5db312e`: E4 legacy import
+- `8f307ce`: Housekeeping (R1 item 0)
+- `cd74ce6`: R1 milestone: cutaway rooms, lounge walking, warm dark mode
+- The next commit: "Redesign R1" (performance cuts, captures, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -119,7 +148,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **182 passed, 0 failed** in 14 suites, after E4 (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **186 passed, 0 failed**, after Redesign R1 (16/10/2026, about 22:00 Irish time); new: `scene-layout` 4/4. After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -168,7 +197,7 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-1. **The owner reviews E4**: the reconciliation above, `data/import/runs/*.md`, and the screenshots in `screenshots/e4/`. The build choices to confirm are in DECISIONS.md, under "E4 build record".
+1. **The owner reviews Redesign R1**: `screenshots/redesign-r1/`, the demo video, and the choices in DECISIONS.md under "Redesign R1 build record" (room order, idle-only lounge, capture themes, performance cuts). E4 is also still awaiting review (DECISIONS.md, "E4 build record"; `screenshots/e4/`).
 2. **E5 Live UI**, after the owner's go-ahead.
 3. E6 stays blocked on Q1 (billing), Q2 (caps) and Q3/§4.3 (products).
 

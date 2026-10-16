@@ -234,3 +234,20 @@ Choices made inside ENGINE-PLAN.md §7.1, §7.3 and §8 and the owner's E4 instr
 - **Imported history is never dropped.** A key or file the source no longer has stays imported, and the run report lists it. A changed key is upserted, and its before and after values are logged.
 - **Not imported, as listed in §7.1.** In addition: the folders' own `.git/` (research-lab, overseer) is refused by name like the secrets, and `overseer/` holds no reports, so nothing comes from it. `room1-etsy/products.json` and `fx.json` are copied for reference.
 - **Agent mapping.** The roster's agentId to name pairs are read, not copied, and matched to engine agent keys on letters and digits (D4). The legacy BRIDGE id `agent` has no engine agent and stays unmapped ($0.0010153).
+
+## Redesign R1 build record (16/10/2026)
+
+The owner's R1 brief: the office scene look only, one phase. Choices made inside it, for the owner to confirm or change. No cap, price, licence or product changed.
+
+- **Procedural only, no kit.** Everything is procedural Three.js plus canvas textures; no Kenney or other kit was downloaded, so no third-party asset or licence file was added (ASSETS.md). The design references in `design-refs/` were used for mood only and are git-ignored.
+- **One slab, four corners.** The department rooms sit in three corners of one floor slab (Research at the back, Design on the right, Office on the left) with the lounge in the front corner, round a central atrium with the memory core. The server closet sits at the back between Research and Design. The room assignment follows the server's department order, as the platform slots did. Only three department rooms are drawn: a fourth department would be left out with a console warning (there are three today).
+- **Cutaway rule, tested.** Every room has two full-height back walls and an open front. The atrium's outer edge is walled too, so the back of the slab reads as one building. The closet has a full back wall and a low (1.1) partition on its left, so it does not hide the Research room. `tests/scene-layout.test.mjs` checks that no wall hides a desk, a chair, a lounge seat, the core or a server cabinet from the isometric camera.
+- **Who goes to the lounge.** Only the `idle` status sends an agent to the lounge; `working`, `waiting` and `error` keep (or bring) the agent at the desk, where the monitor and status light are. Agent k (department order, then desk order) always gets lounge seat k; the lounge has 8 seats (two three-seat sofas, two armchairs). An agent beyond the eighth would stay at the desk when idle. On page load agents are placed without walking; status changes walk them (2.9 units/s, about 12 s desk to lounge). The desk labels, monitors and cards stay at the desk.
+- **Captures.** The room and lounge close-ups (03 to 06) are in dark mode, the main look; the overviews come in both modes; the desk panel and the board are in light mode (the default theme). Data is the fixtures legacy view with the synthetic test states, as in earlier rounds.
+- **Performance cuts (to hold 60 fps full quality in headed Chrome on the iGPU at 1600x1000).** The first build ran at 53 to 58 fps (48 while agents walked). Cuts, all measured one by one:
+  - The backdrop is now a CSS gradient behind a transparent canvas, and the full-screen ground shadow catcher is replaced by one soft drop-shadow quad under the slab (together about 3.8 ms a frame).
+  - The GTAO pass multiplies AO straight onto the frame instead of copying the frame first (about 1 ms).
+  - AO quality 8/8/2 to 6/4/1 samples (GTAO / denoise / rings), about 1 ms; no visible change at this scale.
+  - Furniture bevels use one segment instead of two (triangles halved to about 55k per pass); small details (keyboards, desk lamps and bulbs, status lights, screens, wall pictures, LED strips) are left out of the AO pre-pass.
+  - People cast no shadow into the baked shadow map (it would need re-baking every frame they walk); they have soft blob shadows instead.
+  - Tried and not kept: Lambert instead of PBR materials (no measurable gain, so the PBR material stays) and 2x MSAA (a small gain; 4x is kept).
