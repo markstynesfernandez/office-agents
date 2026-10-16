@@ -12,7 +12,7 @@ Last updated: 16/10/2026, about 21:05 Irish time (E4 in progress). Plan: `ENGINE
 | **E3** Port, line and dry run | Done, and **approved by the owner** (16/10/2026). Agent runtime, tools, line orchestrator and package. Job A reaches the approval queue after one QA-DESIGN rework; job B is blocked by originality ("garfield"). Screenshots in `screenshots/e3/01`–`13`. |
 | Post-E3 re-port | Done (16/10/2026). The keyword-source rule was ported at a 3rd moment and the enclosed-background change (packaged products) at a 4th. Dry run re-verified. See below. |
 | Demo mode | Done (16/10/2026). `npm run demo`, presenter view, `npm run demo:record`. Demo hardening done at the start of E4 (see below). |
-| E4 Import | **In progress** (owner go-ahead 16/10/2026). Item 0 (demo hardening) done. |
+| E4 Import | **In progress** (owner go-ahead 16/10/2026). Item 0 (demo hardening) done. Importer built and tested; first import into `data/` reconciled ($8.5000719, 162 rows); second run changed nothing. Next: the legacy rows in the office view, screenshots. |
 | E5 Live UI | Not started |
 | E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
 | E7 Routines and cut-over | Not started |

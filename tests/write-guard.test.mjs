@@ -204,6 +204,24 @@ test('snapshot-fixtures: writes are jailed to office-agents/fixtures/, reads ref
   for (const bad of ['../office-agents/.env', '.env', 'station-workspace/starnet/.secrets/provider-keys.json', 'starnet/provider-keys.json', 'station-workspace/research-lab/.git/config']) assert.throws(() => sourcePath(src, bad), /refusing/, bad);
 });
 
+test('import-legacy: writes only through the data jail; reads refuse secrets, VCS folders and paths outside the source', async () => {
+  // statically: no direct fs write call in the importer, only the jail's helpers (J.put, J.copy, J.move, J.remove,
+  // J.makeDir) or a path passed through dataJail( on the same line
+  for (const f of code.filter((x) => rel(x).startsWith('src/engine/import/') || rel(x) === 'scripts/import-legacy.mjs')) {
+    for (const line of read(f).split('\n')) for (const m of line.matchAll(FS_WRITE_RE)) assert.ok(line.includes('dataJail('), rel(f) + ': ' + m[0] + ' without dataJail(');
+  }
+  const { openSource, SECRET_RE } = await import('../src/engine/import/legacy.mjs');
+  for (const bad of ['.secrets', 'starnet/.secrets/provider-keys.json', '.env', '.env.local', 'research-lab/.git/config', 'provider-keys.json']) assert.ok(SECRET_RE.test(bad), bad);
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-src-')));
+  try {
+    const sw = path.join(base, 'station-workspace', 'starnet');
+    fs.mkdirSync(sw, { recursive: true });
+    const src = openSource(base);
+    for (const bad of ['../x', '../../package.json', '.env', 'starnet/.secrets/provider-keys.json', 'research-lab/.git/config']) assert.throws(() => src.abs(bad), /refusing/, bad);
+    assert.equal(src.abs('starnet/ledger.jsonl'), path.join(base, 'station-workspace', 'starnet', 'ledger.jsonl'));
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
 test('screenshots: writes are jailed to office-agents/screenshots/', async () => {
   const { outJail, SHOTS_ROOT } = await import('../scripts/screenshots.mjs');
   assert.equal(SHOTS_ROOT, path.join(ROOT, 'screenshots'));

@@ -18,7 +18,8 @@
     "dry-run": "node scripts/dry-run.mjs",
     "port-drift": "node scripts/port-drift.mjs",
     "demo": "node scripts/demo.mjs",
-    "demo:record": "node scripts/demo-record.mjs"
+    "demo:record": "node scripts/demo-record.mjs",
+    "import-legacy": "node scripts/import-legacy.mjs"
   },
   "dependencies": {
     "croner": "10.0.1",

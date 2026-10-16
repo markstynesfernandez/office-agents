@@ -148,6 +148,44 @@ export function openStore({ J, file = 'station.db', log }) {
     mirrorLedger: (r) => q('INSERT OR IGNORE INTO ledger_mirror (entry_id, ts, job_id, run_id, agent_key, line, provider, model, kind, usd, row) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(r.entryId, r.ts, r.jobId || null, r.runId || null, r.agentKey || null, r.line || null, r.provider || null, r.model || null, r.kind || null, r.usd, JSON.stringify(r)),
     ledgerMirrorCount: () => q('SELECT COUNT(*) n FROM ledger_mirror').get().n,
 
+    // ---- legacy import (E4, src/engine/import/legacy.mjs): rows keyed on their source ids. Each upsert returns
+    // { op: 'inserted' | 'updated' | 'same' } and, for an update, the before and after values (the import logs them).
+    // A legacy row never replaces an engine row, and a legacy routine is never enabled here.
+    upsertLegacyJob(j) {
+      const cur = q('SELECT * FROM jobs WHERE id = ?').get(j.id);
+      const vals = { line: j.line, kind: 'legacy', title: j.title || null, product_key: j.product_key || null, state: j.state, reason: j.reason || null, created_at: j.created_at, updated_at: j.updated_at, started_at: j.started_at ?? null, ended_at: j.ended_at ?? null, data: JSON.stringify(j.data || {}) };
+      if (!cur) {
+        q('INSERT INTO jobs (id, line, kind, title, product_key, state, step, reason, loops, hops, created_at, updated_at, started_at, ended_at, data, legacy) VALUES (?,?,?,?,?,?,NULL,?,\'{}\',0,?,?,?,?,?,1)')
+          .run(j.id, vals.line, vals.kind, vals.title, vals.product_key, vals.state, vals.reason, vals.created_at, vals.updated_at, vals.started_at, vals.ended_at, vals.data);
+        return { op: 'inserted' };
+      }
+      if (!cur.legacy) throw new Error('job ' + j.id + ' is an engine job; a legacy row may not replace it');
+      const before = Object.fromEntries(Object.keys(vals).map((k) => [k, cur[k]]));
+      if (Object.keys(vals).every((k) => before[k] === vals[k])) return { op: 'same' };
+      q('UPDATE jobs SET line=?, kind=?, title=?, product_key=?, state=?, reason=?, created_at=?, updated_at=?, started_at=?, ended_at=?, data=?, version=version+1 WHERE id=?')
+        .run(vals.line, vals.kind, vals.title, vals.product_key, vals.state, vals.reason, vals.created_at, vals.updated_at, vals.started_at, vals.ended_at, vals.data, j.id);
+      return { op: 'updated', before, after: vals };
+    },
+    upsertLegacyTracker(id, row) {
+      const cur = q('SELECT * FROM tracker WHERE listing_id = ?').get(id), text = JSON.stringify(row);
+      if (!cur) { q('INSERT INTO tracker (listing_id, row, updated_at, legacy) VALUES (?,?,?,1)').run(id, text, now()); return { op: 'inserted' }; }
+      if (!cur.legacy) throw new Error('tracker row ' + id + ' belongs to the engine; a legacy row may not replace it');
+      if (cur.row === text) return { op: 'same' };
+      q('UPDATE tracker SET row = ?, updated_at = ? WHERE listing_id = ?').run(text, now(), id);
+      return { op: 'updated', before: parse(cur.row, {}), after: row };
+    },
+    upsertLegacyRoutine(r) {
+      const cur = store.getRoutine(r.id);
+      const vals = { name: r.name, target: r.target, input: r.input || '', schedule: r.schedule, max_runs_per_day: r.max_runs_per_day ?? 1 };
+      if (!cur) { const t = now(); q('INSERT INTO routines (id, name, target, input, schedule, enabled, max_runs_per_day, created_at, updated_at, legacy) VALUES (?,?,?,?,?,0,?,?,?,1)').run(r.id, vals.name, vals.target, vals.input, vals.schedule, vals.max_runs_per_day, t, t); return { op: 'inserted' }; }
+      if (!cur.legacy) throw new Error('routine ' + r.id + ' belongs to the engine; a legacy row may not replace it');
+      const before = Object.fromEntries(Object.keys(vals).map((k) => [k, cur[k]]));
+      if (Object.keys(vals).every((k) => before[k] === vals[k])) return { op: 'same' };
+      q('UPDATE routines SET name=?, target=?, input=?, schedule=?, max_runs_per_day=?, updated_at=?, version=version+1 WHERE id=?').run(vals.name, vals.target, vals.input, vals.schedule, vals.max_runs_per_day, now(), r.id);
+      return { op: 'updated', before, after: vals };
+    },
+    legacyCounts: () => ({ jobs: q('SELECT COUNT(*) n FROM jobs WHERE legacy = 1').get().n, tracker: q('SELECT COUNT(*) n FROM tracker WHERE legacy = 1').get().n, routines: q('SELECT COUNT(*) n FROM routines WHERE legacy = 1').get().n, routinesEnabled: q('SELECT COUNT(*) n FROM routines WHERE legacy = 1 AND enabled = 1').get().n }),
+
     // ---- idempotency keys for page actions (a double click creates one job)
     idem: { get: (k) => { const r = q('SELECT result FROM idempotency WHERE key = ?').get(k); return r ? parse(r.result, null) : null; }, put: (k, v) => q('INSERT OR IGNORE INTO idempotency (key, result, created_at) VALUES (?,?,?)').run(k, JSON.stringify(v), now()) }
   };
