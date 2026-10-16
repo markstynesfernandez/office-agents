@@ -13,5 +13,10 @@ logs/
 *.log
 screenshots/
 
-# fixtures (legacy snapshots and dry-run fixtures stay local)
-fixtures/
+# fixtures: the legacy snapshot stays local; fixtures/engine/ (synthetic FIXTURE data for the dry run and
+# engine-line tests, no real prices, margins or costs) is committed
+fixtures/*
+!fixtures/engine/
+
+# owner's mood references (other people's renders): never committed
+design-refs/

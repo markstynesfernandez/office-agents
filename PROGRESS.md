@@ -100,9 +100,9 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `939385e`: E4 milestone: the importer, backup and tests
 - The next commit: "E4 legacy import" (the office view of the legacy data, screenshots, this file)
 
-`.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
+`.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
-**Open point for the owner:** because `fixtures/` is ignored, the repository does not hold `fixtures/engine/`. That folder contains the synthetic dry-run fixtures: the FIXTURE product, the config patch, the briefs and the scripted mock replies. A fresh clone therefore cannot run `tests/engine-line.test.mjs` or `npm run dry-run`. The legacy snapshot (`fixtures/station-root/`, `SNAPSHOT.json`) should stay out. If the owner agrees, un-ignore only `fixtures/engine/`.
+**Housekeeping (Redesign R1 item 0, 16/10/2026):** `fixtures/engine/` is now committed (the owner's order). Before un-ignoring it, every file was checked: it holds only synthetic FIXTURE data (FixtureShop1–5, placeholder listing ids 1000000001–5, made-up USD 7.50–9.99 brief prices, the FIXTURE product and config patch, the scripted mock replies) and nothing from the real snapshot, so nothing had to be moved out. `.gitignore` now ignores `fixtures/*` except `fixtures/engine/`, so the legacy snapshot (`fixtures/station-root/`, `SNAPSHOT.json`) and `fixtures/synthetic/` stay local. `design-refs/` (the owner's mood references) is ignored; `git rev-list --all` + `ls-tree` confirms no `design-refs` file was ever in a commit.
 
 ## Half-built
 
