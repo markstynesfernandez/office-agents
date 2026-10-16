@@ -210,3 +210,15 @@ These are choices made inside the approved plan and the answers above, plus the 
 - **qa-design** is now 11,986 characters against the 12,000 target (the 2nd-moment prompt grew), which leaves 14 characters of headroom.
 - `imagesPerDay` is 0 (no count cap); image spend still counts in every USD cap (Q2).
 - The effort mapping and the Anthropic SDK install are deferred to E6. In the mock, web search and fetch return canned text.
+
+## Demo mode (owner, 16/10/2026)
+
+The owner specified demo mode (`npm run demo`, presenter view, `npm run demo:record`). Asked about two points where the spec and the approved line differ, the owner answered:
+
+- **Job B's ending:** keep the real line. Job B ends **blocked at prep**, with its originality reason, after the one retry. It does not go to REJECTS-DESK, because only an exhausted QA loop reaches it (ENGINE-PLAN.md §3.1, Q4). There is no routing change, and the deviation from the spec ("ends at REJECTS-DESK") is reported.
+- **"In parallel":** keep one job per line (Q12) and leave the concurrency setting unchanged. Job B runs first, so it trips the originality gate early in the demo, and job A follows straight after. The research batch that verifies job A's brief runs on the research line at the same time as job B.
+
+Choices made in the build (inside the spec; no cap, price, licence or product changed):
+- **Demo data:** `demo/products.json` (a 5-file DEMO sticker product), `demo/station-patch.json` (notice and licence marked as approved DEMO values, the same three keys as the dry-run patch) and `demo/briefs/` apply only to the demo engine. These are DEMO values, not owner decisions; `config/` keeps the real DRAFT statuses. They are committed, unlike `fixtures/`, so a fresh clone can run the demo.
+- **Key refusal:** the demo refuses any non-empty `ANTHROPIC_*`, `OPENROUTER_*` or `OPENAI_*` variable ending in KEY or TOKEN, plus the engine's own secret names. Error messages name the variable and never the value.
+- **MP4:** not produced. The only pinned, licence-checked converter is Playwright's ffmpeg (build 1013, LGPL-2.1), and it writes WebM only. A GPL-3.0 ffmpeg 8.1.2 on PATH is not pinned or licence-checked here, so it is not used. For an .mp4, the owner would need to approve a converter and its licence.

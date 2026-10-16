@@ -80,6 +80,11 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     else if (j.state === 'running' && def.kind === 'mechanical') out.statusReason = 'station step: ' + j.step + ' (no model)';
     out.progress = out.status === 'in_progress' || out.status === 'waiting' ? Math.round(100 * ((PROGRESS[out.stage] ?? 0.05) + (live ? 0.06 : 0))) : null;
     const stages = store.stagesOf(j.id); const lastStage = stages[stages.length - 1];
+    // the newest closed stage and its note (the presenter's captions: why a job went back, was blocked or moved on)
+    const closed = stages.filter((s) => s.status !== 'running').pop();
+    out.lastStage = closed ? { step: closed.step, pass: closed.pass, status: closed.status, note: closed.reason || null, at: closed.ended_at } : null;
+    const prod = cfg.products.find((x) => x.key === j.product_key);
+    out.productFiles = prod && prod.deliverables && prod.deliverables.files ? prod.deliverables.files.length : null;
     out.stageChangedAt = (out.lane || out.status === 'done' || out.status === 'waiting' ? j.ended_at : null) || (lastStage ? lastStage.started_at : j.created_at);
     out.elapsedMs = out.startedAt ? Math.max(0, (j.ended_at || now) - out.startedAt) : null;
     out.agentName = out.agentId ? (nameOf[out.agentId] || out.agentId) : null;

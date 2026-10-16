@@ -1,6 +1,6 @@
 // write-guard.test.mjs — write-guard v2 (ENGINE-PLAN.md §8). Fails if any code could write outside the data jail,
 // write into the legacy build (Virtual-workers/, station-workspace/), call the legacy system over HTTP, reach an
-// outbound host outside the provider modules, or ship a messaging library or tool. Static scan of src/, scripts/ and
+// outbound host outside the provider modules, or ship a messaging library or tool. Static scan of src/, scripts/, demo/ and
 // tests/, plus unit checks of dataJail() against traversal, links, junctions, case, drives, device paths and 8.3 names.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { createJail, realResolve, JailError } from '../src/engine/store/jail.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SCAN_DIRS = ['src', 'scripts', 'tests'];
+const SCAN_DIRS = ['src', 'scripts', 'tests', 'demo'];
 const CODE_RE = /\.(mjs|js|cjs|ts|html)$/;
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? (e.name === 'node_modules' ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]));
 const files = SCAN_DIRS.flatMap((d) => (fs.existsSync(path.join(ROOT, d)) ? walk(path.join(ROOT, d)) : [])).filter((f) => CODE_RE.test(f));
@@ -25,7 +25,7 @@ const code = files.filter((f) => !rel(f).startsWith('tests/'));
 export const FS_WRITE_RE = /\b(writeFileSync|writeFile|appendFileSync|appendFile|mkdirSync|mkdir|rmSync|rm|rmdirSync|rmdir|renameSync|rename|copyFileSync|copyFile|cpSync|cp|unlinkSync|unlink|createWriteStream|truncateSync|truncate|chmodSync|symlinkSync|symlink|linkSync|utimesSync|utimes|futimesSync|openSync|writeSync|fsyncSync|toFile|DatabaseSync|Database)\s*\(|screenshot\s*\(\s*\{[^}]*\bpath\s*:/g;
 // The jail module itself, and the two scripts that write outside the data root through their own jails.
 const JAIL_MODULE = 'src/engine/store/jail.mjs';
-const OWN_JAILS = { 'scripts/snapshot-fixtures.mjs': 'jail(', 'scripts/screenshots.mjs': 'outJail(', 'scripts/dry-run.mjs': 'outJail(' };
+const OWN_JAILS = { 'scripts/snapshot-fixtures.mjs': 'jail(', 'scripts/screenshots.mjs': 'outJail(', 'scripts/dry-run.mjs': 'outJail(', 'scripts/demo-record.mjs': 'outJail(' };
 const WRITE_ONE = new RegExp(FS_WRITE_RE.source);
 const LEGACY_NAME_RE = /Virtual-workers|station-workspace|STATION_LEGACY_ROOT|legacyRoot/;
 

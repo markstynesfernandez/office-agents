@@ -49,7 +49,8 @@ and the system monospace stack (`Cascadia Code`, `Consolas`, `ui-monospace`). No
 | playwright | 1.64.1 | Apache-2.0 | Chromium / Chrome automation for `npm run screenshots` (captures station-office's own page only) | `devDependencies` |
 | playwright-core | 1.64.1 | Apache-2.0 | transitive dependency of playwright | `devDependencies` (transitive) |
 | Chromium (downloaded by `npx playwright install chromium`, build 1248) | per Playwright | BSD-3-Clause (Chromium) | headless screenshot browser; not redistributed with this project | `~/AppData/Local/ms-playwright` |
-| Google Chrome (already installed on this PC) | system | Google Chrome Terms of Service | only for `node scripts/screenshots.mjs --headed` (fps as seen in headed Chrome); not redistributed | system install |
+| Google Chrome (already installed on this PC) | system | Google Chrome Terms of Service | only for `node scripts/screenshots.mjs --headed` (fps as seen in headed Chrome) and `npm run demo:record` (headed recording); not redistributed | system install |
+| ffmpeg, Playwright build 1013 (downloaded with Playwright's browsers) | pinned by playwright-core 1.64.1 (`browsers.json`) | LGPL-2.1 (`COPYING.LGPLv2.1` in its folder) | Playwright's own video capture for `npm run demo:record` (WebM, VP8/VP9). `demo-record.mjs` also runs it to read the WebM's duration and probes it for MP4 output: it has no MP4 muxer or H.264/MPEG-4 encoder, so no .mp4 is made. A system ffmpeg on PATH (GPL-3.0 "full" build on this PC) is never used: it is not pinned or licence-checked here. | `~/AppData/Local/ms-playwright/ffmpeg-1013` |
 
 npm reports an install script for sharp that is not run (`allowScripts`); it is not needed because the prebuilt
 binary package is used.

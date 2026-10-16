@@ -2,9 +2,9 @@
 // Few, large lines so it stays legible at close zoom: status + agent, job, stage, spend today (calendar day).
 import * as THREE from 'three';
 import { PALETTE } from '../config/palette.js';
+import { money, isMoneyHidden } from '../ui/format.js';
 
 const W = 512, H = 312;
-const money = (v) => (v == null ? '—' : '$' + (v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2)));
 const fit = (ctx, text, maxW) => { let t = String(text || ''); if (ctx.measureText(t).width <= maxW) return t; while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); return t + '…'; };
 const SANS = '"Segoe UI", system-ui, sans-serif', MONO = '"Cascadia Code", Consolas, monospace';
 
@@ -14,7 +14,7 @@ export function makeMonitorTexture() {
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.generateMipmaps = true;
   let drawnKey = null;
   function draw(agent, theme = 'light') {
-    const key = JSON.stringify([agent.status, agent.statusText, agent.currentJob, agent.spendToday, agent.synthetic, theme]);
+    const key = JSON.stringify([agent.status, agent.statusText, agent.currentJob, agent.spendToday, agent.synthetic, theme, isMoneyHidden()]);
     if (key === drawnKey) return; drawnKey = key;
     const dark = theme === 'dark';
     const bg = dark ? '#0d1220' : '#172033', bar = dark ? '#141c2e' : '#1f2a42', fg = '#eef2f8', dim = '#93a0b8';

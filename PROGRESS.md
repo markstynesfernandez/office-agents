@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 16/10/2026, about 20:10 Irish time. Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 16/10/2026, about 20:50 Irish time. Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -11,13 +11,29 @@ Last updated: 16/10/2026, about 20:10 Irish time. Plan: `ENGINE-PLAN.md` (approv
 | **E2** Engine core | Done. Store (`node:sqlite`), append-only ledger, event bus, e-stop (page button, CLI, HALT file), spend guard, scheduler (croner), mock providers, engine and SSE server. |
 | **E3** Port, line and dry run | Done, and **approved by the owner** (16/10/2026). Agent runtime, tools, line orchestrator and package. Job A reaches the approval queue after one QA-DESIGN rework; job B is blocked by originality ("garfield"). Screenshots in `screenshots/e3/01`–`13`. |
 | Post-E3 re-port | Done (16/10/2026). The keyword-source rule was ported at a 3rd moment and the enclosed-background change (packaged products) at a 4th. Dry run re-verified. See below. |
-| Demo mode | Not started. **Next.** |
-| E4 Import | Not started |
+| Demo mode | Done (16/10/2026), awaiting the owner's review. `npm run demo`, presenter view, `npm run demo:record`. See below. |
+| E4 Import | Not started. **Next**, after the owner's go-ahead. |
 | E5 Live UI | Not started |
 | E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### Demo mode (16/10/2026)
+
+- **`npm run demo`** (`scripts/demo.mjs`) starts the real engine on the mock provider on `data-demo/`, which is wiped and rebuilt on each start and restart. Its jail roots are `data-demo/` and `logs/` only. It refuses to start with provider keys in the environment or a non-mock `STATION_PROVIDER`, and it does not read `.env`. Port 8791. The day starts when a page connects.
+- **The scripted day** (`demo/script.mjs`, timing in `demo/pacing.json`) lasts 176 s of demo time at 1x:
+  - The research batch: DEMAND-RESEARCHER drafts the brief, EVIDENCE-CHECKER verifies it, and the brief check moves it to `research/briefs/`.
+  - Job B runs at the same time on the Room 1 line. The image prompt naming the character is refused, the prep originality screen trips, the job goes back once, the screen trips again, and the job ends blocked at prep with the reason.
+  - Job A follows straight after: one QA-DESIGN rework, then approved, LISTER, QA-LISTING approved, the package gate passes, and the job lands in the approval queue.
+  - The ledger has 71 rows, all mock, $0.
+- **Deviation from the spec, by the owner's decision:** job B ends **blocked at prep**, not at REJECTS-DESK. This is the real line's routing, with no change. "In parallel" means the research line runs alongside job B, with one job per line (Q12). See DECISIONS.md.
+- **Page:**
+  - The presenter view (`src/web/ui/presenter.js`; P toggles it, and it is on by default in demo mode) has a camera tour with a 3 s hold, a caption strip built from engine events, and money hidden. Money goes through `format.money()`/`price()` and a DOM scrub as a safety net.
+  - There is a "DEMO · simulated data" badge and a pause/speed chip. The keys are Space, 1/2/4 and R.
+  - The job panel now shows the approval-queue row.
+  - The snapshot gained `lastStage` and `productFiles`. The engine server gained an `ext` hook (demo actions behind the same origin, token and JSON checks) and `handler`/`dispose`.
+- **`npm run demo:record`** (`scripts/demo-record.mjs`) records headed Chrome at 1600x1000 to `screenshots/demo/station-demo.webm` and takes 4 stills. The 1x take on 16/10/2026 runs 3:07 (186.7 s, 35.9 MB): the demo day is 167 s, then the closing views of the board, calendar and approval queue. No .mp4 is made, because no pinned, licence-checked converter can write MP4 (ASSETS.md).
 
 ### Post-E3 re-port (16/10/2026)
 
@@ -49,7 +65,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **168 passed, 0 failed** in 12 suites, re-run after the 4th moment (16/10/2026, about 20:06 Irish time).
+`npm test`: **175 passed, 0 failed** in 13 suites, after demo mode (16/10/2026, about 20:45 Irish time). Before demo mode it was 168/168, and `npm run port-drift` showed no drift.
 
 | Suite | Passed |
 |---|---|
@@ -65,6 +81,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 | ported/digital | 15/15 (one more: the keyword-source test) |
 | ported/vat-fees | 6/6 |
 | ported/listing-notice | 1/1 |
+| demo | 7/7 (new: key refusal in-process and as `node scripts/demo.mjs`, mock only, jail, clock, the scripted day, token-checked controls and restart) |
 
 `npm run dry-run` (after the 4th moment): exit 0, 0 errors, 56 ledger rows (36 for job A, 20 for job B), all mock, $0.
 - Job A, `2026-10-16--dry-run-mushroom-stickers`: state `approval`, approval `pending`. QA-DESIGN asked for a revise on pass 1 and approved pass 2. The package gate passed. `cost.json` has 36 rows, mock, `totalUsd` 0.
@@ -97,7 +114,7 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-1. **Demo mode**, as the owner specifies it (`data-demo/` is already gitignored for it).
+1. **The owner reviews demo mode** (the video and stills in `screenshots/demo/`).
 2. **E4 Import:** build `import-legacy` into `data/`. It reads `Virtual-workers` only, is idempotent and takes a backup first. Then produce the reconciliation report: counts, and a $ total that reconciles with the source.
 
 Before each, run `npm run port-drift` and `npm test`, and commit at the milestone.

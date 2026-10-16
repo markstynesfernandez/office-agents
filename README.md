@@ -19,6 +19,8 @@ npx playwright install chromium   # once, for screenshots and the dry run's pict
 npm start                         # the engine + office at http://127.0.0.1:8790 (data in office-agents/data/)
 npm test                          # every suite (node --test)
 npm run dry-run                   # the E3 dry run on its own data root (dry-run/e3/), screenshots to screenshots/e3/
+npm run demo                      # demo mode: a scripted ~3-minute day on the mock provider, http://127.0.0.1:8791 (data-demo/)
+npm run demo:record               # records the demo in headed Chrome: screenshots/demo/station-demo.webm + 4 stills
 npm run estop                     # e-stop from a terminal; --off releases, --status shows the state
 npm run port-drift                # read-only: has any ported legacy source changed since the port?
 npm run legacy-view               # the Phase 1 read-only view of the legacy build (STATION_LEGACY_ROOT)
@@ -35,6 +37,19 @@ Copy `.env.example` to `.env` for settings. `STATION_PROVIDER=mock` is the only 
 - **B** (astronaut cats): the Designer names a protected character. The image call is refused and the originality screen blocks the job at prep, with the reason.
 
 The office page stays open on the run's own server and takes a screenshot at each stage. The fixture terms are marked FIXTURE-approved for the dry run only; the real notice and licence status in `config/` are untouched.
+
+### Demo mode
+
+`npm run demo` runs the real engine on the mock provider ($0, no model called) for showing the station to people. It refuses to start if a provider key (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` or any other `ANTHROPIC_`/`OPENROUTER_`/`OPENAI_` key or token) is set in the environment, or if `STATION_PROVIDER` is not `mock`. It never reads `.env`. Its data root is `office-agents/data-demo/`, which is wiped and rebuilt on every start and every restart. Its jail has only `data-demo/` and `logs/` as roots, so it cannot write to `data/` or the legacy build, and a demo root that overlaps the station data root is refused. Port: 8791 (`STATION_DEMO_PORT`). The day starts when a page connects.
+
+The scripted day (`demo/script.mjs`; the timing is in one file, `demo/pacing.json`) goes through the real orchestrator, spend guard, ledger and SSE. The research line and job B run side by side, and job A follows B on the Room 1 line (one job per line, Q12):
+- **Research:** DEMAND-RESEARCHER drafts the mushroom-sticker brief and EVIDENCE-CHECKER verifies it. The station's brief check then moves it to `research/briefs/`.
+- **Job B (astronaut cats)** starts first. DESIGNER names a protected character, so the image call is refused. The prep originality screen then trips on `design.md`. The line sends the job back once, the screen trips again, and the job ends **blocked at prep** with the reason. This is the real line's routing: a mechanical originality fail does not go to REJECTS-DESK (owner, 16/10/2026).
+- **Job A** starts straight after. DESIGNER makes the 5-file set, QA-DESIGN sends it back once ("file 3: the door detail is too small to read at sticker size") and then approves it. LISTER and QA-LISTING follow, the package gate passes, and the job lands in the approval queue.
+
+Keys: **Space** pauses or resumes, **1 / 2 / 4** set the speed, **R** restarts (in demo mode R restarts rather than resetting the view; the ⌂ button still resets it), and **P** toggles the presenter view. The **presenter view** is on by default in demo mode (`?presenter=0|1`; `?tour=0` keeps the camera still). It has a gentle camera tour that follows the active desk and holds 3 seconds on each stage change, plus a caption strip built from the engine's own events. Money is hidden: costs, prices, margins and caps print as "—". A "DEMO · simulated data" badge stays in the top bar. The demo product, config patch and briefs in `demo/` are DEMO values, not owner decisions.
+
+`npm run demo:record` runs the day once in headed Google Chrome at 1600x1000. It records the video with Playwright's video capture to `screenshots/demo/station-demo.webm`, and takes four stills: `01-overview-mid-run`, `02-desk-close-up`, `03-board-end` and `04-approval-queue`. `--speed 4` gives a quicker take, and `--headless` runs without a window. It makes an `.mp4` only with a pinned, licence-checked converter. Playwright's pinned ffmpeg can only write WebM, so today there is no `.mp4` (ASSETS.md).
 
 ### The e-stop
 
@@ -61,8 +76,9 @@ src/web/               the office page (Three.js scene, panels); talks only to i
 config/                engine.json (caps, prices, tiers), agents/, lines/, station.config.json, products.json, office.json
 prompts/               agents/<key>.md and skills/<name>.md (edited as files only, Q8)
 fixtures/engine/       dry-run fixtures (FIXTURE product, config patch, briefs, scripted mock replies)
+demo/                  demo mode: pacing.json (the timing), script.mjs (scripted replies), DEMO product, config patch, briefs
 tests/                 node --test: guard, e-stop, store, engine line, engine server, write guard, ported station tests
-scripts/               dry-run, estop, port-drift, screenshots, snapshot-fixtures
+scripts/               dry-run, demo, demo-record, estop, port-drift, screenshots, snapshot-fixtures
 ```
 
 ## Safety rules built in

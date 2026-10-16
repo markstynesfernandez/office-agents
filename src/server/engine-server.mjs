@@ -4,6 +4,8 @@
 // page got from /api/session, and send JSON. Records the owner can change carry an expectedVersion (stale tabs are
 // refused) and creates carry an idempotency key (E5). E2–E3 writes: the e-stop and its typed resume.
 // The page never receives keys, prompts or provider responses.
+// ext (demo mode only, scripts/demo.mjs): extra POST actions behind the same origin/token/JSON checks, and extra fields
+// merged into each snapshot response. `handler` and `dispose` let the demo swap engines behind one listening server.
 import http from 'node:http';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -15,7 +17,7 @@ import { RESUME_WORD } from '../engine/halt.mjs';
 
 const MAX_BODY = 16 * 1024;
 
-export function createEngineServer({ engine, log, snapshotTtlMs = 300 }) {
+export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = null }) {
   const token = crypto.randomBytes(24).toString('hex');   // per launch; only the page on our own origin can read it
   const hostLabel = 'Node ' + process.version + ' · ' + os.platform() + ' ' + os.release() + ' (station host)';
   let cache = { at: 0, seq: -1, snap: null };
@@ -48,10 +50,11 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300 }) {
 
   const ACTIONS = {
     'POST /api/engine/halt': (body) => engine.halt.press({ by: 'owner (office button)', reason: String(body.reason || '').slice(0, 200) }),
-    'POST /api/engine/resume': (body) => engine.halt.resume({ by: 'owner (office, typed confirmation)', confirm: body.confirm })
+    'POST /api/engine/resume': (body) => engine.halt.resume({ by: 'owner (office, typed confirmation)', confirm: body.confirm }),
+    ...((ext && ext.actions) || {})
   };
 
-  const server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const p = decodeURIComponent(url.pathname);
     try {
@@ -80,7 +83,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300 }) {
         return;
       }
       if (p === '/api/office/health') { const g = engine.guard.status(); return sendJson(res, { ok: true, view: 'engine', provider: engine.providers.mode, halted: engine.halt.isHalted(), ledgerOk: g.ledgerOk, spentToday: g.spentToday, inFlight: g.inFlight, seq: engine.bus.seq, logs: log.counts, uptimeS: Math.round(process.uptime()) }); }
-      if (p === '/api/office/snapshot') return sendJson(res, snapshot(url.searchParams.has('fresh')));
+      if (p === '/api/office/snapshot') return sendJson(res, ext && ext.snapshotExtra ? { ...snapshot(url.searchParams.has('fresh')), ...ext.snapshotExtra() } : snapshot(url.searchParams.has('fresh')));
       if (p === '/api/office/ledger') { const rows = engine.ledger.rows().slice(-Math.min(500, Number(url.searchParams.get('limit')) || 100)).reverse().map((r) => ({ at: r.ts, agent: r.agentKey, runId: r.runId, jobId: r.jobId, model: r.model, provider: r.provider, kind: r.kind, tokens: r.tokens ? r.tokens.in + r.tokens.out : null, usd: r.usd, estimated: !!r.estimated })); return sendJson(res, { total: engine.ledger.totals.rows, rows, source: engine.ledger.label }); }
       let m;
       if ((m = /^\/api\/office\/jobs\/([^/]+)$/.exec(p))) { const job = snapshot().jobs.find((j) => j.id === m[1]); if (!job) return sendJson(res, { error: 'no such job' }, 404); const cost = job.kind === 'research' ? null : engine.orchestrator.costRecord(job.id); return sendJson(res, { ...job, cost: cost && { totalUsd: cost.totalUsd, rows: cost.rows, byKind: cost.byKind, mock: cost.mock } }); }
@@ -92,9 +95,11 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300 }) {
       log.error('request failed', { path: p, error: String(e && e.stack || e) });
       return sendJson(res, { error: 'server error', detail: String(e && e.message || e) }, 500);
     }
-  });
+  };
+  const server = http.createServer(handler);
   server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); } catch (_) {} });
-  server.on('close', () => { clearInterval(beat); unsub(); for (const c of clients) { try { c.end(); } catch (_) {} } });
   const closeAll = () => { for (const c of clients) { try { c.end(); } catch (_) {} } clients.clear(); };
-  return { server, snapshot, token, closeAll };
+  const dispose = () => { clearInterval(beat); unsub(); closeAll(); };
+  server.on('close', dispose);
+  return { server, handler, snapshot, token, closeAll, dispose };
 }

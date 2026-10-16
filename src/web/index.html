@@ -16,6 +16,8 @@
     <span class="tb-brand"><span class="tb-dot"></span><span id="station-name">Station</span></span>
     <span id="source-badge" class="badge badge-muted">loading</span>
     <span id="synthetic-badge" class="badge badge-syn hidden">synthetic states</span>
+    <span id="demo-badge" class="badge badge-demo hidden" title="Demo mode: the real engine on the mock provider, with a scripted day on its own data root (data-demo/). Nothing here is real station data; no model is called and nothing is charged.">DEMO · simulated data</span>
+    <button id="demo-ctl" class="badge badge-muted demo-ctl hidden" title="demo: Space pause/resume · 1 2 4 speed · R restart"></button>
     <span class="tb-sep"></span>
     <span id="services" class="tb-services"></span>
     <span class="tb-fill"></span>
@@ -36,6 +38,7 @@
     </div>
     <div id="warnings" class="warnings hidden"></div>
     <div id="perf" class="perf hidden"></div>
+    <div id="caption" class="caption hidden" aria-live="polite"></div>
   </main>
 
   <aside id="taskpanel">
@@ -58,7 +61,7 @@
   <section id="calendar" class="overlay hidden"><div id="calendar-body"></div></section>
   <section id="ledger" class="overlay hidden"><div class="overlay-head"><h2>Station memory</h2><span class="muted">notebooks + ledger · Esc to close</span></div><div id="ledger-body"></div></section>
 
-  <footer id="hints"><span><b>B</b> board</span><span><b>C</b> calendar</span><span><b>T</b> today</span><span><b>←↑↓→</b> move</span><span><b>+ −</b> zoom</span><span><b>R</b> reset</span><span><b>D</b> dark</span><span><b>F</b> fps</span><span><b>Esc</b> close</span><span id="hint-status" class="muted"></span></footer>
+  <footer id="hints"><span><b>B</b> board</span><span><b>C</b> calendar</span><span><b>T</b> today</span><span><b>←↑↓→</b> move</span><span><b>+ −</b> zoom</span><span id="hint-reset"><b>R</b> reset</span><span id="hint-demo" class="hidden"><b>Space</b> pause <b>1 2 4</b> speed <b>R</b> restart</span><span><b>P</b> presenter</span><span><b>D</b> dark</span><span><b>F</b> fps</span><span><b>Esc</b> close</span><span id="hint-status" class="muted"></span></footer>
 </div>
 <script type="module" src="/main.js"></script>
 </body>

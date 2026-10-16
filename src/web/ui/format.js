@@ -1,7 +1,16 @@
 // ui/format.js — small formatting helpers shared by the panels. UK/Irish English. ONE date format everywhere
 // (owner, round 1): dd/mm/yyyy and 24h, with relative time in brackets where useful, e.g. "16/10/2026 09:42 (8h ago)".
 export const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export const money = (v, cur = '$') => (v == null || Number.isNaN(Number(v)) ? '—' : cur + (Number(v) < 0.01 && Number(v) > 0 ? Number(v).toFixed(4) : Number(v).toFixed(2)));
+// money hiding (the presenter view, which may be shown outside the station): every amount the page prints goes through
+// money() or price(), which print "—" while hidden; scrubMoney() is the safety net for amounts inside other text
+let moneyHidden = false;
+export const setMoneyHidden = (v) => { moneyHidden = !!v; };
+export const isMoneyHidden = () => moneyHidden;
+export const money = (v, cur = '$') => (moneyHidden || v == null || Number.isNaN(Number(v)) ? '—' : cur + (Number(v) < 0.01 && Number(v) > 0 ? Number(v).toFixed(4) : Number(v).toFixed(2)));
+export const price = (s) => (moneyHidden ? '—' : s);
+export const MONEY_RE = /(?:US\$|\$|€|£)\s?\d[\d,]*(?:\.\d+)?(?:\s?[–-]\s?\d[\d,]*(?:\.\d+)?)?|\b(?:EUR|USD|GBP)\s?\d[\d,]*(?:\.\d+)?(?:\s?[–-]\s?\d[\d,]*(?:\.\d+)?)?/g;
+export const hasMoney = (s) => new RegExp(MONEY_RE.source).test(String(s || ''));
+export const scrubMoney = (s) => String(s).replace(MONEY_RE, '—');
 const z = (n) => String(n).padStart(2, '0');
 const ok = (ms) => ms != null && ms !== '' && !Number.isNaN(Number(ms));
 export const hhmm = (ms) => { if (!ok(ms)) return '—'; const d = new Date(ms); return z(d.getHours()) + ':' + z(d.getMinutes()); };

@@ -1,6 +1,6 @@
 // ui/sidepanel.js — the slide-in panel for a desk (agent: role, model, recent jobs, outputs, costs, latest design) or a
 // job. Model, provider and role come from the roster; the system prompt is never sent to the page.
-import { esc, money, when, duration, statusLabel, jobStatusLabel, statusPill, synthTag } from './format.js';
+import { esc, money, price, when, duration, statusLabel, jobStatusLabel, statusPill, synthTag } from './format.js';
 import { PALETTE } from '../config/palette.js';
 
 export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => {}, getNow = () => Date.now() }) {
@@ -54,8 +54,9 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
       + '<dl class="kv"><dt>agent</dt><dd>' + (j.agentId ? '<a data-agent="' + esc(j.agentId) + '" class="lnk">' + esc(j.agentName) + '</a>' : '—') + ' · ' + esc(j.dept || '—') + '</dd>'
       + '<dt>slogan</dt><dd>' + esc(j.slogan || '—') + '</dd><dt>cost</dt><dd>' + money(j.costUsd) + ' <span class="muted">(' + (j.queue ? 'approval-queue cost' : j.hops.length ? 'line session total' : 'tracker') + ')</span></dd>'
       + '<dt>started</dt><dd>' + esc(when(j.startedAt, now)) + '</dd><dt>stage changed</dt><dd>' + esc(when(j.stageChangedAt, now)) + '</dd>' + (j.elapsedMs != null ? '<dt>elapsed</dt><dd>' + duration(j.elapsedMs) + '</dd>' : '') + (j.endedAt ? '<dt>ended</dt><dd>' + esc(when(j.endedAt, now)) + '</dd>' : '')
-      + (j.priceRange ? '<dt>brief price</dt><dd>USD ' + j.priceRange.min + (j.priceRange.max !== j.priceRange.min ? ' – ' + j.priceRange.max : '') + '</dd>' : '')
-      + (j.listing ? '<dt>listing</dt><dd>' + esc(j.listing.title) + ' · ' + j.listing.tags + ' tags · EUR ' + (j.listing.priceEur ?? '—') + '</dd>' : '')
+      + (j.priceRange ? '<dt>brief price</dt><dd>' + price('USD ' + j.priceRange.min + (j.priceRange.max !== j.priceRange.min ? ' – ' + j.priceRange.max : '')) + '</dd>' : '')
+      + (j.listing ? '<dt>listing</dt><dd>' + esc(j.listing.title) + ' · ' + j.listing.tags + ' tags · ' + price('EUR ' + (j.listing.priceEur ?? '—')) + '</dd>' : '')
+      + (j.queue ? '<dt>approval</dt><dd>' + esc(j.queue.status) + ' · ' + esc(j.queue.folder) + (j.queue.files != null ? ' · ' + j.queue.files + ' files' : '') + '</dd>' : '')
       + (j.tracker ? '<dt>tracker</dt><dd>' + esc(j.tracker.status) + (j.tracker.etsy_listing_url ? ' · ' + esc(j.tracker.etsy_listing_url) : '') + '</dd>' : '')
       + '</dl>'
       + (j.images.length ? '<h4>Designs</h4>' + imgs(j.images) : '')

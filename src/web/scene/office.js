@@ -90,7 +90,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400);
   scene.add(camera);
   const HOME = new THREE.Vector3(-1.2, 0, -3.4);
-  const view = { target: HOME.clone(), zoom: 1, wantTarget: HOME.clone(), wantZoom: 1, frustumH: 31 };
+  const view = { target: HOME.clone(), zoom: 1, wantTarget: HOME.clone(), wantZoom: 1, frustumH: 31, ease: 0.0005 };   // ease: fraction left after 1 s (the presenter tour uses a gentler one)
   const bounds = { minX: -20, maxX: 22, minZ: -22, maxZ: 18, minZoom: 0.55, maxZoom: 4.2 };
 
   // ---- backdrop: soft vertical gradient on a camera-attached plane (always fills the view)
@@ -418,7 +418,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const camDir = new THREE.Vector3(Math.cos(PITCH) * Math.sin(YAW), Math.sin(PITCH), Math.cos(PITCH) * Math.cos(YAW));
   let cameraDirty = true;
   function updateCamera(dt) {
-    const k = 1 - Math.pow(0.0005, dt);
+    const k = 1 - Math.pow(view.ease, dt);
     const dist = view.target.distanceTo(view.wantTarget), dz = Math.abs(view.wantZoom - view.zoom);
     if (dist < 1e-4 && dz < 1e-5 && !cameraDirty) return false;
     if (dist < 0.002 && dz < 0.0005) { view.target.copy(view.wantTarget); view.zoom = view.wantZoom; } else { view.target.lerp(view.wantTarget, k); view.zoom += (view.wantZoom - view.zoom) * k; }

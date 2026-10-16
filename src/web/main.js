@@ -1,6 +1,8 @@
 // main.js — wires the scene, the labels and the panels together. Engine view: live over SSE (/api/events, no polling
 // while connected); the only writes are the e-stop and its typed resume, sent with the per-launch action token.
 // Legacy view: read-only, polled. The scene renders on demand; labels re-layout only when the camera, data or size change.
+// Presenter view (P; on by default in demo mode, ?presenter=0|1, ?tour=0 keeps the camera still): camera tour, captions,
+// money hidden. Demo mode (scripts/demo.mjs): a permanent "DEMO · simulated data" badge; Space, 1/2/4 and R drive the demo.
 import { createOffice } from './scene/office.js';
 import { createLabels } from './ui/labels.js';
 import { createTaskPanel } from './ui/taskpanel.js';
@@ -8,7 +10,8 @@ import { createSidePanel } from './ui/sidepanel.js';
 import { createBoard } from './ui/board.js';
 import { createCalendar } from './ui/calendar.js';
 import { createLedgerView } from './ui/ledger.js';
-import { esc, money, dateTime, hhmm } from './ui/format.js';
+import { createPresenter } from './ui/presenter.js';
+import { esc, money, dateTime, hhmm, setMoneyHidden, isMoneyHidden, hasMoney, scrubMoney } from './ui/format.js';
 import { PALETTE } from './config/palette.js';
 
 const q = new URLSearchParams(location.search);
@@ -24,6 +27,9 @@ const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob })
 const board = createBoard({ root: $('#board'), onOpenJob: openJob });
 const calendar = createCalendar({ root: $('#calendar'), onOpenJob: openJob });
 const ledger = createLedgerView({ root: $('#ledger') });
+const presenter = createPresenter({ office, root: $('#caption') });
+presenter.setTour(q.get('tour') !== '0');
+let presenterOn = q.get('presenter') === '1' ? true : q.get('presenter') === '0' ? false : null;   // null: decided by the first snapshot
 let snap = null, ready = false, labelsDirty = true, perfOn = q.get('fps') === '1';
 
 function handlePick(hit) {
@@ -78,12 +84,61 @@ function renderTopbar(s) {
 async function load() {
   const r = await fetch('/api/office/snapshot' + (q.has('fresh') ? '?fresh' : ''));
   snap = await r.json();
-  renderEstop(snap);
+  if (presenterOn == null) setPresenter(!!snap.demo, false);
+  renderEstop(snap); renderDemo(snap);
   if (snap.source.mode === 'engine' && !live) connectLive();
   office.setData(snap); labels.build(snap); taskpanel.setSnapshot(snap); renderTopbar(snap);
   if (board.isOpen()) board.render(snap); if (calendar.isOpen()) calendar.render(snap);
+  presenter.onSnapshot(snap);
   labelsDirty = true; ready = true;
 }
+
+// ---- presenter view: tour + captions + money hidden (amounts print "—"; the DOM scrub below catches any left in text)
+function setPresenter(v, rerender = true) {
+  presenterOn = !!v; setMoneyHidden(presenterOn); presenter.setOn(presenterOn);
+  if (!rerender || !snap) return;
+  renderTopbar(snap); office.setData(snap);
+  if (board.isOpen()) board.render(snap); if (calendar.isOpen()) calendar.render(snap); if (ledger.isOpen()) ledger.render(snap);
+  const cur = sidepanel.isOpen() && sidepanel.current(); if (cur) (cur.kind === 'job' ? sidepanel.showJob(cur.id) : sidepanel.showAgent(cur.id));
+  scrubSoon();
+}
+let scrubQueued = false;
+function scrubSoon() { if (scrubQueued || !isMoneyHidden()) return; scrubQueued = true; requestAnimationFrame(() => { scrubQueued = false; scrub($('#app')); }); }
+function scrub(root) {
+  if (!isMoneyHidden()) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) if (hasMoney(n.nodeValue)) n.nodeValue = scrubMoney(n.nodeValue);
+  for (const el of root.querySelectorAll('[title]')) { const t = el.getAttribute('title'); if (hasMoney(t)) el.setAttribute('title', scrubMoney(t)); }
+}
+new MutationObserver(scrubSoon).observe($('#app'), { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['title'] });
+
+// ---- demo mode: badge, pause/speed chip, keys (POSTs with the action token, like the e-stop)
+function renderDemo(s) {
+  const dm = s.demo;
+  $('#demo-badge').classList.toggle('hidden', !dm); $('#demo-ctl').classList.toggle('hidden', !dm);
+  $('#hint-demo').classList.toggle('hidden', !dm); $('#hint-reset').classList.toggle('hidden', !!dm);
+  if (!dm) return;
+  $('#demo-ctl').textContent = dm.phase === 'done' ? '■ done · R again' : dm.phase === 'restarting' ? '… restarting' : dm.paused ? '❚❚ paused' : '▶ ' + dm.speed + 'x';
+  presenter.setStatus(dm.paused ? 'paused · Space resumes' : dm.speed !== 1 ? dm.speed + 'x' : '');
+}
+async function demoControl(body) {
+  if (!snap || !snap.demo) return;
+  try { const j = await action('/api/demo/control', body); snap.demo = j.result; renderDemo(snap); } catch (e) { presenter.say('Demo control refused: ' + e.message, true); }
+}
+async function demoRestart() {
+  if (!snap || !snap.demo) return;
+  try {
+    const j = await action('/api/demo/restart', {});
+    presenter.say('Restarting the demo: data-demo/ is wiped and the day starts again', true); $('#demo-ctl').textContent = '… restarting';
+    for (let i = 0; i < 100; i++) {
+      await new Promise((r) => setTimeout(r, 300));
+      const st = await fetch('/api/demo/state').then((r) => r.json()).catch(() => null);
+      if (st && st.generation > j.result.from && st.phase !== 'restarting') break;
+    }
+    location.reload();
+  } catch (e) { presenter.say('Restart refused: ' + e.message, true); }
+}
+$('#demo-ctl').addEventListener('click', (e) => { e.currentTarget.blur(); demoControl({ action: 'toggle' }); });   // blur: Space must not click it again
 
 function togglePerf(v) { perfOn = v == null ? !perfOn : v; $('#perf').classList.toggle('hidden', !perfOn); }
 let lastPerf = 0;
@@ -92,11 +147,17 @@ function renderPerf() {
   $('#perf').innerHTML = '<b>' + s.fps + '</b> fps <span class="muted">rendered/s</span><br>' + (s.frameMs ? s.frameMs.toFixed(1) + ' ms' : '—') + ' <span class="muted">frame</span> · ' + s.cpuMs.toFixed(1) + ' ms <span class="muted">cpu</span><br>' + s.calls + ' <span class="muted">calls</span> · ' + (s.tris / 1000).toFixed(1) + 'k <span class="muted">tris</span><br><span class="muted">' + s.mode + ' · dpr ' + s.dpr + ' · AO ' + s.ao + '</span>';
 }
 
-// keyboard: B board, C calendar, T today, arrows pan, +/- zoom, R reset, D dark, F fps, W/M calendar mode, Esc close
+// keyboard: B board, C calendar, T today, arrows pan, +/- zoom, R reset, D dark, F fps, W/M calendar mode, Esc close,
+// P presenter view; demo mode: Space pause/resume, 1/2/4 speed, R restart (instead of reset; the ⌂ button still resets)
 window.addEventListener('keydown', (e) => {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) { if (e.key === 'Escape') e.target.blur(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key;
+  if (snap && snap.demo && (k === ' ' || k === '1' || k === '2' || k === '4' || k === 'r' || k === 'R')) {
+    if (k === ' ') demoControl({ action: 'toggle' }); else if (k === 'r' || k === 'R') demoRestart(); else demoControl({ action: 'speed', speed: Number(k) });
+    e.preventDefault(); return;
+  }
+  if (k === 'p' || k === 'P') { setPresenter(!presenterOn); e.preventDefault(); return; }
   if (k === 'Escape') { if (calendar.hasPopover()) calendar.closePopover(); else if (sidepanel.isOpen()) sidepanel.close(); else closeOverlays(); }
   else if (k === 'b' || k === 'B') { if (board.isOpen()) { board.hide(); syncPause(); } else openBoard(); }
   else if (k === 'c' || k === 'C') { if (calendar.isOpen()) { calendar.hide(); syncPause(); } else openCalendar(); }
@@ -134,7 +195,7 @@ function connectLive() {
   live = new EventSource('/api/events');
   live.onopen = () => { liveOk = true; };
   live.onerror = () => { liveOk = false; };
-  const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
+  const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; try { presenter.onEvent(JSON.parse(e.data)); } catch (_) { /* not JSON */ } if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
   for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered']) live.addEventListener(t, onEv);
 }
 async function action(pathname, body) {
@@ -163,6 +224,6 @@ $('#estop').addEventListener('click', async () => {
 
 // test hooks for the screenshot script (read-only helpers)
 window.__office = {
-  ready: () => ready, reload: () => load(), closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap,
+  ready: () => ready, reload: () => load(), presenter, setPresenter, presenterOn: () => presenterOn, closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap,
   setAnimate: (v) => office.setAnimate(v), bench: (ms, opts) => office.bench(ms, opts), stats: () => office.getStats(), togglePerf, settled: () => { const v = office.view; return v.target.distanceTo(v.wantTarget) < 0.002 && Math.abs(v.zoom - v.wantZoom) < 0.0005; }
 };

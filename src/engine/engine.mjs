@@ -52,7 +52,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
   useJail(J);   // the ported station modules write through this engine's jail
   try {
     const cfg = loadConfig({ configDir, promptsDir, overrides });
-    if (overrides) log.warn('config overrides in use (dry run only)', { products: overrides.productsFile ? overrides.productsFile.products.map((p) => p.key) : null, stationSet: overrides.stationSet ? Object.keys(overrides.stationSet) : null });
+    if (overrides) log.warn('config overrides in use (dry run and demo only)', { products: overrides.productsFile ? overrides.productsFile.products.map((p) => p.key) : null, stationSet: overrides.stationSet ? Object.keys(overrides.stationSet) : null });
     const store = openStore({ J, log });
     const ledger = createLedger({ J, store, log });
     const bus = createBus({ J, log });
