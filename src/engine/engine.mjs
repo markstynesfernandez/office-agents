@@ -13,11 +13,23 @@ import { createHalt } from './halt.mjs';
 import { createGuard } from './guard.mjs';
 import { createScheduler } from './scheduler.mjs';
 import { createProviders } from './providers/index.mjs';
-import { loadConfig } from './config.mjs';
+import { loadConfig, demoMarkers } from './config.mjs';
 import { useJail } from './store/active.mjs';
 import { createOrchestrator } from './orchestrator.mjs';
 
 export class LockError extends Error { constructor(msg) { super(msg); this.code = 'LOCKED'; } }
+export class DemoConfigError extends Error { constructor(msg) { super(msg); this.code = 'DEMO_CONFIG'; } }
+const sameOrInside = (a, b) => { const n = (p) => (process.platform === 'win32' ? p.toLowerCase() : p); const x = n(a), y = n(b); return x === y || x.startsWith(y.endsWith(path.sep) ? y : y + path.sep); };
+
+// DEMO values (demo/station-patch.json, demo/products.json) are for the demo engine only (scripts/demo.mjs passes
+// demo: true on its own root, data-demo/). A real engine refuses to start with any of them in its config, and a demo
+// engine refuses the station's data root.
+export function checkDemoConfig(cfg, { demo, dataRoot }) {
+  const marks = demoMarkers(cfg);
+  if (!demo && marks.length) throw new DemoConfigError('refusing to start: DEMO values are in the config (' + marks.slice(0, 6).join(', ') + (marks.length > 6 ? ', …' : '') + '); they apply only to the demo engine (npm run demo)');
+  if (demo) for (const r of [path.join(APP_ROOT, 'data'), process.env.STATION_DATA_ROOT].filter(Boolean)) if (sameOrInside(dataRoot, path.resolve(r)) || sameOrInside(path.resolve(r), dataRoot)) throw new DemoConfigError('refusing to start a demo engine on the station data root (' + dataRoot + ')');
+  return marks;
+}
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 
 export function takeLock(J, log) {
@@ -46,12 +58,13 @@ export function recover({ store, bus, log, resumeOnRestart = 1 }) {
   return out;
 }
 
-export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null } = {}) {
+export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false } = {}) {
   J = J || createJail({ dataRoot });
   const unlock = takeLock(J, log);
   useJail(J);   // the ported station modules write through this engine's jail
   try {
     const cfg = loadConfig({ configDir, promptsDir, overrides });
+    checkDemoConfig(cfg, { demo, dataRoot: J.dataRoot });
     if (overrides) log.warn('config overrides in use (dry run and demo only)', { products: overrides.productsFile ? overrides.productsFile.products.map((p) => p.key) : null, stationSet: overrides.stationSet ? Object.keys(overrides.stationSet) : null });
     const store = openStore({ J, log });
     const ledger = createLedger({ J, store, log });

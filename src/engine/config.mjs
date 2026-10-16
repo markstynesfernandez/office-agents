@@ -24,6 +24,21 @@ export function validateEngine(e) {
 // overrides (the dry run only): { productsFile: {products:[...]}, stationSet: { 'dotted.key': value } } on top of the files
 export function applySet(obj, set) { const out = structuredClone(obj); for (const [k, v] of Object.entries(set || {})) { const parts = k.split('.'); let o = out; for (const p of parts.slice(0, -1)) { if (!o[p] || typeof o[p] !== 'object') throw new Error('override path not found: ' + k); o = o[p]; } if (!(parts[parts.length - 1] in o)) throw new Error('override key not found: ' + k); o[parts[parts.length - 1]] = v; } return out; }
 
+// demo values (demo/station-patch.json, demo/products.json) carry the word DEMO in capitals or a `demo-` product key.
+// They apply to the demo engine only: a real engine refuses to start if any is in its config (engine.mjs).
+const DEMO_WORD = /\bDEMO\b/;
+export function demoMarkers(cfg) {
+  const out = [];
+  const walk = (v, at) => {
+    if (typeof v === 'string') { if (DEMO_WORD.test(v)) out.push(at); }
+    else if (Array.isArray(v)) v.forEach((x, i) => walk(x, at + '[' + i + ']'));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (k !== '$comment') walk(x, at ? at + '.' + k : k);
+  };
+  walk(cfg.station || {}, 'station');
+  for (const p of cfg.products || []) { if (/^demo-/i.test(String(p.key || ''))) out.push('products.' + p.key + ' (demo product key)'); walk(p, 'products.' + p.key); }
+  return [...new Set(out)];
+}
+
 export function loadConfig({ configDir, promptsDir, overrides = null }) {
   const engine = readJson(path.join(configDir, 'engine.json'));
   const bad = validateEngine(engine); if (bad.length) throw new Error('config/engine.json: ' + bad.join('; '));

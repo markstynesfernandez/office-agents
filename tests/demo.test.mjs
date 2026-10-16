@@ -141,3 +141,67 @@ test('demo controls are token-checked POSTs; restart wipes the root and plays th
   const res = await d.played();
   assert.equal(res.jobs[d.current().jobA].state, 'approval');
 });
+
+test('demo values are applied only by scripts/demo.mjs to the demo engine; a real engine refuses to start with any of them', async (t) => {
+  const { createEngine, DemoConfigError } = await import('../src/engine/engine.mjs');
+  const { demoMarkers, loadConfig } = await import('../src/engine/config.mjs');
+  const { tempRoot } = await import('./helpers/engine.mjs');
+  const readDemo = (f) => JSON.parse(fs.readFileSync(path.join(ROOT, 'demo', f), 'utf8'));
+  const overrides = { productsFile: readDemo('products.json'), stationSet: readDemo('station-patch.json').set };
+  // statically: only scripts/demo.mjs names the demo patch, reads demo/products.json or passes demo: true
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+  const code = ['src', 'scripts', 'demo'].flatMap((d) => walk(path.join(ROOT, d))).filter((f) => /\.(mjs|js)$/.test(f));
+  for (const f of code) {
+    const r = path.relative(ROOT, f).replace(/\\/g, '/'), src = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:"'`\\])\/\/[^\n]*/g, '$1');
+    if (r === 'scripts/demo.mjs') { assert.match(src, /readJson\('station-patch\.json'\)/); assert.match(src, /demo: true/); continue; }
+    assert.ok(!/station-patch/.test(src), r + ' names the demo patch');
+    assert.ok(!/DEMO_DIR|['"]demo['"]\s*,\s*['"]products\.json|demo[\\/]products\.json/.test(src), r + ' reads the demo products');
+    assert.ok(!/\bdemo\s*:\s*true\b/.test(src), r + ' starts a demo engine');
+  }
+  // the real config carries no demo value; the demo files are all caught
+  const real = loadConfig({ configDir: path.join(ROOT, 'config'), promptsDir: path.join(ROOT, 'prompts') });
+  assert.deepEqual(demoMarkers(real), []);
+  const withDemo = loadConfig({ configDir: path.join(ROOT, 'config'), promptsDir: path.join(ROOT, 'prompts'), overrides });
+  const marks = demoMarkers(withDemo);
+  for (const k of ['station.digital.listingNoticeStatus', 'station.digital.licences.personal-use.status', 'station.digital.aiDisclosure.text']) assert.ok(marks.includes(k), k);
+  assert.ok(marks.some((m) => /demo-sticker-pack-5/.test(m)), 'the demo product');
+  // at runtime: a real engine (no demo flag) refuses the demo overrides, and refuses a config folder holding any demo value
+  const a = tempRoot('demo-guard'); t.after(a.cleanup);
+  assert.throws(() => createEngine({ J: a.J, log: a.log, overrides, startScheduler: false }), (e) => e instanceof DemoConfigError && /DEMO values are in the config/.test(e.message));
+  assert.ok(!fs.existsSync(path.join(a.dataRoot, 'station.db')), 'refused before the store opened');
+  assert.ok(!fs.existsSync(path.join(a.dataRoot, '.lock')), 'the lock was released');
+  const cfgDir = path.join(a.base, 'config'); fs.cpSync(path.join(ROOT, 'config'), cfgDir, { recursive: true });
+  const st = JSON.parse(fs.readFileSync(path.join(cfgDir, 'station.config.json'), 'utf8')); st.digital.listingNoticeStatus = readDemo('station-patch.json').set['digital.listingNoticeStatus'];
+  fs.writeFileSync(path.join(cfgDir, 'station.config.json'), JSON.stringify(st));
+  assert.throws(() => createEngine({ J: a.J, log: a.log, configDir: cfgDir, startScheduler: false }), DemoConfigError, 'a DEMO value copied into the real config');
+  const pr = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'products.json'), 'utf8')); pr.products.push(readDemo('products.json').products[0]);
+  fs.cpSync(path.join(ROOT, 'config', 'station.config.json'), path.join(cfgDir, 'station.config.json')); fs.writeFileSync(path.join(cfgDir, 'products.json'), JSON.stringify(pr));
+  assert.throws(() => createEngine({ J: a.J, log: a.log, configDir: cfgDir, startScheduler: false }), DemoConfigError, 'the demo product copied into the real products');
+  // the demo flag never opens the station's data root
+  const { checkDemoConfig } = await import('../src/engine/engine.mjs');
+  assert.throws(() => checkDemoConfig(withDemo, { demo: true, dataRoot: path.join(ROOT, 'data') }), /station data root/);
+  assert.throws(() => checkDemoConfig(withDemo, { demo: true, dataRoot: path.join(ROOT, 'data', 'x') }), /station data root/);
+  assert.deepEqual(checkDemoConfig(withDemo, { demo: true, dataRoot: path.join(a.base, 'data-demo') }), marks);
+  // and the plain engine still starts on the real config
+  const e = createEngine({ J: a.J, log: a.log, startScheduler: false }); e.close();
+});
+
+test('DEMAND-RESEARCHER and EVIDENCE-CHECKER desks show working for the length of each research run, then idle', async (t) => {
+  const { buildEngineSnapshot } = await import('../src/server/engine-model.mjs');
+  const r = temp(t);
+  const d = await startDemo({ port: 0, ...r, pacing: ZERO_PACING, quiet: true, startWhen: 'page', env: cleanEnv() });
+  t.after(() => d.close());
+  const engine = d.current().engine, seen = [];
+  const statusOf = (k) => buildEngineSnapshot(engine).agents.find((a) => a.id === k);
+  engine.bus.subscribe((ev) => {
+    if (!['demand-researcher', 'evidence-checker'].includes(ev.agentKey) || !['run.start', 'run.end'].includes(ev.type)) return;
+    const a = statusOf(ev.agentKey);
+    seen.push({ type: ev.type, agent: ev.agentKey, status: a.status, text: a.statusText, job: a.currentJob && a.currentJob.id });
+  });
+  d.current().start();
+  await d.played();
+  const starts = seen.filter((s) => s.type === 'run.start'), ends = seen.filter((s) => s.type === 'run.end');
+  assert.ok(starts.some((s) => s.agent === 'demand-researcher') && starts.some((s) => s.agent === 'evidence-checker'), 'both research agents ran: ' + JSON.stringify(seen));
+  for (const s of starts) { assert.equal(s.status, 'working', s.agent + ' at run.start: ' + JSON.stringify(s)); assert.equal(s.job, d.current().researchId, 'the desk names the research job'); }
+  for (const s of ends) assert.notEqual(s.status, 'working', s.agent + ' after run.end');
+});

@@ -248,4 +248,6 @@ body[data-theme="dark"] .badge-demo { background: #7d84e8; color: #11152a; borde
 .caption .cap-status { flex: none; font-family: var(--mono); font-size: 11.5px; color: var(--muted); border-left: 1px solid var(--line); padding-left: 10px; }
 @keyframes cap-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 /* the caption stays clear of the side panel when it is open */
-#app:has(#sidepanel:not(.hidden)) .caption { left: calc((100% - 400px) / 2); max-width: calc(100% - 400px - 120px); }
+#app:has(#sidepanel:not(.hidden)) .caption { left: calc((100% - 400px) / 2); max-width: calc(100% - 400px - 120px); width: max-content; border-radius: 18px; }
+/* narrower there, so the text wraps onto a second line instead of being cut off with an ellipsis */
+#app:has(#sidepanel:not(.hidden)) .caption .cap-text { white-space: normal; text-overflow: clip; text-wrap: balance; line-height: 1.3; }
