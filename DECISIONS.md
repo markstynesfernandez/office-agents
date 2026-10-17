@@ -909,3 +909,42 @@ Tests: `tests/live-web.test.mjs`, 13 tests. `npm test` 308/308. Port drift: none
 - **The v1 source rule is still open:** TREND-SCOUT's prompt still says it reads "store best-seller and top-played
   charts", and nothing stops a `web_fetch` of a Steam, itch.io, Twitch or YouTube page (no domain list is set). A
   `blocked_domains` list on `web_fetch` and the one-line prompt change are proposed, not built.
+
+## E6 step b0: owner decisions and the source rule (17/10/2026)
+
+The owner answered the b0 questions above. Built on the stubbed SDK and the mock only: no call was made, no key value
+was read, printed, logged or copied. Commit "E6 b0: source rule enforced".
+
+1. **Source rule enforced before the first scout run (owner-approved).** The blocked sites are the four recorded under
+   "E6 readiness" item 1: Steam, itch.io, Twitch and YouTube, written in `config/engine.json`
+   `webSources.blockedDomains` as `steampowered.com`, `itch.io`, `twitch.tv`, `youtube.com`. Nothing else was added.
+   - They go as `blocked_domains` on BOTH `web_search` and `web_fetch` on every relay request. The relay is shared, so
+     this covers every agent with web tools: TREND-SCOUT and EVIDENCE-CHECKER (the scout line) and also
+     DEMAND-RESEARCHER (the research line).
+   - The engine also refuses a `web_fetch` to those hosts or any subdomain before anything is reserved, counted or
+     sent, on the mock as on the live provider (`src/engine/lib/web-sources.mjs`, `tools/index.mjs`). An unparsable
+     URL is refused too (fails closed).
+   - TREND-SCOUT's prompt no longer reads store best-seller, top-played or streaming pages. Its sources are trend
+     articles, editorial roundups and community discussion found by web search, and it never reads a store, sales
+     chart, game listing or streaming-platform page. Its genre trend evidence is now a trend article, roundup or
+     discussion about the genre as a whole (it was "a tag or category page, a chart of the genre"). The IP rule lines
+     are unchanged, word for word (tested).
+   - Twitch and YouTube data come later, through their official APIs only.
+   *Deviation from the wording, flagged:* the owner's examples included `*.itch.io`. The API rejects wildcards in a
+   domain with a 400 (platform docs, server tools, "Domain filtering"), and a bare domain already covers every
+   subdomain. So `itch.io` is written bare; it blocks `someone.itch.io`, as `steampowered.com` blocks
+   `store.steampowered.com`, `twitch.tv` blocks `www.twitch.tv` and `youtube.com` blocks `m.youtube.com` (tested).
+   *Not blocked, because not listed:* other domains of the same services, e.g. `steamcommunity.com`, `youtu.be`,
+   `twitch.com`. Say if any should be added.
+2. **EVIDENCE-CHECKER live web search, with its own 15-call cap: approved.** The run cap of USD 0.50
+   (`perJob[genre-scout]`) stays the hard stop for the whole run.
+3. **`live.web` settings approved:** relay effort low, `maxTokens` 2000, 12,000 result-token headroom per fetch,
+   10,000-token page cap. *Not named in the approval:* the 20,000-token result headroom per search and
+   `maxUsesPerRequest` 1 (the plan's "one search a call"). Both stay as built; they only size the reservation and the
+   per-request limit.
+
+Tests: `tests/live-web.test.mjs` now 17 (4 new: the four bare domains and the rejection of wildcard or malformed
+entries; the list on both tools for every agent with web tools; a blocked fetch refused before it is reserved, counted
+or sent, for each web agent and on the mock; the prompt). `npm test` 312/312. Port drift: none (69 files).
+`npm run dry-run:scout` (mock): 4 verified, 1 blocked and refused at intake, 13 names, 12 web calls with the 13th
+refused, USD 0.00, unchanged.

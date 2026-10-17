@@ -55,7 +55,7 @@ try {
   const off = agents.filter((a) => !a.enabled); if (off.length) throw new Error('agent(s) off duty: ' + off.map((a) => a.key).join(', '));
   const sup = await providers.text.webSearchSupported(W.model);
   if (!sup.supported) throw new Error('the Models API does not report web search support for ' + W.model + (sup.reported ? ' (supported: false)' : ' (field missing)') + ': no model call made');
-  const pre = 'scout-live: line=' + LINE + ' agents=' + agents.map((a) => a.key + ':' + a.model + '/effort ' + a.effort).join(',') + ' web_relay=' + W.model + '/effort ' + (W.effort || 'default') + ' (' + W.tools.web_search + ', ' + W.tools.web_fetch + ', max_uses=' + W.maxUsesPerRequest + ')' +
+  const pre = 'scout-live: line=' + LINE + ' agents=' + agents.map((a) => a.key + ':' + a.model + '/effort ' + a.effort).join(',') + ' web_relay=' + W.model + '/effort ' + (W.effort || 'default') + ' (' + W.tools.web_search + ', ' + W.tools.web_fetch + ', max_uses=' + W.maxUsesPerRequest + ', blocked_domains=' + W.blockedDomains.length + ' on both)' +
     ' web_call_cap=' + agents.map((a) => a.key + ' ' + a.maxWebCalls).join(',') + ' run_cap_usd=' + capUsd.toFixed(2) + ' agent_run_cap_usd=' + cfg.engine.caps.perRunUsd.toFixed(2) + ' retries=' + (cfg.engine.live.retries ?? 0) + ' web_search_supported=yes';
   log.info('scout-live: one run', { line: LINE, agents, webRelay: W.model, maxUses: W.maxUsesPerRequest, runCapUsd: capUsd, retries: cfg.engine.live.retries });
   out(pre);

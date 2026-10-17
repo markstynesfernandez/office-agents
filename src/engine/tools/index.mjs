@@ -18,6 +18,7 @@ import { screenText, hitLine } from '../lib/originality.mjs';
 import { sha256 } from '../lib/common.mjs';
 import { latestSet } from '../lib/digital-prep.mjs';
 import { isScoutPath, SCOUT_DIR } from '../lib/scouting.mjs';
+import { blockedDomains, blockedBy } from '../lib/web-sources.mjs';
 
 export const TOOL_NAMES = ['fs_read', 'fs_list', 'fs_write', 'image_generate', 'image_analyze', 'web_search', 'web_fetch', 'submit_verdict'];
 export const FORBIDDEN_TOOL_RE = /send|notify|notification|channel|email|mail|sms|message|post|shell|exec|browser|click|mcp|plugin/i;
@@ -64,6 +65,7 @@ export function canonicalDesignFile(p, jobId) { const s = normalisePath(p, jobId
 export function createToolbox(ctx) {
   const { J, folder, agent, job, cfg, guard, providers, run, halt, log, bus, line } = ctx;
   const counters = { images: 0, web: 0, verdicts: 0 };
+  const blocked = blockedDomains(cfg.engine);
   const root = realResolve(folder);
   const allowed = new Set(agent.tools || []);
   const writeRes = (agent.writes || []).map(globRe);
@@ -147,7 +149,13 @@ export function createToolbox(ctx) {
       return answer;
     },
     async web_search({ query }) { return webCall('web_search', { query }); },
-    async web_fetch({ url }) { if (!/^https:\/\//.test(String(url))) throw new ToolError('https URLs only'); return webCall('web_fetch', { url }); },
+    async web_fetch({ url }) {
+      if (!/^https:\/\//.test(String(url))) throw new ToolError('https URLs only');
+      // the owner's v1 source rule (lib/web-sources.mjs): refused before anything is reserved, counted or sent
+      const hit = blockedBy(url, blocked);
+      if (hit) throw new ToolError('web_fetch refused: ' + hit + ' is a blocked source (store, chart and streaming pages are not used; use trend articles, editorial roundups and community discussion)');
+      return webCall('web_fetch', { url });
+    },
     submit_verdict({ record }) {
       if (counters.verdicts >= 1) throw new ToolError('one verdict per run: already submitted');
       const v = validateVerdict(record, { kind: agent.verdict, job, folder: root });
