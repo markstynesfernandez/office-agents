@@ -31,7 +31,10 @@ export const W = 1600, H = 1000;
 // channel (R3 spike): one named browser only, e.g. 'chromium' headed (Playwright's Chromium: Windows gives it the default
 // GPU, so it can measure the iGPU when a per-app setting sends chrome.exe to another GPU)
 export async function launch({ headed = false, channel = null } = {}) {
-  const attempts = channel ? [{ label: channel + (headed ? ' (headed)' : ' (headless)'), opts: { headless: !headed, channel, args: ['--window-size=' + W + ',' + (H + 140)] } }] : headed
+  // R3b: a headed window that gets covered is not throttled by Chromium itself (Windows may still slow it; the capture
+  // scripts retry a throttled bench)
+  const NO_THROTTLE = ['--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'];
+  const attempts = channel ? [{ label: channel + (headed ? ' (headed)' : ' (headless)'), opts: { headless: !headed, channel, args: ['--window-size=' + W + ',' + (H + 140), ...(headed ? NO_THROTTLE : [])] } }] : headed
     ? [{ label: 'Google Chrome (headed)', opts: { headless: false, channel: 'chrome', args: ['--window-size=' + W + ',' + (H + 140)] } }, { label: 'Chromium (headed)', opts: { headless: false, channel: 'chromium' } }]
     : [{ label: 'chromium + GPU (headless)', opts: { headless: true, channel: 'chromium', args: ['--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=default'] } },
        { label: 'headless shell + SwiftShader', opts: { headless: true, args: ['--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--enable-webgl'] } }];

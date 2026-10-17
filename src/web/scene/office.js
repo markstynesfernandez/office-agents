@@ -71,8 +71,11 @@ class MSAARenderPass extends Pass {
 // out of the pre-pass, so the AO depends only on the static scene and the camera: it is computed again only when the
 // camera has moved, the canvas is resized or the static scene or theme changes (aoDirty), and every other frame (idle
 // animation, people walking) only multiplies the cached AO onto the frame.
+// R3b: the multiply itself is done in the output pass (OfficeOutputPass) when it can, which saves a full-resolution
+// read and write of the frame every frame (the iGPU's bottleneck is memory bandwidth); otherwise it blends as before.
+// (The link is `fusedInto`, not `output`: GTAOPass already uses `output` for its debug view mode.)
 class HalfResGTAOPass extends GTAOPass {
-  constructor(...a) { super(...a); this.needsSwap = false; this.aoDirty = true; this.aoRuns = 0; }
+  constructor(...a) { super(...a); this.needsSwap = false; this.aoDirty = true; this.aoRuns = 0; this.fusedInto = null; }
   setSize(w, h) { super.setSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2))); this.aoDirty = true; }
   render(renderer, writeBuffer, readBuffer, dt, mask) {
     if (this.aoDirty) {
@@ -81,6 +84,7 @@ class HalfResGTAOPass extends GTAOPass {
       const output = this.output; this.output = GTAOPass.OUTPUT.Off;          // AO + denoise only
       try { super.render(renderer, writeBuffer, readBuffer, dt, mask); this.aoDirty = false; this.aoRuns++; } finally { this.output = output; for (const o of hidden) o.visible = true; }
     }
+    if (this.fusedInto) return;
     this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
     this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
     this._renderPass(renderer, this.blendMaterial, readBuffer);
@@ -88,8 +92,11 @@ class HalfResGTAOPass extends GTAOPass {
 }
 
 // R3 spike, R3a: a cheap glow on the baked rooms' LED strips (dark mode only). The strips are drawn above 1.0 (HDR, not tone
-// mapped; nothing else in the scene is), so a threshold + 2x2 downsample to half resolution, a 9-tap blur each way at
-// half resolution and an additive blend back onto the frame pick them out without a second scene render.
+// mapped; nothing else in the scene is), so a threshold + downsample, a 9-tap blur each way and an additive blend back
+// onto the frame pick them out without a second scene render. R3b: at quarter resolution (was half): the threshold reads
+// the 16 full-resolution pixels of each quarter pixel exactly (no bilinear averaging, so a strip one pixel wide still
+// glows) and the blur steps half a quarter texel, so the glow keeps its width; and the glow is added in the output pass
+// (OfficeOutputPass) instead of its own full-screen blend, which was most of its cost on the iGPU (memory bandwidth).
 class HalfResGlowPass extends Pass {
   constructor() {
     super(); this.needsSwap = false; this.enabled = false; this.strength = 0.85;
@@ -98,7 +105,7 @@ class HalfResGlowPass extends Pass {
     const vertexShader = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
     const mat = (uniforms, fragmentShader, extra = {}) => new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, depthTest: false, depthWrite: false, ...extra });
     this.bright = mat({ tDiffuse: { value: null }, texel: { value: new THREE.Vector2() }, threshold: { value: 1.15 } },
-      'uniform sampler2D tDiffuse; uniform vec2 texel; uniform float threshold; varying vec2 vUv; vec3 pick(vec2 o) { return max(texture2D(tDiffuse, vUv + o).rgb - threshold, 0.0); } void main() { gl_FragColor = vec4(0.25 * (pick(-texel) + pick(vec2(texel.x, -texel.y)) + pick(vec2(-texel.x, texel.y)) + pick(texel)), 1.0); }');
+      'uniform sampler2D tDiffuse; uniform vec2 texel; uniform float threshold; varying vec2 vUv; void main() { vec3 s = vec3(0.0); for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) s += max(texture2D(tDiffuse, vUv + texel * vec2(float(i) - 1.5, float(j) - 1.5)).rgb - threshold, 0.0); gl_FragColor = vec4(s * 0.0625, 1.0); }');
     this.blur = mat({ tDiffuse: { value: null }, dir: { value: new THREE.Vector2() } },
       'uniform sampler2D tDiffuse; uniform vec2 dir; varying vec2 vUv; void main() { vec3 s = texture2D(tDiffuse, vUv).rgb * 0.227027; s += (texture2D(tDiffuse, vUv + dir * 1.384615).rgb + texture2D(tDiffuse, vUv - dir * 1.384615).rgb) * 0.316216; s += (texture2D(tDiffuse, vUv + dir * 3.230769).rgb + texture2D(tDiffuse, vUv - dir * 3.230769).rgb) * 0.070270; gl_FragColor = vec4(s, 1.0); }');
     this.add = mat({ tDiffuse: { value: null }, strength: { value: this.strength } },
@@ -106,19 +113,39 @@ class HalfResGlowPass extends Pass {
       { transparent: true, blending: THREE.AdditiveBlending });
     this.quad = new FullScreenQuad(null);
   }
-  setSize(w, h) { this.full.set(w, h); const hw = Math.max(1, Math.round(w / 2)), hh = Math.max(1, Math.round(h / 2)); this.a.setSize(hw, hh); this.b.setSize(hw, hh); }
+  setSize(w, h) { this.full.set(w, h); const hw = Math.max(1, Math.round(w / 4)), hh = Math.max(1, Math.round(h / 4)); this.a.setSize(hw, hh); this.b.setSize(hw, hh); }
   render(renderer, writeBuffer, readBuffer) {
     const auto = renderer.autoClear; renderer.autoClear = false;
     const hw = this.a.width, hh = this.a.height;
-    this.bright.uniforms.tDiffuse.value = readBuffer.texture; this.bright.uniforms.texel.value.set(0.5 / this.full.x, 0.5 / this.full.y);
+    this.bright.uniforms.tDiffuse.value = readBuffer.texture; this.bright.uniforms.texel.value.set(1 / this.full.x, 1 / this.full.y);
     this.quad.material = this.bright; renderer.setRenderTarget(this.a); this.quad.render(renderer);
-    this.blur.uniforms.tDiffuse.value = this.a.texture; this.blur.uniforms.dir.value.set(1 / hw, 0);
+    this.blur.uniforms.tDiffuse.value = this.a.texture; this.blur.uniforms.dir.value.set(0.5 / hw, 0);
     this.quad.material = this.blur; renderer.setRenderTarget(this.b); this.quad.render(renderer);
-    this.blur.uniforms.tDiffuse.value = this.b.texture; this.blur.uniforms.dir.value.set(0, 1 / hh);
+    this.blur.uniforms.tDiffuse.value = this.b.texture; this.blur.uniforms.dir.value.set(0, 0.5 / hh);
     renderer.setRenderTarget(this.a); this.quad.render(renderer);
-    this.add.uniforms.tDiffuse.value = this.a.texture; this.add.uniforms.strength.value = this.strength;
-    this.quad.material = this.add; renderer.setRenderTarget(readBuffer); this.quad.render(renderer);
+    if (!this.fusedInto) { this.add.uniforms.tDiffuse.value = this.a.texture; this.add.uniforms.strength.value = this.strength; this.quad.material = this.add; renderer.setRenderTarget(readBuffer); this.quad.render(renderer); }
     renderer.autoClear = auto;
+  }
+}
+// R3b: three's output pass (tone mapping + sRGB) that also does the AO multiply and adds the glow before tone mapping,
+// exactly as their own blend passes did (frame x mix(1, AO, intensity), alpha x AO alpha; then + glow x strength), so
+// the frame is read and written once. If three's output shader ever changes shape, those passes blend on their own again.
+class OfficeOutputPass extends OutputPass {
+  constructor(ao, glow) {
+    super(); this.ao = ao; this.glow = glow;
+    const f = this.material.fragmentShader, a = 'uniform sampler2D tDiffuse;', b = 'gl_FragColor = texture2D( tDiffuse, vUv );';
+    if ((ao || glow) && f.includes(a) && f.includes(b)) {
+      Object.assign(this.uniforms, { tAO: { value: null }, aoIntensity: { value: 0 }, aoOn: { value: 0 }, tGlow: { value: null }, glowStrength: { value: 0 } });
+      this.material.fragmentShader = f.replace(a, a + '\nuniform sampler2D tAO;\nuniform float aoIntensity;\nuniform float aoOn;\nuniform sampler2D tGlow;\nuniform float glowStrength;')
+        .replace(b, b + '\nif (aoOn > 0.5) { vec4 aoT = texture2D( tAO, vUv ); gl_FragColor = vec4(gl_FragColor.rgb * mix(vec3(1.0), aoT.rgb, aoIntensity), gl_FragColor.a * aoT.a); }\nif (glowStrength > 0.0) gl_FragColor.rgb += texture2D( tGlow, vUv ).rgb * glowStrength;');
+      if (ao) ao.fusedInto = this; if (glow) glow.fusedInto = this;
+    }
+  }
+  render(renderer, writeBuffer, readBuffer, dt, mask) {
+    const u = this.uniforms;
+    if (this.ao && this.ao.fusedInto === this) { u.tAO.value = this.ao.pdRenderTarget.texture; u.aoIntensity.value = this.ao.blendIntensity; u.aoOn.value = this.ao.enabled ? 1 : 0; }
+    if (this.glow && this.glow.fusedInto === this) { u.tGlow.value = this.glow.a.texture; u.glowStrength.value = this.glow.enabled ? this.glow.strength : 0; }
+    super.render(renderer, writeBuffer, readBuffer, dt, mask);
   }
 }
 
@@ -612,7 +639,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       } catch (e) { console.warn('GTAO unavailable, continuing without AO', e); gtao = null; }
     }
     if (baked.want && options.glow !== false) { glowPass = new HalfResGlowPass(); glowPass.setSize(w, h); composer.addPass(glowPass); }
-    composer.addPass(new OutputPass());
+    composer.addPass(new OfficeOutputPass(gtao, glowPass));
   }
 
   function resize() {
@@ -720,7 +747,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   }
   const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
   function bakedState() { return { want: baked.want, loaded: !!baked.office, active: baked.active.size > 0, rooms: [...baked.active], failed: baked.failed, glow: !!(glowPass && glowPass.enabled) }; }
-  function getStats() { return { baked: baked.want ? (baked.active.size ? [...baked.active].join('+') : baked.failed ? 'failed' : baked.office ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
+  function getStats() { return { baked: baked.want ? (baked.active.size ? [...baked.active].join('+') : baked.failed ? 'failed' : baked.office ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, post: (gtao && gtao.fusedInto) || (glowPass && glowPass.fusedInto) ? 'fused' : (gtao || glowPass) ? 'fallback (separate blends)' : 'output only', textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
   // continuous rendering for `ms` (as if the camera were moving every frame): average fps and frame times
   // (the page's own loop keeps calling tick(); while benchUntil is in the future every tick renders)
   // move: true orbits the target a little every frame (the real camera-motion path: AO off while moving)

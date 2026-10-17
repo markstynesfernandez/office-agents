@@ -384,7 +384,7 @@ price, licence or product changed.
   driver turns off Python's bytecode cache (no `__pycache__` next to the library), and `.gitignore` ignores it anyway.
   `*.bin` is marked binary in `.gitattributes`.
 
-### For the owner (open; nothing decided here)
+### For the owner (answered 17/10/2026: see "R3b build record" below)
 
 - **Light-mode Design room.** It measures about 10% darker than its procedural version (the dark slat backing, walnut
   desks and dark credenza; its walls are the same warm white as the other rooms). Keep, or lighten it (a pale backing
@@ -395,6 +395,88 @@ price, licence or product changed.
   for phase 2?
 - **Phase 2 bake time.** With one shared atlas, any room change re-bakes every room (estimated 4–5 minutes once
   Research, the lounge and the atrium are in). Fine, or one atlas per phase?
+
+## R3b build record (17/10/2026)
+
+The baked look, phase 2 of 2: the Research room, the lounge and the atrium baked, so every area is baked. Milestone
+`052f2b1`; the frame-rate fix and the docs in the R3b commit. No cap, price, licence or product changed. Mock data only.
+
+### The owner's answers to the R3a questions (17/10/2026)
+
+- **Light-mode Design room:** brighten it to within about 10% of the other rooms; the evening look stays as it was.
+- **Evening walls:** keep the department tints.
+- **Rugs:** dark grey everywhere.
+- **Bake time:** one lightmap atlas per room, plus one shared by the atrium and the lounge;
+  `npm run build-office -- --room <name>`; the whole office under 10 MB.
+
+### Choices made in the build
+
+- **Four bake units.** Research, Design, Office, and the atrium with the lounge (they light each other, so they share
+  an atlas). Each atlas is sized for one texel density across the office (100 texels a unit: Research 2432 px, Design
+  1984, Office 2176, atrium 3008). `--room lounge` builds the atrium unit. A one-unit build refuses to run if the shared
+  look or the bake settings changed since the last full build.
+- **Light-mode Design room.** By day the slat backing and the credenza are pale (`#e3dbce`, `#e8e1d6`) and the desk tops
+  oak; by evening they are dark and walnut, as in R3a (`bakedlook.js` `THEMED_TEX`, `DESIGN`). Measured on the light
+  overview: Design 0.991 x the mean of the other two rooms (Research 1.028 x, Office 0.957 x), inside the 10% target.
+- **Rugs and upholstery.** The rug and fabric photos are shifted to a light neutral average and tinted per material:
+  rugs dark grey in both themes, baked and procedural (palette `loungeRug` now equals `rug`); task chairs charcoal;
+  lounge sofas beige by day, grey by evening.
+- **The atrium.** Its concrete is the page's own canvas concrete (`textures.js` `tileTexture`); no new texture file.
+  The server closet is fixed at five slots, so the engine view and the fixtures view share one baked atrium.
+- **Frame rate (the R3b tail).** The iGPU is limited by memory bandwidth, so two full-screen passes were folded into
+  the output pass:
+  `OfficeOutputPass` (`office.js`) does the cached AO multiply and adds the LED glow before tone mapping, so the frame
+  is read and written once instead of three times. The glow's blur now runs at quarter resolution (was half); its
+  threshold reads all 16 full-resolution pixels of each quarter pixel, so a strip one pixel wide still glows, and the
+  blur step is halved, so the glow keeps its width. If three's output shader ever changes shape, the passes fall back to
+  their own blends. The page's stats show which path is active (`post: 'fused'` or the fallback), and the capture
+  script reports a problem if a baked view is not fused. The link field is `fusedInto` (GTAOPass already has an
+  `output` field for its debug view; the first draft reused that name and worked only because `Default` is 0).
+- **Capture robustness.** Headed Chromium is launched with its occlusion throttling off
+  (`--disable-features=CalculateNativeWinOcclusion`, `--disable-backgrounding-occluded-windows`,
+  `--disable-renderer-backgrounding`), and `screenshots-r3b.mjs` repeats a bench whose p95 frame is 500 ms or more (a
+  covered window), up to four tries. The retries are recorded with each fps row. In the final run no bench needed one.
+
+### Measured (17/10/2026)
+
+Headed Playwright Chromium on the Intel UHD iGPU (`ANGLE (Intel, Intel(R) UHD Graphics (0x0000A78B) Direct3D11`),
+1600 x 1000, 3 s benches; `screenshots/r3b/fps-headed.json`. The fused output path was active in every view; the
+fallback did not trigger.
+
+| View | Moving | Full quality |
+|---|---|---|
+| Overview, light | 76.4 | 72.5 |
+| Overview, dark | 71.0 | 74.2 |
+| Research, light | 68.8 | 75.4 |
+| Research, dark | 70.3 | 69.2 |
+| Lounge, light | 80.0 | 80.1 |
+| Lounge, dark | 76.6 | 75.4 |
+| Atrium, light | 71.0 | 69.8 |
+| Atrium, dark | 66.4 | 66.1 |
+| Design, light | 79.1 | 79.1 |
+| Overview, dark, all 8 agents walking | — | 66.2 |
+| Overview, light, all 8 agents walking | — | 70.8 |
+| For comparison: overview, procedural (light / dark / dark, 8 walking) | 71.4 / 77.3 / — | 73.1 / 73.5 / 69.7 |
+
+- **Assets:** 6,877,262 bytes as served, 68.8% of the 10 MB budget (gzip 4.88 MB, brotli 4.67 MB). Per unit: Research
+  2.26 MB, Design 1.04 MB, Office 1.47 MB, atrium with lounge 1.79 MB; shared textures 0.28 MB; manifest 0.03 MB.
+- **Rebuild times** (OptiX on the RTX 5060, 1024 samples): full build 261.8 s; one unit: Research 91.0 s, Design 43.2 s,
+  Office 44.9 s, atrium with lounge 82.7 s (`screenshots/r3b/build.json`). R3a's estimate for a full build was 4–5 minutes.
+- **Brightness** (`screenshots/r3b/brightness.json`): in dark mode every baked area is brighter than its procedural
+  version (1.05–1.33 x), as required. In light mode the baked rooms are 3–10% darker than their procedural versions
+  (Design 0.90, Research 0.93, Office 0.97); the lounge and atrium are 4–7% brighter. Only dark mode has a target.
+
+### Cut or not done
+
+- Nothing in the owner's R3b answers was cut.
+- Meshopt-compressed geometry (R3a's suggested saving) is not done: the office is well under budget without it.
+- The fps before the frame-rate fix was not recorded in the tracked docs, so this record does not give a before/after
+  figure.
+
+### For the owner (open; nothing decided here)
+
+- **Light-mode baked rooms vs procedural.** The baked rooms read 3–10% darker than the procedural ones in light mode
+  (no target was set for light mode). Keep, or set a target?
 
 ## Port batch before E6: owner decisions (17/10/2026)
 

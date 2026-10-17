@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (R3a: baked Design and Office rooms, phase 1 of 2, now the default scene, for the owner's review; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (R3b: baked Research, lounge and atrium, phase 2 of 2, for the owner's review; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -16,16 +16,42 @@ Last updated: 17/10/2026 (R3a: baked Design and Office rooms, phase 1 of 2, now 
 | **Redesign R1** Office scene look | Done (16/10/2026), **approved by the owner** (17/10/2026). Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
 | **Redesign R2** Office look, people, UI polish | Done (17/10/2026), **approved by the owner** (17/10/2026). Follow-ups done at the start of E5 (below). Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
 | **E5** Live UI | Done (17/10/2026), **approved by the owner** (17/10/2026). Task box, scheduler, approval queue, desk and job controls, E-STOP with typed resume, live spend vs caps; every write same-origin, token, idempotency key and expectedVersion. Mock provider only. Screenshots in `screenshots/e5/`. See below. |
-| **Port batch before E6** | Done (17/10/2026), **for the owner's review**. The PNGTuber job's fixes and the 16 drifted sources ported at the 5th moment (PORTED.md); the build with the pinned Real-ESRGAN in the engine; owner overrides, set and listing approvals; QA-only and listing-only; the digital package step, listing photos, Mark published with title, price and SKU. Delta import done. Parity on the live product: 26/26, the rebuild byte for byte. Mock only, $0. See below. |
+| **Port batch before E6** | Done (17/10/2026), **approved by the owner** (17/10/2026). The PNGTuber job's fixes and the 16 drifted sources ported at the 5th moment (PORTED.md); the build with the pinned Real-ESRGAN in the engine; owner overrides, set and listing approvals; QA-only and listing-only; the digital package step, listing photos, Mark published with title, price and SKU. Delta import done. Parity on the live product: 26/26, the rebuild byte for byte. Mock only, $0. See below. |
 | Pre-E6 housekeeping | Done (17/10/2026). Line endings fixed; port drift measured (not ported); port-step items planned; E6 readiness checklist below. |
 | **R3 spike** Baked lighting, Design room only | Done (17/10/2026). **Owner's decision:** roll the baked look out in two phases (R3a now, phase 2 later). Was behind `?scene=baked`. 71+ fps full quality on the Intel iGPU in every measured view, walking included (headed Chromium; see below), 1.41 MiB of assets, 41 s rebuild. Screenshots in `screenshots/r3-spike/`. See below. |
-| **R3a** Baked look, phase 1 of 2 | Done (17/10/2026), **for the owner's review**. Shared Blender library; the Design room fixed (readable in dark mode, mood board and pictures back, warm-white walls by day); the Office room baked; one oak floor everywhere; baked rooms are the default (`?scene=procedural` turns them off). 66+ fps full quality on the Intel iGPU in every measured view, walking included; 2.76 MB of the 10 MB office budget; full rebuild 104–127 s. Screenshots in `screenshots/r3a/`. See below. |
+| **R3a** Baked look, phase 1 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026). Shared Blender library; the Design room fixed (readable in dark mode, mood board and pictures back, warm-white walls by day); the Office room baked; one oak floor everywhere; baked rooms are the default (`?scene=procedural` turns them off). 66+ fps full quality on the Intel iGPU in every measured view, walking included; 2.76 MB of the 10 MB office budget; full rebuild 104–127 s. Screenshots in `screenshots/r3a/`. See below. |
+| **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **for the owner's review**. The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
 | E6 First real job | Not started. Blocked: see the E6 readiness checklist below. |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
 
-### R3a: baked Design and Office rooms, phase 1 of 2 (17/10/2026) — for the owner's review
+### R3b: baked Research, lounge and atrium, phase 2 of 2 (17/10/2026) — for the owner's review
+
+The owner's answers to the R3a questions and the build record are in DECISIONS.md, "R3b build record". Mock data only.
+
+- **Every area baked.** Four bake units, each with its own day and evening atlas at one texel density: Research, Design,
+  Office, and the atrium with the lounge. `npm run build-office -- --room <name>` re-bakes one unit (`lounge` = the
+  atrium unit). New library pieces: bookcase, sofas, armchair, coffee and side tables, arc lamp, bench, printer, water
+  cooler, wall clock, slab, core plinth, the closet (ASSETS.md).
+- **Owner's look decisions.** Light-mode Design room brightened (pale backing and credenza, oak tops by day; the evening
+  unchanged): 0.991 x the other rooms on the light overview. Evening walls keep their department tints. Rugs dark grey
+  everywhere, baked and procedural.
+- **Frame-rate fix.** `OfficeOutputPass` does the cached AO multiply and adds the glow inside three's output pass (one
+  full-screen read and write instead of three); the glow blurs at quarter resolution. A fallback to the separate blends
+  is kept; it did not trigger (every view reports `post: 'fused'`).
+- **Measured** (headed Playwright Chromium on the Intel UHD iGPU, `screenshots/r3b/fps-headed.json`), full quality:
+  overview 72.5 light / 74.2 dark; Research 75.4 / 69.2; lounge 80.1 / 75.4; atrium 69.8 / 66.1; Design (light) 79.1;
+  all 8 agents walking 70.8 light / 66.2 dark. No bench needed a retry.
+- **Assets:** 6,877,262 bytes, 68.8% of the 10 MB budget (`screenshots/r3b/asset-sizes.json`). **Rebuild:** full 261.8 s;
+  one unit 43.2–91.0 s.
+- **Brightness** (`screenshots/r3b/brightness.json`): dark mode, every baked area is 5–33% brighter than its procedural
+  version; light mode, the baked rooms are 3–10% darker (open question in DECISIONS.md).
+- **Captures:** `node scripts/screenshots-r3b.mjs --headed --channel chromium --expect-gpu intel` -> `screenshots/r3b/`
+  (01–09 PNGs, `ref/` procedural references, `fps-headed.json`, `brightness.json`, `asset-sizes.json`, `build.json`).
+  Demo video re-recorded (`npm run demo:record`).
+
+### R3a: baked Design and Office rooms, phase 1 of 2 (17/10/2026) — approved by the owner (17/10/2026)
 
 The owner's decisions on the spike (recorded in DECISIONS.md, "R3a build record"): roll the baked look out in two phases
 (this phase: fix the Design room, a shared library, the Office room; phase 2 later: Research, lounge and atrium); 10 MB
@@ -173,7 +199,7 @@ A spike only. `?scene=baked` swaps the Design room for a baked one; without the 
   At the start of E5 it was 5 files; the legacy job has since touched 5 more and changed the first 5 again. port-drift only hashes the 50 sources already ported: a new legacy file (for example the recolour or outline steps) does not show here, so the batch is the drift list plus the "To port to office-agents" log in Virtual-workers (not read in this step). The port happens in one go once the owner's job `2026-10-16--pngtuber-cosy-desk-props-r2` is done.
 - **Port-step items planned** in ENGINE-PLAN.md §9, "Port step before E6": owner override of a QA verdict (per file, with date, reason and owner, on the job and in the manifest); the recolour and outline-colour normalise steps as tested pipeline steps; ZIP delivery for multi-file packs. Nothing built.
 
-### Port batch before E6 (17/10/2026) — for the owner's review
+### Port batch before E6 (17/10/2026) — approved by the owner (17/10/2026)
 
 The legacy job `2026-10-16--pngtuber-cosy-desk-props-r2` is live on Etsy (https://www.etsy.com/listing/4597311033, published
 2026-10-17, EUR 9.00, SKU DESK-PROPS-01): the first real product and the parity reference. This phase ported its fixes in one
@@ -450,7 +476,8 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `c156965`: R3a: baked Design and Office rooms (docs, comments)
 - `052f2b1`: R3b milestone (per-unit lightmaps, baked Research, lounge and atrium)
 - `cb4bdcc`: Port batch milestone (the PNGTuber fixes at the 5th moment, tests green)
-- The next commit: "Port PNGTuber batch before E6" (owner CLI, US spelling, docs)
+- `edd26a1`: Port PNGTuber batch before E6 (owner CLI, US spelling, docs); approved by the owner 17/10/2026
+- The next commit: "R3b: baked Research, lounge and atrium" (the frame-rate fix, capture robustness, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -520,9 +547,9 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-0. **R3a: the owner reviews** the baked Design and Office rooms (`screenshots/r3a/`; open questions in DECISIONS.md,
-   "R3a build record"). Phase 2 (Research, lounge, atrium) waits for the go-ahead.
-1. **Port batch before E6: the owner reviews** (done 17/10/2026: PORTED.md 5th moment; DECISIONS.md "Port batch before E6", with its open points; `dry-run/parity/PARITY.md`).
+0. **R3b review, then genre-trend scouting line.** The owner reviews R3b (`screenshots/r3b/`; DECISIONS.md, "R3b build
+   record", one open question); then the genre-trend scouting line.
+1. Done: R3a and the port batch before E6 are approved by the owner (17/10/2026).
 2. **E6** starts when every open row of the E6 readiness checklist above is done: Q1 billing, Q2 caps, the opaque image model and OpenRouter terms, provider prices, the separate API keys; and, before a new style-reference job, the first-file run mode (row 13).
 
 Re-run `npm run import-legacy` at any time to pick up legacy deltas; it backs up first and changes nothing when there is nothing new.

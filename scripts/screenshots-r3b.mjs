@@ -70,6 +70,15 @@ async function meanLuma(png, polys) {
   }
   return out;
 }
+// a bench while the headed window was covered is throttled to about one frame a second (p95 ~1000 ms): not a reading.
+// Such a run is repeated (up to four tries) and the retries are recorded with the row.
+async function bench(page, move) {
+  for (let tries = 1; ; tries++) {
+    const r = await page.evaluate(([ms, mv]) => window.__office.bench(ms, { move: mv }), [benchMs, move]);
+    if (r.p95FrameMs < 500 || tries >= 4) { if (tries > 1) r.retries = tries - 1; if (r.p95FrameMs >= 500) r.throttled = true; return r; }
+    console.log('  (throttled: the window was covered; trying again)'); await page.waitForTimeout(1500);
+  }
+}
 const openPage = async (url, tag) => {
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   page.on('pageerror', (e) => problems.push(tag + ' pageerror: ' + e.message));
@@ -95,9 +104,11 @@ async function shoot({ file, query, cam, fps = true, note = '' }) {
     if (file) { fs.writeFileSync(outJail(path.join(outDir, file)), png); console.log('wrote', path.join(outDir, file)); log.written(path.join(outDir, file)); }
     const luma = await meanLuma(png, await areaPolys(page));
     if (fps) {
-      const moving = await page.evaluate((ms) => window.__office.bench(ms, { move: true }), benchMs);
-      const full = await page.evaluate((ms) => window.__office.bench(ms, { move: false }), benchMs);
-      fpsRows.push({ view: file || query, query, moving, full, glow: b.glow, note });
+      const moving = await bench(page, true);
+      const full = await bench(page, false);
+      const post = await page.evaluate(() => window.__office.stats().post);
+      if (post !== 'fused' && !/procedural/.test(query)) problems.push(file + ': post-processing ' + post + ' (the OfficeOutputPass fallback path)');
+      fpsRows.push({ view: file || query, query, moving, full, glow: b.glow, post, note });
       console.log('  fps', String(file || query).padEnd(30), 'moving', String(moving.fps).padStart(6), '| full quality', String(full.fps).padStart(6), '| avg', full.avgFrameMs + ' ms p95', full.p95FrameMs + ' ms |', full.calls + ' calls,', full.tris + ' tris');
     }
     return { png, luma };
@@ -116,7 +127,7 @@ async function walkRow(theme, scene) {
       o.setAnimate(true); const s1 = structuredClone(s0); for (const a of s1.agents) a.status = 'idle'; o.setData(s1);
       return { agents: s1.agents.length, walking: o.people().filter((p) => p.place === 'walking').length };
     });
-    const full = await page.evaluate((ms) => window.__office.bench(ms, { move: false }), benchMs);
+    const full = await bench(page, false);
     const walkingAtEnd = await page.evaluate(() => window.__office.stats().walking);
     if (started.walking !== started.agents) problems.push('walk ' + theme + ': only ' + started.walking + ' of ' + started.agents + ' agents walking at the start');
     fpsRows.push({ view: 'walk (overview, ' + theme + ', ' + (scene || 'baked') + ', all ' + started.agents + ' agents desk to lounge)', moving: full, full, walkingAtStart: started.walking, walkingAtEnd, note: 'animation on' });
@@ -148,6 +159,7 @@ try {
   if (want('fps')) for (const [t, s] of [['dark', null], ['light', null], ['dark', 'procedural']]) await walkRow(t, s);
   for (const b of brightness) if (b.theme === 'dark' && b.ratio < 1) problems.push('dark ' + b.view + ' ' + b.area + ': the baked area is darker than the procedural one (' + b.baked + ' < ' + b.procedural + ')');
   for (const d of designCheck) if (d.theme === 'light' && Math.abs(1 - d.designVsOthers) > 0.1) problems.push('light-mode Design room ' + d.designVsOthers + ' x the other rooms (target within about 10%)');
+  for (const r of fpsRows) if (r.full.throttled || r.moving.throttled) problems.push('fps ' + r.view + ': throttled (window covered) after four tries: no reading');
   for (const r of fpsRows) if (!/procedural/.test(r.query || r.view) && r.full.fps < 60) problems.push('fps ' + r.view + ': full quality ' + r.full.fps + ' < 60');
   const sizes = sizesOf();
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'web', 'assets', 'office', 'manifest.json'), 'utf8'));

@@ -80,6 +80,23 @@ new artwork file exists. `design-refs/` was not used in R3a.
 
 Size: 2,762,638 bytes as served for everything in `src/web/assets/office/` (27.6% of the 10 MB office budget).
 
+**R3b: every area baked (17/10/2026).** The Research room, the lounge and the atrium join the Design and Office rooms,
+from the same library and the same five photo textures; still no model file, kit or download for geometry, and no new
+texture file: the atrium's concrete shows the page's own canvas concrete (`textures.js` `tileTexture`), as the decals
+show its atlas. The R3a files `office.gltf`, `office.bin`, `lightmap-day.webp` and `lightmap-evening.webp` were replaced
+by one set per bake unit.
+
+| Asset | Made with | Where |
+|-------|-----------|-------|
+| Library additions: chamfered upholstery boxes, a library bookcase (procedural spines in plain colours, no titles; binders with blank labels), three-seat sofa, leather armchair, coffee table, side table, arc floor lamp, bench, printer, water cooler, wall clock (no particular time), the slab, the core plinth, the closet's floor, partition and cable tray | Python in Blender 5.2.1, seeded | `scripts/blender/office_lib.py`, recipes in `office_rooms.py` |
+| Four bake units: Research (8,438 triangles), Design (4,032), Office (5,916), atrium with lounge (3,004 + 3,096) | as above, placed from `layout.js` `bakedRoomSpec` | `src/web/assets/office/<unit>.gltf`, `<unit>.bin` |
+| Day and evening lightmap atlases, one pair per unit | Cycles bake as R3a, OptiX, 1024 samples, 100 texels per unit (Research 2432 px, Design 1984, Office 2176, atrium 3008) | `src/web/assets/office/lightmap-<unit>-day.webp`, `-evening.webp` |
+| Shared textures, each one file: oak, walnut, floor, fabric (now a light neutral, tinted per material), rug (likewise, tinted dark grey) | as R3a | `src/web/assets/office/textures/*.jpg` (272 KB together) |
+
+Size: 6,877,262 bytes as served (68.8% of the 10 MB office budget; gzip 4,880,432, brotli 4,674,851); per file in
+`screenshots/r3b/asset-sizes.json`. Per unit: Research 2,264,407, Design 1,044,486, Office 1,470,579, atrium with lounge
+1,789,062; shared textures 279,522; manifest 29,206.
+
 **Third-party textures (CC0 1.0, Poly Haven).** Five 1k diffuse JPGs, downloaded 17/10/2026 from the Poly Haven API
 and checked against its MD5: `assets-src/polyhaven/` (source URLs, publication dates, authors and MD5s in
 `assets-src/polyhaven/SOURCES.md`). Licence text: `assets-src/licences/CC0-1.0.txt` (CC0 1.0 Universal legal code, from
@@ -88,11 +105,11 @@ https://polyhaven.com/license.
 
 | File | Source | Published | Licence | Used for |
 |------|--------|-----------|---------|----------|
-| `oak_veneer_01_diff_1k.jpg` | https://polyhaven.com/a/oak_veneer_01 | 2024-03-08 | CC0 1.0 | slats, shelves, mood board frame, easel, meeting table, Office desk tops (R3a) |
-| `walnut_veneer_diff_1k.jpg` | https://polyhaven.com/a/walnut_veneer | 2026-08-11 | CC0 1.0 | Design desk tops, drawer fronts, credenza top |
+| `oak_veneer_01_diff_1k.jpg` | https://polyhaven.com/a/oak_veneer_01 | 2024-03-08 | CC0 1.0 | slats, shelves, mood board frame, easel, meeting table, Office and Research desk tops, the Design desk tops by day (R3b), the bookcase, benches, tables |
+| `walnut_veneer_diff_1k.jpg` | https://polyhaven.com/a/walnut_veneer | 2026-08-11 | CC0 1.0 | drawer fronts; the Design desk tops and credenza top by evening |
 | `wood_floor_diff_1k.jpg` | https://polyhaven.com/a/wood_floor | 2023-10-24 | CC0 1.0 | the office floor everywhere, baked and procedural (R3a: shifted to a mid-tone oak, `#a47f58`) |
-| `poly_wool_herringbone_diff_1k.jpg` | https://polyhaven.com/a/poly_wool_herringbone | 2025-09-05 | CC0 1.0 | chair upholstery (charcoal); the spike's wall pads were removed in R3a |
-| `hessian_230_diff_1k.jpg` | https://polyhaven.com/a/hessian_230 | 2025-09-05 | CC0 1.0 | rugs (oatmeal) |
+| `poly_wool_herringbone_diff_1k.jpg` | https://polyhaven.com/a/poly_wool_herringbone | 2025-09-05 | CC0 1.0 | upholstery: task chairs (charcoal), lounge sofas (R3b: beige by day, grey by evening); one file, tinted per material |
+| `hessian_230_diff_1k.jpg` | https://polyhaven.com/a/hessian_230 | 2025-09-05 | CC0 1.0 | rugs (R3b: dark grey in every area, tinted per theme; R3a's were oatmeal) |
 
 Palette: `src/web/config/palette.js` (own choice; one accent per department used as a soft wall tint and on the cards;
 light and dark themes; one warm accent in dark mode, shared with the UI's `--accent` in `src/web/styles.css`).
