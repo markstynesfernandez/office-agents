@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (E5 Live UI done, awaiting the owner's review; E4, R1 and R2 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -15,11 +15,60 @@ Last updated: 17/10/2026 (E5 Live UI done, awaiting the owner's review; E4, R1 a
 | **E4** Legacy import | Done (16/10/2026), **approved by the owner** (17/10/2026). `npm run import-legacy`; the legacy history imported into `data/` and reconciled with the source ($8.5000719, 162 ledger rows); a second run changes nothing. Legacy jobs on the board (Blocked, Rejected, Parked lanes), in the job panel and the calendar; legacy notebooks and ledger in the memory-core viewer. Screenshots in `screenshots/e4/`. See below. |
 | **Redesign R1** Office scene look | Done (16/10/2026), **approved by the owner** (17/10/2026). Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
 | **Redesign R2** Office look, people, UI polish | Done (17/10/2026), **approved by the owner** (17/10/2026). Follow-ups done at the start of E5 (below). Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
-| **E5** Live UI | Done (17/10/2026), awaiting the owner's review. Task box, scheduler, approval queue, desk and job controls, E-STOP with typed resume, live spend vs caps; every write same-origin, token, idempotency key and expectedVersion. Mock provider only. Screenshots in `screenshots/e5/`. See below. |
-| E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
+| **E5** Live UI | Done (17/10/2026), **approved by the owner** (17/10/2026). Task box, scheduler, approval queue, desk and job controls, E-STOP with typed resume, live spend vs caps; every write same-origin, token, idempotency key and expectedVersion. Mock provider only. Screenshots in `screenshots/e5/`. See below. |
+| Pre-E6 housekeeping | Done (17/10/2026). Line endings fixed; port drift measured (not ported); port-step items planned; E6 readiness checklist below. |
+| E6 First real job | Not started. Blocked: see the E6 readiness checklist below. |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### Pre-E6 housekeeping (17/10/2026)
+
+- **Approval recorded:** the owner approved E5 (17/10/2026).
+- **Line endings:** `.gitattributes` (`* text=auto eol=lf`, image, video, audio, font, archive and database types `binary`) and the renormalise are in `39b48c8` "Normalise line endings"; every tracked file was already LF, so only `.gitattributes` changed. Re-checked today: `git add --renormalize .` changes nothing, `git ls-files --eol` shows every tracked file `i/lf` (no binary file is tracked yet), and `git diff` and `git diff -w` are both empty against the index and against HEAD.
+- **Port drift (read only, nothing ported):** `npm run port-drift` shows **10 of 50** sources changed since their port moment, all on 17/10/2026 (Irish time):
+
+  | Source (station/) | Modified | Ported as |
+  |---|---|---|
+  | `scripts/lib/style-ref.mjs` | 06:57 | `src/engine/lib/style-ref.mjs` (read side) |
+  | `tests/style-ref.test.mjs` | 06:59 | `tests/ported/listing-notice.test.mjs` (last test only) |
+  | `scripts/lib/digital-build.mjs` | 08:16 | `src/engine/lib/digital-build.mjs` (read side) |
+  | `scripts/lib/digital-gate.mjs` | 08:16 | `src/engine/lib/digital-gate.mjs` |
+  | `scripts/lib/digital-files.mjs` | 08:16 | `src/engine/lib/digital-files.mjs` |
+  | `config/station.config.json` | 08:34 | `config/station.config.json` (copied unchanged) |
+  | `scripts/lib/originality.mjs` | 08:56 | `src/engine/lib/originality.mjs` |
+  | `scripts/lib/digital-prep.mjs` | 08:57 | `src/engine/lib/digital-prep.mjs` |
+  | `tests/originality.test.mjs` | 08:58 | `tests/ported/originality.test.mjs` |
+  | `agents/src/qa-design.md` | 09:00 | `prompts/agents/qa-design.md` (had 14 characters of headroom to its 12,000 target; re-check at the port) |
+
+  At the start of E5 it was 5 files; the legacy job has since touched 5 more and changed the first 5 again. port-drift only hashes the 50 sources already ported: a new legacy file (for example the recolour or outline steps) does not show here, so the batch is the drift list plus the "To port to office-agents" log in Virtual-workers (not read in this step). The port happens in one go once the owner's job `2026-10-16--pngtuber-cosy-desk-props-r2` is done.
+- **Port-step items planned** in ENGINE-PLAN.md §9, "Port step before E6": owner override of a QA verdict (per file, with date, reason and owner, on the job and in the manifest); the recolour and outline-colour normalise steps as tested pipeline steps; ZIP delivery for multi-file packs. Nothing built.
+
+### E6 readiness checklist (17/10/2026)
+
+Every item still blocking E6. **Candidate first product and parity reference:** the PNGTuber job `2026-10-16--pngtuber-cosy-desk-props-r2` in the legacy station (the `pngtuber-prop-pack` product). The engine's first real job should be judged against what that job produced.
+
+| # | Item | Status | Where it stands |
+|---|---|---|---|
+| 1 | Q1 billing confirmation (Anthropic Console credits; finance and the founder) | **open** | DECISIONS.md Q1. `config/station.config.json` still says "approved by Finance", which conflicts with Q1 being open. |
+| 2 | Q2 caps for digital jobs | **open** | Per-job cap $1.00 including images; a clean digital job is estimated at $0.76–1.13 (ENGINE-PLAN.md §9). No cap changed. |
+| 3 | Q3 product spec | **open** | `pngtuber-prop-pack` is the only entry and is DRAFT; 12 files against Etsy's 5 (ZIP planned, see above). |
+| 4 | Licence and download-notice wording | **open** | DRAFT in `config.digital`; the gate requires the approved text word for word. The legacy `station.config.json` changed today; check at the port whether it carries an owner decision. |
+| 5 | Image model commercial terms | **open** | "UNCONFIRMED: owner checks the provider terms"; `opaqueModelApproved: false`. |
+| 6 | Market and spelling (US or UK/IE) | **open** | §4.3 item 7. |
+| 7 | AI-disclosure wording in listings | **open** | §4.3 item 8. |
+| 8 | Price approach | **open** | The fill still proposes the top-5 high (EUR 13.90 on the draft); the floor is EUR 6.42. Prices are the owner's. |
+| 9 | Provider price verification | **open** | The `anthropic-web` price is unset (a live web call would be refused); image prices are estimates until read from the provider's response; text model prices to be checked against the providers' current lists. |
+| 10 | Separate API keys (a station-engine key in the Anthropic Console workspace and a new OpenRouter key) | **open** | ENGINE-PLAN.md §7.2 step 4. None created or read. |
+
+Also needed before a real job on the candidate product (added here; not in the owner's list):
+
+| # | Item | Status | Where it stands |
+|---|---|---|---|
+| 11 | Port batch from the PNGTuber job (the 10 drifted files, the logged fixes, the three planned items) | **open** | Waits for the owner's job to finish. |
+| 12 | Packaged-product build in the engine (clean-up, enclosed background, upscale) | **open** | Fails closed at prep today; Real-ESRGAN needs a child process, which `src/` does not allow. Needs an owner decision on how the build runs. |
+| 13 | Style-reference workflow | **open** | Fails closed at the package gate; no reference image in `image_generate`. |
+| 14 | Parity check against the legacy job (§7.2 step 3) | **open** | Not done in E4. |
 
 ### E5 Live UI (17/10/2026)
 
@@ -208,7 +257,9 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `5ea8cc9`: Redesign R2
 - `e357600`: R2 follow-ups (E5 item 0)
 - `4f3e076`, `286be16`: E5 milestones 1 and 2 (engine and server write path; the page's controls)
-- The next commit: "E5 live UI" (fixes from the captures, line endings, docs)
+- `6181a87`: E5 live UI (fixes from the captures, line endings, docs)
+- `39b48c8`: Normalise line endings (`.gitattributes`)
+- The next commit: "Pre-E6 housekeeping" (E5 approval, drift list, port-step items, E6 readiness checklist)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -276,9 +327,9 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-1. **The owner reviews E5**: `screenshots/e5/` and the choices in DECISIONS.md under "E5 build record" (the Legacy lane, the two version exceptions for E-STOP and Stop, an edit disabling a routine, Re-run listing and Archive moves, the line routine target).
-2. **Port drift:** 5 legacy files changed on 17/10/2026 (packaged products, style reference, station.config); not ported in E5. Port them when the owner says (DECISIONS.md, E5 build record).
-3. E6 stays blocked on Q1 (billing), Q2 (caps) and Q3/§4.3 (products).
+1. **Wait for the owner's legacy job** `2026-10-16--pngtuber-cosy-desk-props-r2` to finish.
+2. **Port step, one batch:** run `npm run port-drift` again, read the "To port to office-agents" log in Virtual-workers (read only), port the drifted files and the logged fixes at a new moment in PORTED.md, and build the three planned items (ENGINE-PLAN.md §9, "Port step before E6"). Mock only.
+3. **E6** starts when every row of the E6 readiness checklist above is done.
 
 Re-run `npm run import-legacy` at any time to pick up legacy deltas; it backs up first and changes nothing when there is nothing new.
 

@@ -614,6 +614,27 @@ Each phase ends with a stop for your review, with the evidence named in the righ
 | **E6 First real job** | real providers switched on, one smoke call (≈ $0.001, Haiku), then **one end-to-end job** on a verified brief you choose, caps as now | estimate below | the package in the approval queue, `cost.json` with workings, the ledger rows, screenshots |
 | **E7 Routines and cut-over** | you enable the routines you want; side by side; freeze; retire StarNet | within caps | the cut-over checklist (§7.2) ticked, with dates |
 
+### Port step before E6: planned items (added 17/10/2026, owner)
+
+The legacy station's fixes from the real job `2026-10-16--pngtuber-cosy-desk-props-r2` (logged in Virtual-workers under "To port to office-agents") are ported in one batch once that job is done, at a new port moment in PORTED.md. These three items are planned for that step. **Status: planned, nothing built.** Mock provider only; $0.
+
+1. **Owner override of a QA verdict.**
+   - Recorded **per file**: the file (path and sha256), the QA verdict it overrides (agent, pass, verdict), the owner's verdict, the date, the reason (required) and the owner.
+   - Written through the E5 write path (same origin, action token, idempotency key, expectedVersion); append-only, never edited in place; logged and emitted like every other action.
+   - Shown on the job (job panel and board card: an "owner override" mark on the file, with the reason) and in the package `MANIFEST.json` (an `overrides` list with the same fields). The QA record itself is kept unchanged beside it.
+   - Open point for the owner at the port: whether an override may cover a mechanical gate's hard fail. §5.2 says the originality hard fails have no override in the UI, so the plan limits this to QA-DESIGN and QA-LISTING verdicts unless the owner says otherwise.
+2. **Deterministic mechanical steps from the legacy job, as pipeline steps with tests.**
+   - **Recolour of an approved file:** takes a QA-approved (or owner-overridden) file and a colour mapping, and writes a new file. No model call. The output records its source file's sha256 and the parameters, so the approval stays traceable to the file it was given for.
+   - **Outline-colour normalise:** sets the outline colour across a set's files to one value. No model call.
+   - Both follow §3.3: in-process (the engine allows no child process), keyed to the job, idempotent by input hash (a repeat with the same inputs changes nothing), fail closed to `blocked` with the reason, and listed in the manifest.
+   - Tests: the same input gives byte-identical output; a re-run is a no-op; an unapproved input is refused; a bad mapping fails closed; the manifest records the step.
+   - Ported from the legacy job's code and parameters as logged; nothing is designed from scratch here.
+3. **ZIP delivery for multi-file packs.**
+   - The package step builds one ZIP for a product whose spec delivers more files than the listing allows (§4.3 item 2), using the already-ported `src/engine/lib/zip.mjs`, in-process.
+   - The manifest lists every file inside the ZIP (name, size, sha256) and the ZIP's own sha256. The package gate checks the ZIP against the Etsy limits (5 files, 20 MB) and checks that its contents match the approved deliverable set exactly.
+   - Tests: deterministic ZIP bytes for the same files; a missing or extra file fails the gate; over the size limit fails the gate.
+   - Which products ship as a ZIP stays the owner's product decision (Q3, §4.3).
+
 ### First real end-to-end job: cost estimate
 
 **Assumptions:**
