@@ -234,8 +234,8 @@ test('nothing is added to the request: no tools, no caching, no system prompt; c
     }
     await assert.rejects(s.providers.text.create({ model: 'claude-haiku-5-5', max_tokens: 32, messages: [], mcp_servers: [{ type: 'url', url: 'x', name: 'x' }] }), (e) => e.code === 'TOOLS');
     assert.equal(s.client.seen.length, 3);
-    // web and images are not built on the live provider: they refuse without a call
-    await assert.rejects(s.providers.web('web_search', { query: 'x' }), ProviderNotBuilt);
+    // the web tools go only through createWithWebTool (b0, tests/live-web.test.mjs); images are not built: they refuse without a call
+    await assert.rejects(s.providers.text.create({ model: 'claude-haiku-5-5', max_tokens: 32, messages: [], tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }] }), (e) => e.code === 'TOOLS');
     await assert.rejects(s.providers.image.generate({ model: 'openai/gpt-5-image-mini', prompt: 'x' }), ProviderNotBuilt);
   } finally { s.t.cleanup(); }
 });

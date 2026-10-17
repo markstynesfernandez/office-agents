@@ -127,11 +127,14 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
 
   // settle a reservation with the real cost: `usd` given (provider-reported / image price) or computed from `usage`
   // requestId / messageId (live calls): the provider's request id and message id, kept on the row to match the Console
-  function settle(res, { usd, usage, priceSource, estimated = false, note, requestId, messageId } = {}) {
+  // web (live web backend, E6 b0): { searches, fetches, via } as the response reported them; `count` is then the real
+  // number of server tool uses (the reservation's count was max_uses), and `tokens` the relay request's usage
+  function settle(res, { usd, usage, priceSource, estimated = false, note, requestId, messageId, web } = {}) {
     if (!reserved.has(res.id)) throw new Error('unknown or already settled reservation ' + res.id);
     const cost = usd != null ? r6(usd) : textCost(res.price, usage || {});
     const tier = usd == null && res.price.longPrompt ? priceTier(res.price, promptTokens(usage || {})).tier : null;
-    const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, provider: res.provider, model: res.model, kind: res.kind, count: res.count,
+    const count = web ? (web.searches || 0) + (web.fetches || 0) : res.count;
+    const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, provider: res.provider, model: res.model, kind: res.kind, count, ...(web ? { searches: web.searches || 0, fetches: web.fetches || 0, via: web.via || null } : {}),
       tokens: usage ? { in: usage.input_tokens || 0, out: usage.output_tokens || 0, cacheRead: usage.cache_read_input_tokens || 0, cacheWrite: usage.cache_creation_input_tokens || 0 } : null,
       usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(requestId ? { requestId } : {}), ...(messageId ? { messageId } : {}), ...(note ? { note } : {}) });
     if (cost > res.maxUsd + EPS) log && log.warn('a call cost more than its reservation', { id: res.id, model: res.model, kind: res.kind, usd: cost, reservedUsd: res.maxUsd, jobId: res.jobId });

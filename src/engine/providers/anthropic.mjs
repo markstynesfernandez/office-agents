@@ -10,12 +10,15 @@
 //     (runtime.mjs guardedTextCall), which reserves again for every attempt. Errors come back as LiveProviderError with
 //     status, type, requestId and `retryable` (429, 5xx, network); 400/401/403 are final.
 //   - Nothing is added to the request: no tools, no prompt caching, no system prompt. The caller's own tools pass through
-//     (client tools only: a server or MCP tool is refused; none is allowed in a0), and the agent's effort maps to
+//     (client tools only: a server or MCP tool is refused on create()), and the agent's effort maps to
 //     output_config.effort.
+//   - E6 b0: createWithWebTool() is the web backend's door (providers/anthropic-web.mjs), not the agents': exactly ONE
+//     server tool, of a type config/engine.json live.web.tools names, with max_uses set, and nothing else in `tools`.
+//     The usage it returns carries server_tool_use (web_search_requests / web_fetch_requests) for the settle.
 import Anthropic from '@anthropic-ai/sdk';
 
 export const BASE_URL = 'https://api.anthropic.com';
-// server-side tool types allowed through (b0 adds the web tools); client tools (name + input_schema, no type) always pass
+// server-side tool types allowed through create() (the agents' door): none. The web tools go through createWithWebTool.
 export const SERVER_TOOLS_ALLOWED = [];
 
 export class LiveProviderError extends Error {
@@ -74,6 +77,22 @@ function checkTools(params) {
   }
 }
 
+// the web backend's request: one server web tool of a configured type, max_uses a whole number >= 1, nothing else
+function checkWebTool(params, webTypes) {
+  if (params.mcp_servers) throw new LiveProviderError('MCP servers are not allowed on the live provider', { code: 'TOOLS' });
+  const tools = params.tools || [];
+  if (tools.length !== 1) throw new LiveProviderError('a web request carries exactly one server web tool (got ' + tools.length + ')', { code: 'TOOLS' });
+  const t = tools[0];
+  if (!t || !webTypes.includes(t.type)) throw new LiveProviderError('server tool ' + (t && t.type) + ' is not a configured web tool (allowed: ' + webTypes.join(', ') + ')', { code: 'TOOLS' });
+  if (!(Number.isInteger(t.max_uses) && t.max_uses >= 1)) throw new LiveProviderError('a web tool needs max_uses (a whole number, at least 1)', { code: 'TOOLS' });
+}
+
+const usageOf = (u = {}) => {
+  const s = u.server_tool_use || {};
+  return { input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0, cache_creation_input_tokens: u.cache_creation_input_tokens || 0, cache_read_input_tokens: u.cache_read_input_tokens || 0,
+    server_tool_use: { web_search_requests: s.web_search_requests || 0, web_fetch_requests: s.web_fetch_requests || 0 } };
+};
+
 // createAnthropicText({ engineCfg, env, demo, halt, log, client, timeoutMs }) — `client` is injected by tests only
 export function createAnthropicText({ engineCfg, env = process.env, demo = false, halt = null, log = null, client = null, timeoutMs = null } = {}) {
   if (demo) throw new LiveProviderError('the live provider never runs in demo mode', { code: 'DEMO' });
@@ -90,34 +109,48 @@ export function createAnthropicText({ engineCfg, env = process.env, demo = false
   const redact = makeRedactor([key]);
   // explicit apiKey, no auth token, fixed base URL: the environment cannot redirect the key or add a second credential
   const sdk = client || new Anthropic({ apiKey: key, authToken: null, baseURL: BASE_URL, maxRetries: 0, timeout, logLevel: 'off' });
+  const webTypes = Object.values((live.web && live.web.tools) || {});
   let calls = 0;
+
+  async function send(params, { signal, ctx = {} } = {}, check) {
+    if (halt && halt.isHalted()) throw new LiveProviderError('e-stop is on: no call made', { code: 'HALT' });
+    if (signal && signal.aborted) throw signal.reason || new LiveProviderError('aborted before the call', { code: 'ABORTED' });
+    if (!models.includes(params.model)) throw new LiveProviderError('model ' + params.model + ' is not in config/engine.json (allowed: ' + models.join(', ') + ')', { code: 'MODEL' });
+    if (!(params.max_tokens > 0)) throw new LiveProviderError('max_tokens must be set', { code: 'BAD_PARAMS' });
+    check(params);
+    const body = { ...params };
+    if (ctx.effort && efforts.includes(ctx.effort) && !body.output_config) body.output_config = { effort: ctx.effort };
+    const t0 = Date.now();
+    calls++;
+    let msg;
+    try { msg = await sdk.messages.create(body, { signal, timeout }); }
+    catch (e) {
+      if (signal && signal.aborted) throw e;   // the caller's e-stop / Stop path settles it
+      const err = normaliseError(e, redact);
+      log && log.warn('anthropic call failed', { model: body.model, status: err.status ?? null, code: err.code, type: err.type, requestId: err.requestId, retryable: err.retryable, ms: Date.now() - t0, agent: ctx.agentKey || null, jobId: ctx.jobId || null, ...(ctx.web ? { web: ctx.web } : {}) });
+      throw err;
+    }
+    const requestId = msg._request_id || null;
+    const usage = usageOf(msg.usage);
+    log && log.info('anthropic call', { model: msg.model || body.model, requestId, messageId: msg.id, stop: msg.stop_reason, usage: { in: usage.input_tokens, out: usage.output_tokens, cacheRead: usage.cache_read_input_tokens, cacheWrite: usage.cache_creation_input_tokens, webSearches: usage.server_tool_use.web_search_requests, webFetches: usage.server_tool_use.web_fetch_requests }, ms: Date.now() - t0, agent: ctx.agentKey || null, jobId: ctx.jobId || null, ...(ctx.web ? { web: ctx.web } : {}) });
+    return { id: msg.id, type: msg.type, role: msg.role, model: msg.model, content: msg.content, stop_reason: msg.stop_reason, stop_details: msg.stop_details ?? null, usage, request_id: requestId };
+  }
 
   return {
     id: 'anthropic',
     models,
     get calls() { return calls; },
-    async create(params, { signal, ctx = {} } = {}) {
+    // the agents' door: client tools only
+    create: (params, opts) => send(params, opts, checkTools),
+    // the web backend's door (anthropic-web.mjs): one configured server web tool, max_uses set
+    createWithWebTool: (params, opts) => send(params, opts, (p) => checkWebTool(p, webTypes)),
+    // free model metadata (Models API, no tokens): does `model` accept the web search tool? Fails closed (false) when the
+    // field is missing. Web fetch is not covered by the Models API.
+    async webSearchSupported(model) {
       if (halt && halt.isHalted()) throw new LiveProviderError('e-stop is on: no call made', { code: 'HALT' });
-      if (signal && signal.aborted) throw signal.reason || new LiveProviderError('aborted before the call', { code: 'ABORTED' });
-      if (!models.includes(params.model)) throw new LiveProviderError('model ' + params.model + ' is not in config/engine.json (allowed: ' + models.join(', ') + ')', { code: 'MODEL' });
-      if (!(params.max_tokens > 0)) throw new LiveProviderError('max_tokens must be set', { code: 'BAD_PARAMS' });
-      checkTools(params);
-      const body = { ...params };
-      if (ctx.effort && efforts.includes(ctx.effort) && !body.output_config) body.output_config = { effort: ctx.effort };
-      const t0 = Date.now();
-      calls++;
-      let msg;
-      try { msg = await sdk.messages.create(body, { signal, timeout }); }
-      catch (e) {
-        if (signal && signal.aborted) throw e;   // the caller's e-stop / Stop path settles it
-        const err = normaliseError(e, redact);
-        log && log.warn('anthropic call failed', { model: body.model, status: err.status ?? null, code: err.code, type: err.type, requestId: err.requestId, retryable: err.retryable, ms: Date.now() - t0, agent: ctx.agentKey || null, jobId: ctx.jobId || null });
-        throw err;
-      }
-      const requestId = msg._request_id || null;
-      const u = msg.usage || {};
-      log && log.info('anthropic call', { model: msg.model || body.model, requestId, messageId: msg.id, stop: msg.stop_reason, usage: { in: u.input_tokens || 0, out: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 }, ms: Date.now() - t0, agent: ctx.agentKey || null, jobId: ctx.jobId || null });
-      return { id: msg.id, type: msg.type, role: msg.role, model: msg.model, content: msg.content, stop_reason: msg.stop_reason, stop_details: msg.stop_details ?? null, usage: { input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0, cache_creation_input_tokens: u.cache_creation_input_tokens || 0, cache_read_input_tokens: u.cache_read_input_tokens || 0 }, request_id: requestId };
+      if (!models.includes(model)) throw new LiveProviderError('model ' + model + ' is not in config/engine.json', { code: 'MODEL' });
+      try { const m = await sdk.models.retrieve(model, undefined, { timeout }); const c = m && m.capabilities && m.capabilities.server_tools; return { model, supported: !!(c && c.web_search && c.web_search.supported === true), reported: !!(c && c.web_search) }; }
+      catch (e) { throw normaliseError(e, redact); }
     }
   };
 }

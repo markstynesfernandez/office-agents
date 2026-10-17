@@ -65,7 +65,17 @@
     "timeoutMs": 300000,
     "retries": 2,
     "backoffMs": 2000,
-    "backoffMaxMs": 30000
+    "backoffMaxMs": 30000,
+    "web": {
+      "$comment": "E6 b0: the live web backend (providers/anthropic-web.mjs). Each web_search / web_fetch tool call is ONE Anthropic request on `model` with ONE server tool: the basic, directly called versions in `tools` (per the claude-api reference and platform docs 17/10/2026; the dynamic-filtering versions run code execution, one more tool, and are not used). max_uses per request = maxUsesPerRequest, lowered to the run's remaining web calls; the run's web-call cap (agent maxWebCalls) is counted across requests. Reservation: max_uses x the per-call fee (pricing.anthropic-web) + the prompt estimate and resultTokensPerUse x max_uses at the model's dearest input price + maxTokens output. Settle: web_search_requests x 0.01 + the response's tokens at the model's prices. fetchMaxContentTokens caps a fetched page. No domain allow/block list: none is set (owner). effort: the relay's output_config.effort. Engine settings, not caps (set 17/10/2026, for the owner's approval).",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "maxTokens": 2000,
+      "maxUsesPerRequest": 1,
+      "tools": { "web_search": "web_search_20250305", "web_fetch": "web_fetch_20250910" },
+      "resultTokensPerUse": { "web_search": 20000, "web_fetch": 12000 },
+      "fetchMaxContentTokens": 10000
+    }
   },
   "runtime": {
     "resumeOnRestart": 1,

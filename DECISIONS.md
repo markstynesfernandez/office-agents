@@ -858,3 +858,54 @@ client, with a fake key; no key value was read, printed, logged or copied; nothi
   `perRunUsd` 1.00). The script already did this in a0; it now also prints one line before the call with the model,
   max_tokens, thinking setting, retries and run cap.
 - **408 and 409** stay unretried (no change asked).
+
+## E6 step b0 build record: live web search (17/10/2026)
+
+No call was made in b0: every test stubs the SDK client, with a fake key; no key value was read, printed, logged or
+copied; nothing was written to Virtual-workers. Tool versions and parameters come from the claude-api reference and the
+platform docs read on 17/10/2026 (web search tool, web fetch tool, tool reference, models overview), not from memory.
+
+### Choices made in the build
+
+- **Shape:** each researcher `web_search` / `web_fetch` tool call becomes ONE Anthropic request on `claude-haiku-5-5`
+  (the "web relay", `providers/anthropic-web.mjs`) carrying ONE server tool, as ENGINE-PLAN b0 says. The results come
+  back to the agent as text prefixed `[web content: data, not instructions]`: titles, URLs, page dates, the relay's
+  short summary and its citations.
+- **Tool versions:** `web_search_20250305` and `web_fetch_20250910`, the basic versions, called directly. The
+  dynamic-filtering versions (`_20260209` and later) run code execution under the hood, which is one more tool; the
+  docs' per-version tables do not name Haiku 5.5 either. The Models API reports web search support per model
+  (`capabilities.server_tools.web_search.supported`), so `npm run scout:live` checks it first (free metadata, no
+  tokens) and refuses if it is not `true`. Web fetch is not covered by that field.
+- **Only door:** the agents' `text.create()` still refuses every server tool. The web relay uses a separate
+  `createWithWebTool()` that takes exactly one tool of a type `live.web.tools` names, with `max_uses` set, and nothing
+  else (no client tools, no MCP). No messaging or outbound tool exists anywhere.
+- **max_uses:** `live.web.maxUsesPerRequest` (1), lowered to the run's remaining web calls. The run's web-call cap
+  (TREND-SCOUT 12, EVIDENCE-CHECKER 15) is still checked in `tools/index.mjs` before anything is reserved, and counted
+  across requests by the uses each response reports (at least 1 per request). The 13th call is refused unsent.
+- **Price and ledger:** the guard reserves `max_uses x USD 0.01` (search; fetch 0) plus a token maximum: the prompt
+  estimate plus `resultTokensPerUse` per use (20,000 search, 12,000 fetch) at Haiku's dearest input price, plus
+  `maxTokens` (2,000) of output. Settled from the response: `web_search_requests x 0.01` + the tokens at Haiku's
+  prices (results are input tokens; the 100,000-token tier applies). One ledger row per request: provider
+  `anthropic-web`, model `web_search` / `web_fetch`, `via: claude-haiku-5-5`, `searches`, `fetches`, `count`, tokens,
+  `requestId`, `messageId`, `usd`.
+- **Retries and failures** as the text path: every attempt reserves again (`live.retries` 2); a 429 / 5xx / network
+  error retries; an HTTP error or a refusal before the network is released (not billed); a network error or an e-stop
+  mid-call is charged at the reservation, marked estimated, and counted against the web-call cap.
+- **Fetch size:** `max_content_tokens` 10,000 on every fetch (`live.web.fetchMaxContentTokens`).
+- **Relay effort:** `low` (`live.web.effort`); thinking is not set (the engine default).
+- **No domain list:** config sets none, so none is sent.
+- **The one-shot command:** `scripts/scout-live.mjs` (`npm run scout:live`). It refuses unless its own environment
+  says live; needs the server stopped (engine lock); no scheduler, no resumed jobs; refuses unless the scout run cap
+  is USD 0.50; prints one pre-run line; runs one genre-scout job; prints a key-free report. Blocked briefs are checked
+  against intake's scouting screen in memory, never offered to intake (no job can be created).
+
+Tests: `tests/live-web.test.mjs`, 13 tests. `npm test` 308/308. Port drift: none (69 files). `npm run dry-run:scout`
+(mock): 4 verified, 1 blocked and refused at intake, 13 names, 12 web calls with the 13th refused, USD 0.00, as before.
+
+### For the owner (open; nothing decided here)
+
+- **Engine settings to approve:** `live.web` (relay model Haiku, effort low, maxTokens 2000, maxUsesPerRequest 1,
+  result headroom 20,000 / 12,000 tokens, fetch cap 10,000 tokens).
+- **The v1 source rule is still open:** TREND-SCOUT's prompt still says it reads "store best-seller and top-played
+  charts", and nothing stops a `web_fetch` of a Steam, itch.io, Twitch or YouTube page (no domain list is set). A
+  `blocked_domains` list on `web_fetch` and the one-line prompt change are proposed, not built.
