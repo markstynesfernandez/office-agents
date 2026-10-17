@@ -4,6 +4,7 @@
 // blocked at prep by the originality gate after one retry, job A reaches the approval queue after one QA-DESIGN rework.
 // Every engine run here is on a temp root at zero pacing; nothing touches office-agents/data-demo or data.
 import { test } from 'node:test';
+import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -76,7 +77,7 @@ async function get(url, p) { const r = await fetch(url + p); return { status: r.
 function post(url, p, { token, body = {}, origin = url } = {}) {
   const u = new URL(url + p);
   return new Promise((res, rej) => {
-    const q = http.request({ host: u.hostname, port: u.port, method: 'POST', path: u.pathname, headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}), ...(token ? { 'x-station-action': token } : {}) } }, (s) => { const parts = []; s.on('data', (c) => parts.push(c)); s.on('end', () => { let json = null; try { json = JSON.parse(Buffer.concat(parts).toString('utf8')); } catch (_) {} res({ status: s.statusCode, json }); }); });
+    const q = http.request({ host: u.hostname, port: u.port, method: 'POST', path: u.pathname, headers: { 'content-type': 'application/json', 'x-idempotency-key': 'demo-test-' + crypto.randomUUID(), ...(origin ? { origin } : {}), ...(token ? { 'x-station-action': token } : {}) } }, (s) => { const parts = []; s.on('data', (c) => parts.push(c)); s.on('end', () => { let json = null; try { json = JSON.parse(Buffer.concat(parts).toString('utf8')); } catch (_) {} res({ status: s.statusCode, json }); }); });
     q.on('error', rej); q.end(JSON.stringify(body));
   });
 }

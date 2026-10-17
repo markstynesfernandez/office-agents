@@ -7,9 +7,10 @@ import { Cron } from 'croner';
 import { TZ, dublinDay } from './time.mjs';
 
 // pure: may this routine fire now? -> { ok: true } | { ok: false, reason }
-export function fireDecision({ routine, halted, spentToday, perDayUsd, firesToday, running }) {
+export function fireDecision({ routine, halted, spentToday, perDayUsd, firesToday, running, held = null }) {
   if (!routine.enabled) return { ok: false, reason: 'routine is disabled' };
   if (halted) return { ok: false, reason: 'e-stop is on' };
+  if (held) return { ok: false, reason: held };
   if (perDayUsd > 0 && spentToday >= perDayUsd) return { ok: false, reason: 'station day cap reached (' + spentToday.toFixed(2) + ' of ' + perDayUsd.toFixed(2) + ')' };
   if (firesToday >= (routine.max_runs_per_day ?? 1)) return { ok: false, reason: 'maxRunsPerDay reached (' + firesToday + ')' };
   if (running) return { ok: false, reason: 'the previous fire of this routine has not finished' };
@@ -29,7 +30,8 @@ export function missedFires(schedule, lastFireAt, now, { cap = 100 } = {}) {
 export const validSchedule = (expr) => { try { const c = new Cron(expr, { timezone: TZ, paused: true }); c.stop(); return String(expr).trim().split(/\s+/).length === 5; } catch (_) { return false; } };
 export const nextRuns = (expr, n = 5, from = new Date()) => { try { const c = new Cron(expr, { timezone: TZ, paused: true }); const out = c.nextRuns(n, from).map((d) => d.getTime()); c.stop(); return out; } catch (_) { return []; } };
 
-export function createScheduler({ store, halt, ledger, caps, bus, log, run, clock = Date.now }) {
+// hold(routine) -> a reason to skip or null (E5: the line's first agent is off duty)
+export function createScheduler({ store, halt, ledger, caps, bus, log, run, clock = Date.now, hold = () => null }) {
   const jobs = new Map(), running = new Set();
   let started = false;
   const firesKey = (id) => 'fires:' + id + ':' + dublinDay(clock());
@@ -37,14 +39,18 @@ export function createScheduler({ store, halt, ledger, caps, bus, log, run, cloc
 
   async function fire(routine) {
     const cur = store.getRoutine(routine.id) || routine;
-    const d = fireDecision({ routine: cur, halted: halt.isHalted(), spentToday: ledger.spent.day(dublinDay(clock())), perDayUsd: caps.perDayUsd, firesToday: firesToday(cur), running: running.has(cur.id) });
+    const d = fireDecision({ routine: cur, halted: halt.isHalted(), spentToday: ledger.spent.day(dublinDay(clock())), perDayUsd: caps.perDayUsd, firesToday: firesToday(cur), running: running.has(cur.id), held: hold(cur) });
     if (!d.ok) { store.markRoutineFire(cur.id, 'skipped: ' + d.reason); log.info('routine skipped', { id: cur.id, reason: d.reason }); bus.emit('routine.skip', { data: { routineId: cur.id, name: cur.name, reason: d.reason } }); return { skipped: d.reason }; }
     running.add(cur.id);
     store.meta.set(firesKey(cur.id), firesToday(cur) + 1);
     store.markRoutineFire(cur.id, 'fired');
     bus.emit('routine.fire', { data: { routineId: cur.id, name: cur.name, target: cur.target } });
     log.info('routine fired', { id: cur.id, target: cur.target });
-    try { const out = await run(cur); store.markRoutineFire(cur.id, 'done'); return out; }
+    try {
+      const out = await run(cur);
+      if (out && out.skipped) { store.markRoutineFire(cur.id, 'skipped: ' + out.skipped); log.info('routine fired, nothing to do', { id: cur.id, reason: out.skipped }); bus.emit('routine.skip', { data: { routineId: cur.id, name: cur.name, reason: out.skipped } }); return out; }
+      store.markRoutineFire(cur.id, 'done'); return out;
+    }
     catch (e) { store.markRoutineFire(cur.id, 'failed: ' + e.message); log.error('routine run failed', { id: cur.id, error: e.message }); return { error: e.message }; }
     finally { running.delete(cur.id); }
   }

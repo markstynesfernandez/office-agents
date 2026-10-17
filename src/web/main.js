@@ -206,7 +206,7 @@ function connectLive() {
   live.onopen = () => { liveOk = true; };
   live.onerror = () => { liveOk = false; };
   const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; try { presenter.onEvent(JSON.parse(e.data)); } catch (_) { /* not JSON */ } if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
-  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered']) live.addEventListener(t, onEv);
+  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused']) live.addEventListener(t, onEv);
 }
 async function action(pathname, body) {
   if (!session) session = await (await fetch('/api/session')).json();

@@ -10,6 +10,8 @@ const ACTIVE = ['in_progress', 'waiting', 'backlog', 'blocked'];
 // chip; archived engine jobs only under Archived. So the status chips still add up to All.
 const FILTERS = [['active', 'Active'], ['all', 'All'], ['in_progress', 'In progress'], ['waiting', 'Waiting for my OK'], ['backlog', 'Backlog'], ['done', 'Done'], ['blocked', 'Blocked'], ['rejected', 'Rejected'], ['parked', 'Parked'], ['archived', 'Archived'], ['legacy', 'Legacy']];
 const SIDE = { legacy: (j) => j.kind === 'legacy', archived: (j) => j.kind !== 'legacy' && j.state === 'archived' };
+// pure (tests/live-ui.test.mjs): does job j show under filter f
+export const matchesFilter = (j, f) => (SIDE[f] ? SIDE[f](j) : Object.values(SIDE).some((x) => x(j)) ? false : f === 'all' ? true : f === 'active' ? ACTIVE.includes(j.status) : j.status === f);
 
 // agent · department · stage, leaving out what is unknown (lane jobs show their stage as the pill instead)
 const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(Boolean).join(' · ') || j.id;
@@ -32,7 +34,7 @@ export function createTaskPanel({ root, onOpenJob }) {
   }
   function setDept(key) { if (state.snap && state.snap.departments.some((d) => d.key === key)) { sel.value = key; state.dept = key; render(); } }
   const scoped = () => { const s = state.snap; return state.scope === 'dept' && state.dept ? s.jobs.filter((j) => j.dept === state.dept) : s.jobs; };
-  const matches = (j, f) => (SIDE[f] ? SIDE[f](j) : Object.values(SIDE).some((x) => x(j)) ? false : f === 'all' ? true : f === 'active' ? ACTIVE.includes(j.status) : j.status === f);
+  const matches = matchesFilter;
   function counts() { const base = scoped(); return Object.fromEntries(FILTERS.map(([k]) => [k, base.filter((j) => matches(j, k)).length])); }
   function render() {
     if (!state.snap) return;

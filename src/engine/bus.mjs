@@ -7,7 +7,8 @@ import path from 'node:path';
 import { dublinDay } from './time.mjs';
 
 export const EVENT_TYPES = ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'job.stopped', 'job.rejected',
-  'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.start', 'engine.recovered'];
+  'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.start', 'engine.recovered',
+  'routine.changed', 'action.done', 'action.refused'];
 
 export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringSize = 1000 }) {
   const ring = [], subs = new Set();

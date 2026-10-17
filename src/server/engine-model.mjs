@@ -60,7 +60,14 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     out.briefStatus = (/^status:\s*(\S+)/m.exec(brief) || [])[1] || null;
     if (j.state === 'running') out.status = 'in_progress';
     else if (j.state === 'queued') { out.status = 'backlog'; out.stage = j.step === 'intake' || !def.column ? 'brief' : def.column; }
-    else if (j.state === 'approval') { out.stage = 'approval-queue'; out.status = 'waiting'; out.agentId = null; }
+    else if (j.state === 'approval') {
+      // the owner's decision lives in the approvals row only (E5: a decision writes no job row)
+      const ap = approvals[j.id], d = (ms) => dmyOfDay(dublinDay(ms));
+      if (ap && ap.status === 'approved') { out.stage = 'done'; out.status = 'done'; out.agentId = null; out.statusReason = 'approved by the owner ' + d(ap.decided_at) + '; publish on Etsy by hand'; }
+      else if (ap && ap.status === 'published') { out.stage = 'done'; out.status = 'done'; out.agentId = null; out.statusReason = 'published ' + d(ap.published_at) + (ap.etsy_url ? ' · ' + ap.etsy_url : ''); }
+      else if (ap && ap.status === 'rejected_by_owner') { out.lane = 'rejected'; out.stage = 'rejected'; out.status = 'rejected'; out.rejectedBy = 'owner'; out.agentId = null; out.statusReason = 'rejected by the owner: ' + (ap.reason || ''); }
+      else { out.stage = 'approval-queue'; out.status = 'waiting'; out.agentId = null; }
+    }
     else if (['approved', 'published', 'retired', 'research-done'].includes(j.state)) { out.stage = j.state === 'research-done' ? 'brief' : 'done'; out.status = 'done'; }
     else if (j.state === 'blocked' || j.state === 'stopped') { out.lane = 'blocked'; out.stage = 'blocked'; out.status = 'blocked'; out.flag = j.state === 'stopped' ? 'stopped' : null; out.qaPassedGateFailed = /^QA passed, package gate failed/.test(j.reason || ''); }
     else if (j.state === 'rejected' || j.state === 'rejected_by_owner') { out.lane = 'rejected'; out.stage = 'rejected'; out.status = 'rejected'; out.rejectedBy = j.state === 'rejected' ? 'rejects-desk' : 'owner'; }
@@ -78,7 +85,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
       const lj = readJson(path.join(dir, 'outbox', 'listing.json'));
       if (lj) out.listing = { title: lj.title, tags: (lj.tags || []).length, priceEur: lj.listingPriceEur ?? null };
       const tr = store.getTracker(j.id); if (tr) out.tracker = { status: tr.status, status_reason: tr.status_reason, packaged_at: tr.packaged_at, cost_usd: tr.cost_usd, updated_at: tr.updated_at };
-      const ap = approvals[j.id]; if (ap) { const mf = readJson(path.join(dir, 'package', 'MANIFEST.json')); out.queue = { status: ap.status, queuedAt: ap.queued_at, version: ap.version, costUsd: mf ? mf.costUsd : null, files: mf ? mf.files.length : null, folder: 'jobs/' + j.id + '/package/' }; }
+      const ap = approvals[j.id]; if (ap) { const mf = readJson(path.join(dir, 'package', 'MANIFEST.json')); out.queue = { status: ap.status, queuedAt: ap.queued_at, decidedAt: ap.decided_at || null, reason: ap.reason || null, publishedAt: ap.published_at || null, etsyUrl: ap.etsy_url || null, version: ap.version, costUsd: mf ? mf.costUsd : null, files: mf ? mf.files.length : null, folder: 'jobs/' + j.id + '/package/', folderAbs: path.join(J.dataRoot, 'jobs', j.id, 'package') }; }
     }
     const live = out.hops.find((h) => h.live);
     if (live) { out.agentId = live.agentId; out.statusReason = (nameOf[live.agentId] || live.agentId) + ' working, pass ' + live.pass; }
@@ -96,6 +103,10 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     out.dept = out.agentId && deptOf[out.agentId] ? deptOf[out.agentId].key : null;
     out.stageLabel = COLUMN_LABEL[out.stage] || out.stage;
     out.folder = j.kind === 'research' ? 'research/' : 'jobs/' + j.id + '/';
+    // the buttons this job offers on the page (each action checks again on the server)
+    out.controls = engine.orchestrator ? engine.orchestrator.controlsFor(j) : {};
+    if (j.state === 'archived') out.statusReason = j.reason;
+    if (j.state === 'queued' && j.data && j.data.waitingFor) out.waitingFor = j.data.waitingFor;
     return out;
   }).filter(Boolean).sort((a, b) => (b.stageChangedAt || 0) - (a.stageChangedAt || 0));
 
@@ -107,7 +118,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   // ---- agents
   const rows = ledger.rows();
   const agents = agentsCfg.map((a) => {
-    const st = store.agentState(a.key) || {}, enabled = st.enabled == null ? a.enabled !== false : !!st.enabled, tier = st.tier || a.tier, effort = st.effort || a.effort;
+    const st = store.agentState(a.key) || {}, version = st.version || 0, enabled = st.enabled == null ? a.enabled !== false : !!st.enabled, tier = st.tier || a.tier, effort = st.effort || a.effort;
     const t = cfg.engine.tiers[tier] || {}, myRuns = runs.filter((r) => r.agent_key === a.key), last = myRuns[0] || null, live = running.find((r) => r.agent_key === a.key);
     const todayRows = rows.filter((r) => r.agentKey === a.key && dublinDay(r.ts) === day);
     let status = 'idle', statusText = enabled ? 'idle' : 'off duty';
@@ -120,7 +131,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     const imgJob = a.key === 'designer' ? myJobs.find((j) => j.images.length) : null;
     return {
       id: a.key, name: a.name, model: providers.mode === 'mock' ? 'mock (' + t.model + ')' : t.model, provider: providers.mode === 'mock' ? 'mock' : t.provider, role: roleLabel(a.role, { dept: deptOf[a.key] ? deptOf[a.key].name : null, name: a.name }), modelSource: 'config/agents/' + a.key + '.json + config/engine.json tiers',
-      color: a.color || null, gear: a.tools, tier, effort, enabled, warnings: [], dept: deptOf[a.key] ? deptOf[a.key].key : null, deptName: deptOf[a.key] ? deptOf[a.key].name : null, desk, status, statusText,
+      color: a.color || null, gear: a.tools, tier, effort, enabled, version, tierModel: t.model || null, warnings: [], dept: deptOf[a.key] ? deptOf[a.key].key : null, deptName: deptOf[a.key] ? deptOf[a.key].name : null, desk, status, statusText,
       since: live ? live.started_at : last ? (last.ended_at || last.started_at) : null, services: live ? [providers.mode === 'mock' ? 'mock' : t.provider] : [], synthetic: false, syntheticWhat: null,
       currentJob: liveJob ? { id: liveJob.id, stage: liveJob.stage, stageLabel: liveJob.stageLabel, status: liveJob.status, pass: live.pass } : null,
       lastOutput: last && last.status !== 'running' ? { text: last.status + (last.end_reason ? ' · ' + last.end_reason : '') + ' · ' + last.turns + ' turns · tools: ' + (last.tools.join(', ') || 'none'), at: last.ended_at, jobId: last.job_id } : null,
@@ -151,9 +162,12 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     trailing24h: null, lineToday: [{ lineId: 'room1-digital', usd: r6(ledger.spent.lineDay('room1-digital', day)), day, label: 'line room1-digital, Dublin day' }],
     caps: { perDay: caps.perDayUsd, perJob: caps.perJobUsd, perRun: caps.perRunUsd, perLineDay: caps.perLineDayUsd, imagesPerDay: caps.imagesPerDay, source: 'config/engine.json' }, lineLimits: { maxHops: caps.maxHops },
     reservedNow: g.reservedNow, ledgerOk: g.ledgerOk, ledgerError: g.ledgerError,
+    // live spend against each cap that applies today; warn from 80% (config/engine.json; caps are edited there only)
+    capStatus: [{ cap: 'perDay', label: 'station day', used: r6(g.spentToday), limit: caps.perDayUsd }, ...Object.keys(cfg.lines).map((l) => ({ cap: 'perLineDay[' + l + ']', label: 'line ' + l + ' day', used: r6(ledger.spent.lineDay(l, day)), limit: (caps.perLineDayUsd || {})[l] ?? (caps.perLineDayUsd || {}).default ?? 0 }))].filter((c) => c.limit > 0).map((c) => ({ ...c, pct: Math.round(1000 * c.used / c.limit) / 10, level: c.used >= c.limit ? 'hit' : c.used >= 0.8 * c.limit ? 'warn' : 'ok' })),
     last7days: Array.from({ length: 7 }, (_, i) => { const d = dublinDay(dayStart - (6 - i) * 86400000 + 3600000); return { date: d, usd: r6(ledger.spent.day(d)) }; })
   };
   if (!g.ledgerOk) warnings.push('LEDGER UNREADABLE: every paid call is refused. ' + g.ledgerError);
+  for (const c of spend.capStatus) if (c.level !== 'ok') warnings.push((c.level === 'hit' ? 'CAP REACHED: ' : 'Cap warning: ') + c.label + ' ' + c.used.toFixed(2) + ' of ' + c.limit.toFixed(2) + ' USD (' + c.pct + '%)' + (c.level === 'hit' ? '; new calls on it are refused' : ''));
   // the legacy station's spend: imported history on its own keys, never counted in the engine's caps
   spend.legacy = LEG ? { rows: LEG.ledger.length, usd: LEG.ledgerUsd, source: 'data/legacy/ledger.jsonl (imported ' + (LEG.importedAt || '?') + ')', note: 'legacy station spend; not counted in the engine caps' } : null;
   const legacyConflicts = jobs.filter((j) => j.kind === 'legacy' && j.warnings.length).length;
@@ -161,7 +175,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   if (halted) warnings.unshift('E-STOP ON since ' + new Date(halt.state.at || now).toISOString() + ' (by ' + (halt.state.by || 'unknown') + '): no call can start');
 
   // ---- routines and the calendar (one entry per job, on the day of its latest stage change)
-  const routines = store.listRoutines().map((r) => { const up = r.enabled ? nextRuns(r.schedule, 6, new Date(now)) : []; return { id: r.id, name: r.name, prompt: String(r.input || '').slice(0, 200), schedule: r.schedule, scheduleWords: cronWords(r.schedule) + ' (Dublin)', scheduleDisplay: r.schedule, agentId: r.target, agentName: r.legacy && /^legacy:agent:/.test(r.target) ? (nameOf[r.target.slice(13)] || r.target.slice(13)) + ' (legacy)' : r.target, dept: null, enabled: r.enabled, state: r.enabled ? 'scheduled' : 'paused', needsOk: !r.enabled, nextRun: up[0] || null, nextRunIsProjection: false, upcoming: up, ghostRuns: r.enabled ? [] : nextRuns(r.schedule, 6, new Date(now)), lastRunAt: r.last_fire_at, lastStatus: r.last_status, lastUsd: 0, live: false, version: r.version, source: 'engine routines' }; });
+  const routines = store.listRoutines().map((r) => { const up = r.enabled ? nextRuns(r.schedule, 6, new Date(now)) : []; return { id: r.id, name: r.name, prompt: String(r.input || '').slice(0, 200), input: String(r.input || '').slice(0, 2000), target: r.target, maxRunsPerDay: r.max_runs_per_day, perRunCapUsd: r.per_run_cap_usd, legacy: r.legacy, runnable: !r.legacy && (engine.routineTargets || []).some((t) => t.id === r.target), schedule: r.schedule, scheduleWords: cronWords(r.schedule) + ' (Dublin)', scheduleDisplay: r.schedule, agentId: r.target, agentName: r.legacy && /^legacy:agent:/.test(r.target) ? (nameOf[r.target.slice(13)] || r.target.slice(13)) + ' (legacy)' : r.target, dept: null, enabled: r.enabled, state: r.enabled ? 'scheduled' : 'paused', needsOk: !r.enabled, nextRun: up[0] || null, nextRunIsProjection: false, upcoming: up, ghostRuns: r.enabled ? [] : nextRuns(r.schedule, 6, new Date(now)), lastRunAt: r.last_fire_at, lastStatus: r.last_status, lastUsd: 0, live: false, version: r.version, source: 'engine routines' }; });
   const events = [];
   for (const j of jobs) if (j.stageChangedAt) events.push({ date: dublinDay(j.stageChangedAt), at: j.stageChangedAt, kind: 'job', jobId: j.id, title: j.title, stage: j.lane || j.stage, stageLabel: j.lane || j.stageLabel, status: j.status, dept: j.dept, agent: j.agentName, reason: j.statusReason, synthetic: false });
   for (const r of routines) for (const t of r.upcoming) events.push({ date: dublinDay(t), at: t, kind: 'routine', routineId: r.id, title: r.name, dept: null, agent: r.agentName, projected: false });
@@ -188,7 +202,10 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     source: { mode: 'engine', root: 'data/', snapshotAt: null, synthetic: [], legacy: false },
     engine: { state: halted ? 'halted' : 'running', label: halted ? 'E-STOP ON' : 'engine · ' + (mock ? 'mock provider' : 'live'), detail: halted ? 'every call is refused until you resume (typed confirmation)' : 'Station engine, data root ' + J.dataRoot + '; provider ' + providers.mode, halted, haltedBy: halted ? halt.state.by || null : null, provider: providers.mode, inFlight: g.inFlight, seq: engine.bus.seq, overridden: !!cfg.overridden },
     station: { name: 'Station', runtime: 'Station engine (Node ' + process.version + ')', host: host.label || null, provider: providers.mode },
-    services, departments, agents, hub, jobs, board, stages: columns.filter((c) => !['brief', 'approval-queue', 'done'].includes(c.key)), columns, routines, events, spend
+    services, departments, agents, hub, jobs, board, stages: columns.filter((c) => !['brief', 'approval-queue', 'done'].includes(c.key)), columns, routines, events, spend,
+    // E5: what the page's controls may offer (the server checks every action again)
+    controls: { live: true, haltVersion: halt.state.at || 0, tiers: Object.entries(cfg.engine.tiers).map(([k, t]) => ({ key: k, model: t.model })), effortLevels: cfg.engine.effortLevels || [], routineTargets: (engine.routineTargets || []).map((t) => ({ id: t.id, label: t.label })), perRunCapUsd: caps.perRunUsd, today: day },
+    briefs: engine.orchestrator ? engine.orchestrator.verifiedBriefs().map((b) => ({ file: b.file, id: b.id, niche: b.niche, status: b.status, product: b.product, jobId: b.jobId })) : []
   };
 }
 

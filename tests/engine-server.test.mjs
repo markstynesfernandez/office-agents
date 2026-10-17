@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { tempRoot } from './helpers/engine.mjs';
 import { createEngine } from '../src/engine/engine.mjs';
 import { createEngineServer } from '../src/server/engine-server.mjs';
@@ -16,7 +17,7 @@ async function boot(t) {
   const port = server.address().port, host = '127.0.0.1:' + port;
   t.after(async () => { closeAll(); await new Promise((res) => server.close(res)); engine.close(); r.cleanup(); });
   const req = (method, p, { headers = {}, body = null } = {}) => new Promise((res, rej) => {
-    const q = http.request({ host: '127.0.0.1', port, method, path: p, headers }, (s) => { const parts = []; s.on('data', (c) => parts.push(c)); s.on('end', () => { const text = Buffer.concat(parts).toString('utf8'); let json = null; try { json = JSON.parse(text); } catch (_) {} res({ status: s.statusCode, text, json }); }); });
+    const q = http.request({ host: '127.0.0.1', port, method, path: p, headers: method === 'POST' && !('x-idempotency-key' in headers) ? { 'x-idempotency-key': crypto.randomUUID(), ...headers } : headers }, (s) => { const parts = []; s.on('data', (c) => parts.push(c)); s.on('end', () => { const text = Buffer.concat(parts).toString('utf8'); let json = null; try { json = JSON.parse(text); } catch (_) {} res({ status: s.statusCode, text, json }); }); });
     q.on('error', rej); if (body != null) q.write(body); q.end();
   });
   return { engine, token, host, port, req, origin: 'http://' + host };
@@ -35,9 +36,9 @@ test('POST actions need the same origin, the action token and JSON', async (t) =
   assert.equal(engine.halt.isHalted(), false, 'nothing refused above changed the engine');
   const ok = await req('POST', '/api/engine/halt', { headers: { ...json, origin, 'x-station-action': token }, body });
   assert.equal(ok.status, 200); assert.equal(engine.halt.isHalted(), true);
-  const wrong = await req('POST', '/api/engine/resume', { headers: { ...json, origin, 'x-station-action': token }, body: JSON.stringify({ confirm: 'yes' }) });
+  const wrong = await req('POST', '/api/engine/resume', { headers: { ...json, origin, 'x-station-action': token }, body: JSON.stringify({ confirm: 'yes', expectedVersion: engine.halt.state.at }) });
   assert.equal(wrong.status, 400); assert.equal(engine.halt.isHalted(), true);
-  const resumed = await req('POST', '/api/engine/resume', { headers: { ...json, origin, 'x-station-action': token }, body: JSON.stringify({ confirm: 'RESUME' }) });
+  const resumed = await req('POST', '/api/engine/resume', { headers: { ...json, origin, 'x-station-action': token }, body: JSON.stringify({ confirm: 'RESUME', expectedVersion: engine.halt.state.at }) });
   assert.equal(resumed.status, 200); assert.equal(engine.halt.isHalted(), false);
   assert.equal((await req('PUT', '/api/engine/halt', { headers: { ...json, origin, 'x-station-action': token }, body })).status, 405);
 });

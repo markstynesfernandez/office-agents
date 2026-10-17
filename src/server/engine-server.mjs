@@ -1,8 +1,12 @@
 // engine-server.mjs — the Station server in engine mode: the page, the office JSON built from the engine's own state,
 // the live event stream (SSE), and the engine's write actions. Bound to 127.0.0.1 only.
 // Every write request must (ENGINE-PLAN.md §6): come from the page's own origin, carry the per-launch action token the
-// page got from /api/session, and send JSON. Records the owner can change carry an expectedVersion (stale tabs are
-// refused) and creates carry an idempotency key (E5). E2–E3 writes: the e-stop and its typed resume.
+// page got from /api/session, send JSON and carry an idempotency key (x-idempotency-key: a repeat of the same key gets
+// the first answer back and does nothing again, so a double click creates one job). Every action on an existing record
+// sends the version the page loaded (expectedVersion); a stale tab gets "changed since you loaded it" (HTTP 409) and
+// nothing is written. The one exception is pressing the E-STOP, which is never refused for being stale. Every write,
+// and every refusal, is logged and emitted as an event (action.done / action.refused). All files are written by the
+// engine through dataJail under the data root.
 // The page never receives keys, prompts or provider responses.
 // ext (demo mode only, scripts/demo.mjs): extra POST actions behind the same origin/token/JSON checks, and extra fields
 // merged into each snapshot response. `handler` and `dispose` let the demo swap engines behind one listening server.
@@ -65,11 +69,37 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     return { totalUsd: Math.round(rows.reduce((s, r) => s + r.usd, 0) * 1e7) / 1e7, rows: rows.length, byKind: { text: rows.length }, mock: false, legacy: true, note: 'legacy ledger rows attributed to this job; image cost not recorded' };
   }
 
+  const O = engine.orchestrator, BY = 'owner (office)';
+  const stale = (what) => Object.assign(new Error(what + ' changed since you loaded it'), { code: 'STALE' });
+  const ver = (b) => (Number.isInteger(b.expectedVersion) ? b.expectedVersion : null);
+  const str = (v, n = 200) => String(v == null ? '' : v).slice(0, n);
   const ACTIONS = {
-    'POST /api/engine/halt': (body) => engine.halt.press({ by: 'owner (office button)', reason: String(body.reason || '').slice(0, 200) }),
-    'POST /api/engine/resume': (body) => engine.halt.resume({ by: 'owner (office, typed confirmation)', confirm: body.confirm }),
+    // the e-stop: pressing it is never refused for a stale page; resuming needs the typed word and the current state
+    'POST /api/engine/halt': (body) => engine.halt.press({ by: 'owner (office button)', reason: str(body.reason) }),
+    'POST /api/engine/resume': (body) => { if (ver(body) !== (engine.halt.state.at || 0)) throw stale('the e-stop'); return engine.halt.resume({ by: 'owner (office, typed confirmation)', confirm: body.confirm }); },
+    // the task box
+    'POST /api/tasks/research': (body) => O.startResearch(str(body.text, 4000), { by: BY }),
+    'POST /api/tasks/brief': (body, key) => O.startBrief(str(body.file), { by: BY, idempotencyKey: key }),
+    'POST /api/tasks/rerun-listing': (body) => O.rerunListing(str(body.jobId), { expectedVersion: ver(body), by: BY }),
+    // the scheduler (routines are created disabled; enabling is the approval)
+    'POST /api/routines/create': (body) => engine.routines.create(body),
+    'POST /api/routines/update': (body) => engine.routines.update(str(body.id), body, { expectedVersion: ver(body) }),
+    'POST /api/routines/enable': (body) => engine.routines.enable(str(body.id), body.enabled === true, { expectedVersion: ver(body) }),
+    'POST /api/routines/delete': (body) => engine.routines.remove(str(body.id), { expectedVersion: ver(body) }),
+    // the approval queue: approvals and tracker rows only; nothing is sent anywhere
+    'POST /api/approvals/decide': (body) => O.decide(str(body.jobId), { action: str(body.action, 20), reason: str(body.reason, 600), etsyUrl: str(body.etsyUrl, 300), publishedOn: str(body.publishedOn, 10), expectedVersion: ver(body), by: BY }),
+    // desk panels: on/off duty, tier, effort (applies at the next run)
+    'POST /api/agents/update': (body) => engine.updateAgent(str(body.agentKey, 60), { enabled: body.enabled, tier: body.tier, effort: body.effort }, { expectedVersion: ver(body) }),
+    // job panel and board
+    'POST /api/jobs/stop': (body) => O.stopJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
+    'POST /api/jobs/restart': (body) => O.restartJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
+    'POST /api/jobs/archive': (body) => O.archiveJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
     ...((ext && ext.actions) || {})
   };
+  // a refusal or a done action: logged, and emitted so every open page refreshes
+  const audit = (ok, p, data) => { try { engine.bus.emit(ok ? 'action.done' : 'action.refused', { jobId: data.jobId || null, agentKey: data.agentKey || null, data: { action: p, ...data } }); } catch (_) { /* bus closed */ } };
+  const refuse = (res, p, status, error, extra = {}) => { log.warn('write refused', { path: p, status, error, ...extra }); audit(false, p, { status, error, ...extra }); return sendJson(res, { error, code: extra.code || null }, status); };
+  const inFlight = new Map();   // idempotency key -> promise of the first request's answer (a double click arrives together)
 
   const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -78,12 +108,35 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       if (req.method === 'POST') {
         const act = ACTIONS['POST ' + p];
         if (!act) return sendJson(res, { error: 'unknown action' }, 404);
-        if (!sameOrigin(req)) { log.warn('write refused: not same-origin', { path: p, origin: req.headers.origin || null }); return sendJson(res, { error: 'same-origin requests only' }, 403); }
-        if (req.headers['x-station-action'] !== token) { log.warn('write refused: bad action token', { path: p }); return sendJson(res, { error: 'missing or stale action token: reload the page' }, 403); }
-        if (!/^application\/json\b/.test(req.headers['content-type'] || '')) return sendJson(res, { error: 'JSON only' }, 415);
-        const body = await readBody(req);
-        try { const out = act(body); log.info('action', { path: p }); return sendJson(res, { ok: true, result: out }); }
-        catch (e) { log.warn('action refused', { path: p, error: e.message }); return sendJson(res, { error: e.message, code: e.code || null }, e.code === 'STALE' ? 409 : 400); }
+        if (!sameOrigin(req)) return refuse(res, p, 403, 'same-origin requests only', { origin: req.headers.origin || null });
+        if (req.headers['x-station-action'] !== token) return refuse(res, p, 403, 'missing or stale action token: reload the page', { token: req.headers['x-station-action'] ? 'wrong' : 'missing' });
+        if (!/^application\/json\b/.test(req.headers['content-type'] || '')) return refuse(res, p, 415, 'JSON only');
+        const key = String(req.headers['x-idempotency-key'] || '');
+        if (!/^[A-Za-z0-9_-]{8,100}$/.test(key)) return refuse(res, p, 400, 'missing idempotency key (x-idempotency-key)');
+        let body;
+        try { body = await readBody(req); } catch (e) { return refuse(res, p, 400, e.message); }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return refuse(res, p, 400, 'body must be a JSON object');
+        const ik = 'action:' + p + ':' + key;
+        // a repeat: the same answer again, nothing done twice (in flight, or already recorded)
+        if (inFlight.has(ik)) { const prev = await inFlight.get(ik); log.info('action repeat (idempotent)', { path: p, key }); return sendJson(res, { ...prev.body, replayed: true }, prev.status); }
+        const done = engine.store.idem.get(ik);
+        if (done) { log.info('action repeat (idempotent)', { path: p, key }); return sendJson(res, { ok: true, result: done.result, replayed: true }); }
+        const run = (async () => {
+          try {
+            const out = await act(body, key);
+            engine.store.idem.put(ik, { result: out ?? null, at: Date.now() });
+            const who = { jobId: (out && out.jobId) || body.jobId || null, agentKey: body.agentKey || null };
+            log.info('action', { path: p, key, ...who }); audit(true, p, who);
+            return { status: 200, body: { ok: true, result: out ?? null } };
+          } catch (e) {
+            const status = e.code === 'STALE' ? 409 : e.code === 'HALTED' ? 423 : 400;
+            const error = e.code === 'STALE' ? 'Not saved: ' + e.message.replace(/ \(version .*\)$/, '') + '. The page has been refreshed; check it and try again.' : e.message;
+            log.warn('action refused', { path: p, key, status, error: e.message }); audit(false, p, { status, error, code: e.code || null, jobId: body.jobId || null });
+            return { status, body: { error, code: e.code || null } };
+          }
+        })();
+        inFlight.set(ik, run);
+        try { const r = await run; return sendJson(res, r.body, r.status); } finally { inFlight.delete(ik); }
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'method not allowed', 'text/plain');
       if (p === '/api/session') {

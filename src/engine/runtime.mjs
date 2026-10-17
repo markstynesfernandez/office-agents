@@ -20,7 +20,8 @@ export function effectiveAgent(engine, key) {
 
 const estimateTokens = (obj) => Math.ceil(JSON.stringify(obj).length / 3);   // conservative (~3 chars per token)
 
-export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {} }) {
+// stopSignal (E5): the owner's Stop on this job; it aborts the call in flight like the e-stop, for this job only
+export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null }) {
   const { store, guard, providers, halt, bus, log, cfg } = engine;
   const agent = effectiveAgent(engine, agentKey);
   if (!agent.enabled) throw new RunStopped(agent.name + ' is off duty');
@@ -46,9 +47,11 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
     const params = { model, max_tokens: maxOutputTokens, system, messages, ...(tools && tools.length ? { tools } : {}) };
     const res = guard.reserve({ provider, model, kind: 'text', runId, jobId: job ? job.id : null, agentKey, line, inputTokens: estimateTokens({ system, messages, tools }), maxOutputTokens, runCapUsd });
     let resp;
-    try { resp = await providers.text.create(params, { signal: halt.signal, ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, ...extraCtx } }); }
+    const signal = stopSignal ? AbortSignal.any([halt.signal, stopSignal]) : halt.signal;
+    try { resp = await providers.text.create(params, { signal, ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, ...extraCtx } }); }
     catch (e) {
       if (halt.signal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'aborted by the e-stop mid-call; charged at the reserved maximum' }); throw new RunStopped('e-stop', e); }
+      if (stopSignal && stopSignal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'stopped by the owner mid-call; charged at the reserved maximum' }); throw new RunStopped('stopped by the owner', e); }
       if (e && e.status) guard.release(res, 'provider error ' + e.status); else guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'call failed without a usage report; charged at the reserved maximum' });
       throw e;
     }
@@ -64,6 +67,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   try {
     for (;;) {
       if (halt.isHalted()) throw new RunStopped('e-stop');
+      if (stopSignal && stopSignal.aborted) throw new RunStopped('stopped by the owner');
       if (totals.turns >= agent.limits.maxTurns) { status = 'max-turns'; endReason = 'maxTurns ' + agent.limits.maxTurns + ' reached'; break; }
       totals.turns++;
       const resp = await callModel({ messages, tools: box.defs, maxOutputTokens: agent.limits.maxOutputTokens });
@@ -79,6 +83,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
         catch (e) {
           if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped) throw e;
           if (halt.signal.aborted) throw new RunStopped('e-stop', e);
+          if (stopSignal && stopSignal.aborted) throw new RunStopped('stopped by the owner', e);
           isError = true; out = (e instanceof ToolError ? '' : 'tool failed: ') + e.message;
           log.warn('tool error', { runId, agent: agentKey, tool: u.name, error: e.message });
         }

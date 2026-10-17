@@ -99,7 +99,8 @@ export function openStore({ J, file = 'station.db', log }) {
     runningRuns: () => q("SELECT * FROM runs WHERE status = 'running'").all(),
 
     // ---- approvals (the only human gate)
-    queueApproval: (jobId) => q("INSERT INTO approvals (job_id, status, queued_at) VALUES (?, 'pending', ?) ON CONFLICT(job_id) DO NOTHING").run(jobId, now()),
+    // a row superseded by a listing re-run (E5) goes back to pending when the re-run is packaged; a decided row is kept
+    queueApproval: (jobId) => q("INSERT INTO approvals (job_id, status, queued_at) VALUES (?, 'pending', ?) ON CONFLICT(job_id) DO UPDATE SET status = 'pending', queued_at = excluded.queued_at, decided_at = NULL, reason = NULL, version = approvals.version + 1 WHERE approvals.status = 'superseded'").run(jobId, now()),
     getApproval: (jobId) => q('SELECT * FROM approvals WHERE job_id = ?').get(jobId),
     listApprovals: () => q('SELECT * FROM approvals ORDER BY queued_at DESC').all(),
     decideApproval(jobId, patch, { expectedVersion } = {}) {
@@ -127,6 +128,24 @@ export function openStore({ J, file = 'station.db', log }) {
         const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id);
         if (expectedVersion != null && cur.version !== expectedVersion) throw new VersionConflict('routine ' + id, cur.version, expectedVersion);
         q('UPDATE routines SET enabled=?, updated_at=?, version=version+1 WHERE id=?').run(enabled ? 1 : 0, now(), id); return store.getRoutine(id);
+      });
+    },
+    // E5: the owner edits a routine from the page. An edit always leaves it disabled: enabling is the approval, so a
+    // changed routine needs a new one. A fire's bookkeeping (markRoutineFire) does not change the version.
+    updateRoutine(id, patch, { expectedVersion } = {}) {
+      return tx(() => {
+        const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id);
+        if (expectedVersion != null && cur.version !== expectedVersion) throw new VersionConflict('routine ' + id, cur.version, expectedVersion);
+        const n = { ...cur, ...patch };
+        q('UPDATE routines SET name=?, target=?, input=?, schedule=?, max_runs_per_day=?, per_run_cap_usd=?, enabled=0, updated_at=?, version=version+1 WHERE id=?').run(n.name, n.target, n.input || '', n.schedule, n.max_runs_per_day ?? 1, n.per_run_cap_usd ?? null, now(), id);
+        return store.getRoutine(id);
+      });
+    },
+    deleteRoutine(id, { expectedVersion } = {}) {
+      return tx(() => {
+        const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id);
+        if (expectedVersion != null && cur.version !== expectedVersion) throw new VersionConflict('routine ' + id, cur.version, expectedVersion);
+        q('DELETE FROM routines WHERE id = ?').run(id); return cur;
       });
     },
     markRoutineFire: (id, status) => q('UPDATE routines SET last_fire_at=?, last_status=? WHERE id=?').run(now(), status, id),

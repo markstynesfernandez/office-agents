@@ -16,6 +16,8 @@ import { createProviders } from './providers/index.mjs';
 import { loadConfig, demoMarkers } from './config.mjs';
 import { useJail } from './store/active.mjs';
 import { createOrchestrator } from './orchestrator.mjs';
+import { effectiveAgent } from './runtime.mjs';
+import { validSchedule } from './scheduler.mjs';
 
 export class LockError extends Error { constructor(msg) { super(msg); this.code = 'LOCKED'; } }
 export class DemoConfigError extends Error { constructor(msg) { super(msg); this.code = 'DEMO_CONFIG'; } }
@@ -78,11 +80,29 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.orchestrator = createOrchestrator(engine, { hooks });
     // a routine fires a line (verified briefs, up to its daily limit) or a research batch; created disabled, enabled by the owner only
     engine.runRoutine = async (routine) => {
-      if (routine.target === 'line:research') { const r = engine.orchestrator.createResearchJob({ input: routine.input, by: 'routine ' + routine.id }); return engine.orchestrator.startJob(r.id); }
-      throw new Error('routine target not supported yet: ' + routine.target);
+      const cap = routine.per_run_cap_usd ?? null;
+      if (routine.target === 'line:research') { const r = engine.orchestrator.createResearchJob({ input: routine.input, by: 'routine ' + routine.id }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
+      if (routine.target === 'line:room1-digital') {
+        // the oldest verified brief that has no job yet (owner Q13: once the owner enables a line routine)
+        const b = engine.orchestrator.verifiedBriefs().find((x) => x.status === 'verified' && x.id && !x.jobId);
+        if (!b) return { skipped: 'no verified brief is waiting' };
+        const c = engine.orchestrator.createJob({ briefText: fs.readFileSync(path.join(J.dataRoot, 'research', 'briefs', b.file), 'utf8'), by: 'routine ' + routine.id });
+        if (!c.ok) return { skipped: 'brief ' + b.file + ' refused at intake: ' + c.reasons.join('; ') };
+        store.updateJob(c.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } });
+        return engine.orchestrator.startJob(c.id);
+      }
+      throw new Error('routine target not supported: ' + routine.target);
     };
-    engine.scheduler = createScheduler({ store, halt, ledger, caps: cfg.engine.caps, bus, log, clock, run: (routine) => (engine.runRoutine ? engine.runRoutine(routine) : Promise.reject(new Error('no routine runner'))) });
+    // routines the page may create (ENGINE-PLAN.md §5.4); an off-duty first agent makes its line's routines skip
+    engine.routineTargets = Object.values(cfg.lines).map((l) => ({ id: 'line:' + l.id, label: l.id === 'research' ? 'Research batch (research line)' : 'Next verified brief (' + l.id + ' line)', firstAgent: firstAgentOf(l) }));
+    const routineHold = (routine) => {
+      const t = engine.routineTargets.find((x) => x.id === routine.target); if (!t || !t.firstAgent) return null;
+      return effectiveAgent(engine, t.firstAgent).enabled ? null : ((cfg.agents[t.firstAgent] || {}).name || t.firstAgent) + ' is off duty';
+    };
+    engine.scheduler = createScheduler({ store, halt, ledger, caps: cfg.engine.caps, bus, log, clock, hold: routineHold, run: (routine) => (engine.runRoutine ? engine.runRoutine(routine) : Promise.reject(new Error('no routine runner'))) });
     if (startScheduler) engine.scheduler.start();
+    engine.routines = routineAdmin(engine);
+    engine.updateAgent = (key, patch, opts) => updateAgent(engine, key, patch, opts);
     // jobs interrupted by the last stop resume at the start of their step, once (resumeOnRestart)
     if (resume && !halt.isHalted()) for (const j of rec.jobs.filter((x) => x.action === 'resume')) { try { engine.orchestrator.startJob(j.id); } catch (e) { log.warn('interrupted job not resumed', { id: j.id, error: e.message }); } }
     bus.emit('engine.start', { data: { pid: process.pid, provider: prov.mode, dataRoot: J.dataRoot, ledgerOk: ledger.state.ok, halted: halt.isHalted() } });
@@ -90,4 +110,79 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.close = () => { try { engine.scheduler.stop(); } catch (_) {} halt.close(); store.close(); useJail(null); unlock(); log.info('engine closed'); };
     return engine;
   } catch (e) { unlock(); throw e; }
+}
+
+const firstAgentOf = (l) => { let step = l.start, seen = 0; while (step && seen++ < 20) { const d = l.steps[step]; if (!d) return null; if (d.kind === 'agent') return d.agent; step = d.next; } return null; };
+
+// ---- the owner's changes from the office (E5). Each takes the record's expectedVersion; a stale tab is refused.
+function routineAdmin(engine) {
+  const { store, cfg, bus, log, scheduler } = engine;
+  const caps = cfg.engine.caps;
+  function clean(b, cur = {}) {
+    const r = {
+      name: b.name != null ? String(b.name).trim() : cur.name, target: b.target != null ? String(b.target) : cur.target, input: b.input != null ? String(b.input).replace(/\r\n/g, '\n').trim() : (cur.input || ''),
+      schedule: b.schedule != null ? String(b.schedule).trim().replace(/\s+/g, ' ') : cur.schedule,
+      max_runs_per_day: b.maxRunsPerDay != null ? Number(b.maxRunsPerDay) : (cur.max_runs_per_day ?? 1),
+      per_run_cap_usd: b.perRunCapUsd !== undefined ? (b.perRunCapUsd === null || b.perRunCapUsd === '' ? null : Number(b.perRunCapUsd)) : (cur.per_run_cap_usd ?? null)
+    };
+    const bad = [];
+    if (!r.name || r.name.length > 80) bad.push('a name of 1 to 80 characters');
+    if (!engine.routineTargets.some((t) => t.id === r.target)) bad.push('a target the engine can run (' + engine.routineTargets.map((t) => t.id).join(', ') + ')');
+    if (r.input.length > 2000) bad.push('an input under 2,000 characters');
+    if (!validSchedule(r.schedule)) bad.push('a 5-field cron schedule (Europe/Dublin), e.g. "0 9 * * 1-5"');
+    if (!Number.isInteger(r.max_runs_per_day) || r.max_runs_per_day < 1 || r.max_runs_per_day > 24) bad.push('max runs a day between 1 and 24');
+    if (r.per_run_cap_usd != null && !(r.per_run_cap_usd > 0 && r.per_run_cap_usd <= caps.perRunUsd)) bad.push('a per-run cap above 0 and at most the engine cap of ' + caps.perRunUsd.toFixed(2) + ' (caps are raised in config only)');
+    if (bad.length) throw new Error('the routine needs ' + bad.join('; '));
+    return r;
+  }
+  const emit = (id, what, r) => { bus.emit('routine.changed', { data: { routineId: id, what, name: r ? r.name : null, enabled: r ? r.enabled : false } }); log.info('routine ' + what, { id, name: r && r.name }); };
+  const needVersion = (v) => { if (v == null || !Number.isInteger(v)) throw new Error('expectedVersion is required'); };
+  const notLegacy = (r) => { if (r.legacy) throw new Error('an imported legacy routine is read only (a re-import would bring it back)'); };
+  return {
+    // created disabled, always (ENGINE-PLAN.md §5.4)
+    create(b) {
+      const r = clean(b), id = 'rt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      const out = store.insertRoutine({ id, ...r });
+      emit(id, 'created', out); return out;
+    },
+    update(id, b, { expectedVersion } = {}) {
+      needVersion(expectedVersion);
+      const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id); notLegacy(cur);
+      const out = store.updateRoutine(id, clean(b, cur), { expectedVersion });
+      scheduler.refresh(id); emit(id, 'edited (left disabled: enable it again to approve the change)', out); return out;
+    },
+    // enabling is the only approval; a legacy or unsupported routine cannot be enabled
+    enable(id, enabled, { expectedVersion } = {}) {
+      needVersion(expectedVersion);
+      const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id);
+      if (enabled) { notLegacy(cur); if (!engine.routineTargets.some((t) => t.id === cur.target)) throw new Error('this routine\'s target cannot run: ' + cur.target); }
+      const out = store.setRoutineEnabled(id, !!enabled, { expectedVersion });
+      scheduler.refresh(id); emit(id, enabled ? 'enabled' : 'disabled', out); return out;
+    },
+    remove(id, { expectedVersion } = {}) {
+      needVersion(expectedVersion);
+      const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id); notLegacy(cur);
+      store.deleteRoutine(id, { expectedVersion });
+      scheduler.refresh(id); emit(id, 'deleted', null); return { id, deleted: true };
+    }
+  };
+}
+
+// on/off duty, tier and effort: an overlay in SQLite on top of config/agents/<key>.json, read at the start of every run,
+// so a change applies at the next run with no restart. Tier and effort only from the lists in config/engine.json.
+export function updateAgent(engine, key, patch = {}, { expectedVersion } = {}) {
+  const { cfg, store, bus, log } = engine;
+  if (!cfg.agents[key]) throw new Error('no such agent: ' + key);
+  if (expectedVersion == null || !Number.isInteger(expectedVersion)) throw new Error('expectedVersion is required');
+  const p = {};
+  if (patch.enabled !== undefined) { if (typeof patch.enabled !== 'boolean') throw new Error('enabled must be true or false'); p.enabled = patch.enabled; }
+  if (patch.tier !== undefined) { if (!cfg.engine.tiers[patch.tier]) throw new Error('tier must be one of ' + Object.keys(cfg.engine.tiers).join(', ')); p.tier = patch.tier; }
+  if (patch.effort !== undefined) { const lv = cfg.engine.effortLevels || []; if (!lv.includes(patch.effort)) throw new Error('effort must be one of ' + lv.join(', ')); p.effort = patch.effort; }
+  if (!Object.keys(p).length) throw new Error('nothing to change');
+  const out = store.setAgentState(key, p, { expectedVersion });
+  const eff = effectiveAgent(engine, key);
+  bus.emit('agent.updated', { agentKey: key, data: { enabled: eff.enabled, tier: eff.tier, effort: eff.effort, appliesAt: 'next run' } });
+  log.info('agent updated', { agent: key, ...p, version: out.version });
+  const woke = p.enabled === true ? engine.orchestrator.wakeWaiting(key) : [];
+  return { agentKey: key, version: out.version, enabled: eff.enabled, tier: eff.tier, effort: eff.effort, started: woke };
 }

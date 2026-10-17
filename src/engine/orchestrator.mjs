@@ -6,9 +6,13 @@
 //   hops              agent steps entered outside a loop count; maxHops from the line; a non-loop re-entry is refused
 // No job starts from a file appearing anywhere: only startJob() (the owner's click, an enabled routine, or a re-run).
 // One job per line at a time (owner Q12); a second one waits in `queued`.
+// E5 (the live office): the owner's Stop, Restart (from the failed step, within the caps), Archive (files moved to
+// rerun-archive-*, never deleted) and Re-run listing; an off-duty agent's step waits in `queued` until it is back on duty;
+// the owner's approval decisions write only the approvals and tracker rows.
 import fs from 'node:fs';
 import path from 'node:path';
-import { runAgent } from './runtime.mjs';
+import { runAgent, effectiveAgent } from './runtime.mjs';
+import { VersionConflict } from './store/db.mjs';
 import { checkBrief, briefField } from './lib/brief-check.mjs';
 import { prepareDigitalSet, latestSet } from './lib/digital-prep.mjs';
 import { fillDigitalPrices } from './lib/digital-prices.mjs';
@@ -35,6 +39,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const dataRoot = J.dataRoot;
   const jobDir = (id) => path.join(dataRoot, 'jobs', id);
   const active = new Map();   // line id -> { jobId, promise }
+  const stops = new Map();    // job id -> AbortController (the owner's Stop on a running job)
+  const isActive = (id) => [...active.values()].some((a) => a.jobId === id);
+  const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 
   function lineOf(id) { const l = cfg.lines[id]; if (!l) throw new Error('no such line: ' + id); return l; }
   function trackerRow(job, patch) {
@@ -89,19 +96,32 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (halt.isHalted()) throw new Error('e-stop is on');
     const L = lineOf(job.line), cur = active.get(L.id);
     if (cur && (L.maxConcurrentJobs || 1) <= 1) { setJob(id, { reason: 'waiting: ' + cur.jobId + ' is on the line (one job at a time)', data: { autoStart: true } }); return null; }
-    const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { active.delete(L.id); const next = store.listJobs({ states: ['queued'] }).filter((j) => j.line === L.id && !/^interrupted/.test(j.reason || '')).pop(); if (next && !halt.isHalted() && next.data && next.data.autoStart) startJob(next.id); });
+    const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { active.delete(L.id); const next = store.listJobs({ states: ['queued'] }).filter((j) => j.line === L.id && !/^interrupted/.test(j.reason || '') && !(j.data && j.data.waitingFor) && j.id !== id).pop(); if (next && !halt.isHalted() && next.data && next.data.autoStart) startJob(next.id); });
     active.set(L.id, { jobId: id, promise });
     return promise;
   }
 
   async function runJob(id) {
-    let job = setJob(id, { state: 'running', started_at: store.getJob(id).started_at || Date.now(), reason: null }, 'job.stage', { step: store.getJob(id).step });
+    const ctl = new AbortController(); stops.set(id, ctl);
+    try { return await runSteps(id, ctl.signal); } finally { if (stops.get(id) === ctl) stops.delete(id); }
+  }
+  async function runSteps(id, stopSignal) {
+    let job = setJob(id, { state: 'running', started_at: store.getJob(id).started_at || Date.now(), reason: null, data: { stopRequested: null } }, 'job.stage', { step: store.getJob(id).step });
     const L = lineOf(job.line);
     let step = job.step === 'intake' ? L.steps.intake.next : job.step;
     while (step) {
       job = store.getJob(id);
       if (halt.isHalted()) { setJob(id, { state: 'stopped', reason: 'stopped by the e-stop at ' + step, ended_at: Date.now() }, 'job.stopped'); return store.getJob(id); }
+      if (stopSignal.aborted) { setJob(id, { state: 'stopped', step, reason: 'stopped by the owner at ' + step, ended_at: Date.now() }, 'job.stopped'); return store.getJob(id); }
       const def = L.steps[step]; if (!def) { block(job, 'line ' + L.id + ' has no step "' + step + '"'); return store.getJob(id); }
+      // an off-duty agent's step waits (ENGINE-PLAN.md §6): the job goes back to queued at this step, and starts again
+      // when the owner puts the agent back on duty (wakeWaiting)
+      if (def.kind === 'agent' && !effectiveAgent(engine, def.agent).enabled) {
+        const who = (cfg.agents[def.agent] || {}).name || def.agent;
+        log.info('job waits for an off-duty agent', { jobId: id, step, agent: def.agent });
+        setJob(id, { state: 'queued', step, reason: 'waiting: ' + who + ' is off duty', data: { waitingFor: def.agent, autoStart: true } }, 'job.stage', { step, waiting: def.agent });
+        return store.getJob(id);
+      }
       const pass = def.kind === 'agent' ? passFor(job, step) : 1;
       if (def.kind === 'agent' && pass === 1 && step !== 'rejects-desk') {
         const visited = (job.data.visited || []);
@@ -113,7 +133,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       bus.emit('job.stage', { jobId: id, agentKey: def.agent || null, data: { step, column: def.column, pass, kind: def.kind } });
       await callHook('onStep', { job: store.getJob(id), step, def, pass, phase: 'start' });
       let r;
-      try { r = def.kind === 'agent' ? await agentStep(store.getJob(id), step, def, pass) : await mechStep(store.getJob(id), step, def); }
+      try { r = def.kind === 'agent' ? await agentStep(store.getJob(id), step, def, pass, stopSignal) : await mechStep(store.getJob(id), step, def); }
       catch (e) { r = { blocked: 'engine error in ' + step + ': ' + e.message }; log.error('step crashed', { id, step, error: String(e && e.stack || e) }); }
       store.closeStage(sid, r.blocked ? 'blocked' : r.stopped ? 'stopped' : 'done', r.blocked || r.stopped || r.note || null);
       job = store.updateJob(id, { data: { costUsd: ledger.spent.job(id) } });
@@ -139,7 +159,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
 
   function handoff(job, extra = []) { const n = latestSet(dataRoot, job.id); return ['```', 'LISTING_ID: ' + job.id, 'BRIEF: work/' + job.id + '/brief.md', ...(n ? ['DESIGN: work/' + job.id + '/set-v' + n + '/deliverables.json'] : []), ...extra, '```'].join('\n'); }
 
-  async function agentStep(job, step, def, pass) {
+  async function agentStep(job, step, def, pass, stopSignal = null) {
     const L = lineOf(job.line), research = job.kind === 'research', folder = research ? path.join(dataRoot, 'research') : jobDir(job.id), l = job.loops || {}, max = research ? 0 : (L.steps['qa-design'].onRevise || {}).max ?? 2;
     let input, loopNote = null;
     if (research) { J.makeDir(path.join(folder, 'drafts', job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: drafts/' + job.data.day + '/.'; }
@@ -153,7 +173,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else if (step === 'qa-listing') input = 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + handoff(job);
     else if (step === 'rejects-desk') { input = '[LOOP — escalated] ' + (job.data.escalation || 'the work was not approved') + '\nRecord why in REJECTED.md.\n\n' + handoff(job); loopNote = 'This job is being stopped: write REJECTED.md only.'; }
     else input = handoff(job);
-    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (drafts/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, hooks: { onRunStart: hooks.onRunStart } });
+    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (drafts/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, hooks: { onRunStart: hooks.onRunStart } });
     const stop = stopFrom(run, def.agent.toUpperCase());
     if (stop) return stop;
     if (def.verdict) return routeVerdict(store.getJob(job.id), step, def, pass, run);
@@ -305,17 +325,171 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return { ok: true, id };
   }
 
-  // ---- the owner's decisions in the approval queue (E5 wires the buttons; the rules live here)
-  function decide(jobId, { action, reason = '', etsyUrl = '', expectedVersion, by = 'owner' }) {
-    const a = store.getApproval(jobId); if (!a) throw new Error('not in the approval queue: ' + jobId);
-    const now = Date.now();
-    if (action === 'approve') { store.decideApproval(jobId, { status: 'approved', decided_at: now, reason }, { expectedVersion }); setJob(jobId, { state: 'approved', reason: 'approved by the owner; publish on Etsy by hand' }, 'job.decided', { action }); trackerRow(store.getJob(jobId), { status: 'approved', owner_decision_at: new Date(now).toISOString() }); }
-    else if (action === 'reject') { if (!String(reason).trim()) throw new Error('a rejection needs a reason'); store.decideApproval(jobId, { status: 'rejected_by_owner', decided_at: now, reason }, { expectedVersion }); setJob(jobId, { state: 'rejected_by_owner', reason }, 'job.decided', { action }); trackerRow(store.getJob(jobId), { status: 'rejected_by_owner', status_reason: reason, owner_decision_at: new Date(now).toISOString() }); }
-    else if (action === 'published') { if (!/^https:\/\/(www\.)?etsy\.com\/listing\/\d+/.test(etsyUrl)) throw new Error('paste the Etsy listing URL (https://www.etsy.com/listing/...)'); store.decideApproval(jobId, { status: 'published', published_at: now, etsy_url: etsyUrl }, { expectedVersion }); setJob(jobId, { state: 'published', reason: 'published ' + new Date(now).toISOString().slice(0, 10) }, 'job.decided', { action }); trackerRow(store.getJob(jobId), { status: 'published', published_at: new Date(now).toISOString(), etsy_listing_url: etsyUrl }); }
-    else throw new Error('unknown decision ' + action);
-    log.info('owner decision', { jobId, action, by });
-    return store.getApproval(jobId);
+  // ---- the owner's actions from the office (E5). Every one checks the record's version first (a stale tab is refused
+  // before anything is written), refuses legacy history, and refuses to start anything while the e-stop is on.
+  const ownJob = (id) => { const j = store.getJob(id); if (!j) throw new Error('no such job: ' + id); if (j.legacy || j.kind === 'legacy') throw new Error('legacy history is read only'); return j; };
+  const checkVersion = (j, expectedVersion) => { if (expectedVersion == null || !Number.isInteger(expectedVersion)) throw new Error('expectedVersion is required'); if (j.version !== expectedVersion) throw new VersionConflict('job ' + j.id, j.version, expectedVersion); };
+  const notHalted = (what) => { if (halt.isHalted()) { const e = new Error('e-stop is on: ' + what + ' refused until you resume'); e.code = 'HALTED'; throw e; } };
+  // the job's state as the owner sees it: a job in the approval queue takes the approval row's decision
+  function effState(j) {
+    if (j.state !== 'approval') return j.state;
+    const a = store.getApproval(j.id);
+    return a && ['approved', 'published', 'rejected_by_owner'].includes(a.status) ? a.status : 'approval';
+  }
+  // move job files into jobs/<id>/rerun-archive-<stamp>/ (never deleted); returns the folder relative to the data root
+  function archiveFiles(id, names) {
+    const dir = jobDir(id), rel = 'rerun-archive-' + stamp(), moved = [];
+    for (const n of names) { const f = path.join(dir, n); if (fs.existsSync(f)) { J.move(f, path.join(dir, rel, n)); moved.push(n); } }
+    if (moved.length) log.info('job files archived', { jobId: id, folder: 'jobs/' + id + '/' + rel, moved });
+    return { folder: moved.length ? 'jobs/' + id + '/' + rel : null, moved };
+  }
+  const RESTARTABLE = ['blocked', 'stopped'], ARCHIVABLE = ['blocked', 'stopped', 'rejected', 'rejected_by_owner', 'research-done'], RERUNNABLE = ['approval', 'rejected_by_owner', 'blocked', 'stopped', 'rejected'];
+  // which controls a job offers (the snapshot shows only these buttons; each action checks again)
+  function controlsFor(j) {
+    if (!j || j.legacy || j.kind === 'legacy') return {};
+    const st = effState(j), running = isActive(j.id) || j.state === 'running';
+    const designOk = j.kind === 'line' && fs.existsSync(path.join(jobDir(j.id), 'outbox', 'qa-design.json'));
+    const ap = store.getApproval(j.id);
+    return {
+      stop: running || (j.state === 'queued' && !isActive(j.id)),
+      // a queued job that is not running and not waiting for an off-duty agent (e.g. left queued by the e-stop) can be started again
+      restart: !running && (RESTARTABLE.includes(st) || (j.state === 'queued' && !(j.data && j.data.waitingFor))),
+      archive: !running && ARCHIVABLE.includes(st),
+      rerunListing: !running && designOk && RERUNNABLE.includes(st) && !(ap && ['approved', 'published'].includes(ap.status)),
+      approve: !!ap && ap.status === 'pending' && j.state === 'approval', reject: !!ap && ap.status === 'pending' && j.state === 'approval', publish: !!ap && ap.status === 'approved'
+    };
   }
 
-  return { createJob, startJob, runJob, createResearchJob, decide, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir };
+  // Stop: a running job's call in flight is aborted (this job only); a queued job is stopped at once
+  function stopJob(id, { expectedVersion, by = 'owner' } = {}) {
+    const j = ownJob(id); checkVersion(j, expectedVersion);
+    if (isActive(id) && stops.has(id)) {
+      store.updateJob(id, { data: { stopRequested: Date.now() } }, { expectedVersion });
+      stops.get(id).abort(Object.assign(new Error('stopped by the owner'), { code: 'STOPPED' }));
+      log.warn('job stop requested', { jobId: id, step: j.step, by });
+      return { jobId: id, stopping: true };
+    }
+    if (!['queued', 'running'].includes(j.state)) throw new Error('job ' + id + ' is ' + j.state + ': nothing to stop');
+    const out = store.updateJob(id, { state: 'stopped', reason: 'stopped by the owner at ' + (j.step || 'the start'), ended_at: Date.now(), data: { waitingFor: null, autoStart: false } }, { expectedVersion });
+    bus.emit('job.stopped', { jobId: id, data: { state: out.state, step: out.step, reason: out.reason, by } });
+    log.warn('job stopped', { jobId: id, by });
+    return { jobId: id, stopped: true };
+  }
+
+  // Restart: from the step it stopped or was blocked at, within the caps (the guard still checks every call)
+  function restartJob(id, { expectedVersion, by = 'owner' } = {}) {
+    const j = ownJob(id); checkVersion(j, expectedVersion);
+    if (!controlsFor(j).restart) throw new Error('job ' + id + ' is ' + effState(j) + ': only a blocked or stopped job can be restarted');
+    notHalted('restart');
+    const spent = ledger.spent.job(id), cap = cfg.engine.caps.perJobUsd;
+    if (spent >= cap) throw new Error('job cap reached (' + spent.toFixed(2) + ' of ' + cap.toFixed(2) + '): a restart would be refused at its first call');
+    const L = lineOf(j.line), step = j.step && L.steps[j.step] ? j.step : L.start;
+    store.updateJob(id, { state: 'queued', step, reason: 'restarted by the owner at ' + step, ended_at: null, data: { visited: (j.data.visited || []).filter((x) => x !== step), restarts: (j.data.restarts || 0) + 1, autoStart: true, waitingFor: null, stopRequested: null } }, { expectedVersion });
+    bus.emit('job.stage', { jobId: id, data: { state: 'queued', step, restart: true, by } });
+    log.info('job restarted', { jobId: id, step, by, spentUsd: spent });
+    startJob(id);
+    return { jobId: id, step, started: isActive(id) };
+  }
+
+  // Archive: the job leaves the board; its files move to jobs/<id>/rerun-archive-<stamp>/ (brief.md stays), never deleted
+  function archiveJob(id, { expectedVersion, by = 'owner' } = {}) {
+    const j = ownJob(id); checkVersion(j, expectedVersion);
+    const st = effState(j);
+    if (!controlsFor(j).archive) throw new Error('job ' + id + ' is ' + st + ': only a blocked, stopped, rejected or finished research job can be archived');
+    const dir = jobDir(id);
+    const names = j.kind === 'research' || !fs.existsSync(dir) ? [] : fs.readdirSync(dir).filter((n) => n !== 'brief.md' && !n.startsWith('rerun-archive-'));
+    const a = archiveFiles(id, names);
+    store.updateJob(id, { state: 'archived', reason: 'archived by the owner' + (a.folder ? '; files in ' + a.folder : ''), data: { archivedFrom: st, archiveFolder: a.folder, archivedAt: Date.now() } }, { expectedVersion });
+    bus.emit('job.stage', { jobId: id, data: { state: 'archived', step: j.step, by } });
+    return { jobId: id, archived: true, folder: a.folder, moved: a.moved.length };
+  }
+
+  // Re-run listing on a QA-approved design: the listing, its QA records and the package move to rerun-archive-*, the
+  // approval row (if any) is superseded, and the job runs again from LISTER
+  function rerunListing(id, { expectedVersion, by = 'owner' } = {}) {
+    const j = ownJob(id); checkVersion(j, expectedVersion);
+    if (!controlsFor(j).rerunListing) throw new Error('job ' + id + ' has no QA-approved design to re-list, or is ' + effState(j));
+    notHalted('re-run listing');
+    const a = archiveFiles(id, ['outbox/listing.json', 'outbox/qa-listing.json', 'qa-listing', 'package', 'REJECTED.md']);
+    const ap = store.getApproval(id);
+    if (ap && ap.status !== 'superseded') store.decideApproval(id, { status: 'superseded', decided_at: Date.now(), reason: 'listing re-run by the owner' });
+    trackerRow(j, { status: '', status_reason: 'listing re-run by the owner' + (a.folder ? '; old listing in ' + a.folder : '') });
+    store.updateJob(id, { state: 'queued', step: 'lister', loops: { listing: 0 }, reason: 'listing re-run by the owner', ended_at: null, data: { visited: (j.data.visited || []).filter((x) => !['lister', 'qa-listing'].includes(x)), escalation: null, gate: null, rerunListing: (j.data.rerunListing || 0) + 1, autoStart: true, waitingFor: null, stopRequested: null } }, { expectedVersion });
+    bus.emit('job.stage', { jobId: id, data: { state: 'queued', step: 'lister', rerunListing: true, by } });
+    log.info('listing re-run', { jobId: id, archived: a.folder, by });
+    startJob(id);
+    return { jobId: id, folder: a.folder };
+  }
+
+  // an agent back on duty: its waiting jobs start again (not while the e-stop is on)
+  function wakeWaiting(agentKey) {
+    if (halt.isHalted()) return [];
+    const out = [];
+    for (const j of store.listJobs({ states: ['queued'] }).filter((x) => x.data && x.data.waitingFor === agentKey).reverse()) {
+      store.updateJob(j.id, { data: { waitingFor: null } });
+      try { startJob(j.id); out.push(j.id); } catch (e) { log.warn('waiting job not started', { jobId: j.id, error: e.message }); }
+    }
+    return out;
+  }
+
+  // verified briefs in research/briefs/ (the research line's output) for "Start line on brief"
+  function verifiedBriefs() {
+    const d = path.join(dataRoot, 'research', 'briefs');
+    return (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^[A-Za-z0-9._-]+\.md$/.test(f)).sort() : []).map((file) => {
+      const t = fs.readFileSync(path.join(d, file), 'utf8'), id = briefField(t, 'id');
+      return { file, id, niche: niche(t) || null, status: briefField(t, 'status') || null, product: briefField(t, 'product') || null, jobId: id && store.getJob(id) ? id : null };
+    });
+  }
+  function startBrief(file, { by = 'owner', idempotencyKey = null } = {}) {
+    if (!/^[A-Za-z0-9._-]+\.md$/.test(String(file || ''))) throw new Error('pick a verified brief');
+    const f = path.join(dataRoot, 'research', 'briefs', file); if (!fs.existsSync(f)) throw new Error('no such brief: ' + file);
+    notHalted('starting a job');
+    const c = createJob({ briefText: fs.readFileSync(f, 'utf8'), by, idempotencyKey });
+    if (!c.ok) { const e = new Error('the brief was refused at intake: ' + c.reasons.join('; ')); e.code = 'INTAKE'; throw e; }
+    const j = store.getJob(c.id);
+    if (j.state === 'queued' && !isActive(c.id)) startJob(c.id);
+    return { jobId: c.id };
+  }
+  function startResearch(text, { by = 'owner', runCapUsd = null } = {}) {
+    const input = String(text || '').replace(/\r\n/g, '\n').trim();
+    if (input.length < 3) throw new Error('describe what to research');
+    if (input.length > 2000) throw new Error('keep the research request under 2,000 characters');
+    notHalted('starting a job');
+    const r = createResearchJob({ input, by });
+    if (runCapUsd != null) store.updateJob(r.id, { data: { runCapUsd } });
+    startJob(r.id);
+    return { jobId: r.id };
+  }
+
+  // ---- the owner's decisions in the approval queue (ENGINE-PLAN.md §5.3): only the approvals row and the tracker row
+  // are written. Approve sends nothing anywhere; the package folder is what the owner uploads by hand.
+  function decide(jobId, { action, reason = '', etsyUrl = '', publishedOn = '', expectedVersion, by = 'owner' }) {
+    const j = ownJob(jobId);
+    const a = store.getApproval(jobId); if (!a) throw new Error('not in the approval queue: ' + jobId);
+    if (expectedVersion == null || !Number.isInteger(expectedVersion)) throw new Error('expectedVersion is required');
+    if (a.version !== expectedVersion) throw new VersionConflict('approval ' + jobId, a.version, expectedVersion);
+    const now = Date.now(), iso = new Date(now).toISOString();
+    if (action === 'approve' || action === 'reject') {
+      if (a.status !== 'pending') throw new Error('approval ' + jobId + ' is ' + a.status + ', not pending');
+      if (action === 'approve') { store.decideApproval(jobId, { status: 'approved', decided_at: now, reason: '' }, { expectedVersion }); trackerRow(j, { status: 'approved', owner_decision_at: iso }); }
+      else {
+        const why = String(reason || '').trim(); if (!why) throw new Error('a rejection needs a reason'); if (why.length > 500) throw new Error('keep the reason under 500 characters');
+        store.decideApproval(jobId, { status: 'rejected_by_owner', decided_at: now, reason: why }, { expectedVersion }); trackerRow(j, { status: 'rejected_by_owner', status_reason: why, owner_decision_at: iso });
+      }
+    } else if (action === 'published') {
+      if (a.status !== 'approved') throw new Error('only an approved job can be marked published (it is ' + a.status + ')');
+      if (!/^https:\/\/(www\.)?etsy\.com\/listing\/\d+[\w/?=&.%-]*$/.test(String(etsyUrl || '').trim())) throw new Error('paste the Etsy listing URL (https://www.etsy.com/listing/...)');
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(publishedOn || '')); const at = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 12) : NaN;
+      if (!m || Number.isNaN(at) || new Date(at).toISOString().slice(0, 10) !== publishedOn) throw new Error('give the date it was published');
+      if (publishedOn > dublinDay(now)) throw new Error('the published date is in the future');
+      store.decideApproval(jobId, { status: 'published', published_at: at, etsy_url: etsyUrl.trim() }, { expectedVersion });
+      trackerRow(j, { status: 'published', published_at: publishedOn, etsy_listing_url: etsyUrl.trim() });
+    } else throw new Error('unknown decision ' + action);
+    const out = store.getApproval(jobId);
+    bus.emit('job.decided', { jobId, data: { action, status: out.status, by } });
+    log.info('owner decision', { jobId, action, status: out.status, by });
+    return out;
+  }
+
+  return { createJob, startJob, runJob, createResearchJob, decide, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive };
 }
