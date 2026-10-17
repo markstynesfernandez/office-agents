@@ -4,7 +4,8 @@
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 //   change: the review build's temp folder is inside the set folder (set-vN/.tmp-styleref-<pid>/), not the OS temp
 //   change: the record notes name the engine modules
-//   NOT ported: the first-file run mode itself (run-line --first-file) and the reference image sent to the image model: a new style-reference job still fails closed at the package gate until those are built (E6 checklist)
+//   NOT ported: the first-file run mode itself (run-line --first-file) and the reference image sent to the image model; the engine builds its own
+//   (E6 c0, 17/10/2026: orchestrator.mjs styleRefDesigner, tools/index.mjs image_generate) on this library's records
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // style-ref.mjs (lib) — the owner-approved STYLE REFERENCE of a packaged digital set (owner go 2026-10-16). For a product whose spec has
 // styleReference.ownerOk (products.json), file 1 is generated ALONE first (run-line --first-file) and the run stops before QA DESIGN. The station

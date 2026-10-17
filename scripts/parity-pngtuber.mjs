@@ -21,7 +21,8 @@ import { prepareDigitalSet } from '../src/engine/lib/digital-prep.mjs';
 import { recordListingOriginality, hitLine } from '../src/engine/lib/originality.mjs';
 import { composeSetApproval, composeListingApproval, APPROVAL_FILE, LISTING_APPROVAL_FILE } from '../src/engine/lib/owner-approval.mjs';
 import { checkPackage, readJsonSafe } from '../src/engine/lib/gates.mjs';
-import { fillDigitalPrices } from '../src/engine/lib/digital-prices.mjs';
+import { fillDigitalPrices, digitalPriceFields } from '../src/engine/lib/digital-prices.mjs';
+import { ownerFloor } from '../src/engine/lib/etsy-fees.mjs';
 import { packageDigital } from '../src/engine/lib/package-digital.mjs';
 import { readZip } from '../src/engine/lib/zip.mjs';
 import { fileLimitProblems, measureDir } from '../src/engine/lib/digital-files.mjs';
@@ -118,7 +119,20 @@ export async function parity({ rebuild = false, log = () => {} } = {}) {
   const before = fs.existsSync(path.join(jobs, OTHER)) ? walk(path.join(jobs, OTHER)).map((r) => r + ':' + sha256(fs.readFileSync(path.join(jobs, OTHER, r)))) : [];
   const fill = fillDigitalPrices({ id: ID, roomDir: DATA, cfg: station, products, dry: true, extra: cfg.blocklist });
   const after = fs.existsSync(path.join(jobs, OTHER)) ? walk(path.join(jobs, OTHER)).map((r) => r + ':' + sha256(fs.readFileSync(path.join(jobs, OTHER, r)))) : [];
-  check('price fill keyed to the job: EUR 9.00, nothing to change, the other job\'s unreviewed listing untouched', fill.ok && !fill.changed && JSON.stringify(before) === JSON.stringify(after) && before.length > 0, { prices: fill.prices, changed: fill.changed, otherJobFiles: before.length, reason: fill.reason || null });
+  // E6 c0 (owner D1, 17/10/2026): pngtuber-prop-pack has the owner floor USD 3.50 / EUR 3.13, so the fill's margin workings now name
+  // that floor where the legacy listing (made under the fee-model floor EUR 6.42) names 6.42. That one figure is the only change
+  // allowed: price, margin and every other field must be the legacy listing's exactly.
+  let floorOnly = false;
+  if (fill.ok && fill.changed) {
+    const L = rj(path.join(jd, 'outbox', 'listing.json')), prod = products.find((x) => x.key === L.productKey), of = ownerFloor(prod, station);
+    const next = digitalPriceFields({ L, product: prod, briefText: fs.readFileSync(path.join(jd, 'brief.md'), 'utf8'), manifest: rj(path.join(DATA, L.designFile)), cfg: station });
+    const changed = Object.keys(next).filter((k) => JSON.stringify(next[k]) !== JSON.stringify(L[k]));
+    const was = L.marginEstimate && L.marginEstimate.workings, now = next.marginEstimate && next.marginEstimate.workings;
+    floorOnly = !!of && changed.length === 1 && changed[0] === 'marginEstimate' && JSON.stringify({ ...next.marginEstimate, workings: null }) === JSON.stringify({ ...L.marginEstimate, workings: null })
+      && typeof was === 'string' && was.replace('(floor 6.42)', '(floor ' + of.floorEur + ')') === now;
+    if (floorOnly) note('outbox/listing.json', 'marginEstimate.workings', was, now, 'owner D1 17/10/2026: the product\'s owner floor USD ' + of.floorUsd + ' / EUR ' + of.floorEur + ' replaces the fee-model floor EUR 6.42; price EUR 9.00 and margin unchanged');
+  }
+  check('price fill keyed to the job: EUR 9.00, nothing to change but the D1 floor figure, the other job\'s unreviewed listing untouched', fill.ok && (!fill.changed || floorOnly) && JSON.stringify(before) === JSON.stringify(after) && before.length > 0, { prices: fill.prices, changed: fill.changed, floorOnly, otherJobFiles: before.length, reason: fill.reason || null });
 
   // ---- 6. the ZIP and the listing checks
   const zipF = path.join(jd, 'set-v' + SET, 'files', legM.download), zip = fs.readFileSync(zipF), z = readZip(zip);

@@ -11,7 +11,9 @@
 //     status, type, requestId and `retryable` (429, 5xx, network); 400/401/403 are final.
 //   - Nothing is added to the request: no tools, no prompt caching, no system prompt. The caller's own tools pass through
 //     (client tools only: a server or MCP tool is refused on create()), and the agent's effort maps to
-//     output_config.effort.
+//     output_config.effort. E6 c0 (owner D2): an agent whose config says thinking "off" (ctx.thinking) gets the model's
+//     own off setting from config/engine.json thinking.off (Haiku 5.5 {type: disabled}, Sonnet 5.5 {type: between_tools});
+//     a model with no entry refuses the call before the network (fails closed).
 //   - E6 b0: createWithWebTool() is the web backend's door (providers/anthropic-web.mjs), not the agents': exactly ONE
 //     server tool, of a type config/engine.json live.web.tools names, with max_uses set, and nothing else in `tools`.
 //     The usage it returns carries server_tool_use (web_search_requests / web_fetch_requests) for the settle.
@@ -106,6 +108,7 @@ export function createAnthropicText({ engineCfg, env = process.env, demo = false
   const timeout = timeoutMs ?? live.timeoutMs;
   if (!(timeout > 0)) throw new LiveProviderError('config/engine.json live.timeoutMs is not set', { code: 'CONFIG' });
   const efforts = engineCfg.effortLevels || [];
+  const thinkingOff = (engineCfg.thinking && engineCfg.thinking.off) || {};
   const redact = makeRedactor([key]);
   // explicit apiKey, no auth token, fixed base URL: the environment cannot redirect the key or add a second credential
   const sdk = client || new Anthropic({ apiKey: key, authToken: null, baseURL: BASE_URL, maxRetries: 0, timeout, logLevel: 'off' });
@@ -120,6 +123,11 @@ export function createAnthropicText({ engineCfg, env = process.env, demo = false
     check(params);
     const body = { ...params };
     if (ctx.effort && efforts.includes(ctx.effort) && !body.output_config) body.output_config = { effort: ctx.effort };
+    if (ctx.thinking === 'off' && !body.thinking) {
+      const t = thinkingOff[body.model];
+      if (!t || typeof t.type !== 'string') throw new LiveProviderError('thinking "off" has no setting for ' + body.model + ' in config/engine.json thinking.off: no call made', { code: 'CONFIG' });
+      body.thinking = { ...t };
+    } else if (ctx.thinking != null && ctx.thinking !== 'off' && ctx.thinking !== 'default') throw new LiveProviderError('thinking must be "off" or "default" (got ' + JSON.stringify(ctx.thinking) + '): no call made', { code: 'CONFIG' });
     const t0 = Date.now();
     calls++;
     let msg;
@@ -132,7 +140,7 @@ export function createAnthropicText({ engineCfg, env = process.env, demo = false
     }
     const requestId = msg._request_id || null;
     const usage = usageOf(msg.usage);
-    log && log.info('anthropic call', { model: msg.model || body.model, requestId, messageId: msg.id, stop: msg.stop_reason, usage: { in: usage.input_tokens, out: usage.output_tokens, cacheRead: usage.cache_read_input_tokens, cacheWrite: usage.cache_creation_input_tokens, webSearches: usage.server_tool_use.web_search_requests, webFetches: usage.server_tool_use.web_fetch_requests }, ms: Date.now() - t0, agent: ctx.agentKey || null, jobId: ctx.jobId || null, ...(ctx.web ? { web: ctx.web } : {}) });
+    log && log.info('anthropic call', { model: msg.model || body.model, requestId, messageId: msg.id, stop: msg.stop_reason, thinking: body.thinking ? body.thinking.type : 'default', usage: { in: usage.input_tokens, out: usage.output_tokens, cacheRead: usage.cache_read_input_tokens, cacheWrite: usage.cache_creation_input_tokens, webSearches: usage.server_tool_use.web_search_requests, webFetches: usage.server_tool_use.web_fetch_requests }, ms: Date.now() - t0, agent: ctx.agentKey || null, jobId: ctx.jobId || null, ...(ctx.web ? { web: ctx.web } : {}) });
     return { id: msg.id, type: msg.type, role: msg.role, model: msg.model, content: msg.content, stop_reason: msg.stop_reason, stop_details: msg.stop_details ?? null, usage, request_id: requestId };
   }
 

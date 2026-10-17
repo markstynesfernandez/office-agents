@@ -3,20 +3,26 @@
 //   live  E6 step a0: Anthropic text (official SDK, providers/anthropic.mjs). Built only when STATION_PROVIDER=live is in
 //         this process's environment, never in demo mode, and only with ANTHROPIC_API_KEY set. E6 step b0: the web
 //         backend is Anthropic's server-side web search / fetch through that provider (providers/anthropic-web.mjs).
-//         OpenRouter images (step c0) are not built yet: they refuse with "not built".
+//         E6 step c0: images are OpenRouter (providers/openrouter.mjs), built with OPENROUTER_API_KEY; without that key the
+//         image provider refuses every call as a hard stop (a scout run, which draws nothing, still starts).
 import { createMockText, createMockImage } from './mock.mjs';
 import { createAnthropicText } from './anthropic.mjs';
 import { createAnthropicWeb } from './anthropic-web.mjs';
+import { createOpenRouterImage, ImageProviderError } from './openrouter.mjs';
 
 export class ProviderLocked extends Error { constructor(mode) { super('provider mode "' + mode + '" is not known: use STATION_PROVIDER=mock (or live, for an approved E6 step only).'); this.code = 'LOCKED'; } }
-export class ProviderNotBuilt extends Error { constructor(what) { super(what + ' is not built yet on the live provider (E6 plan: images in step c0); no call was made'); this.code = 'NOT_BUILT'; } }
 
-export function createProviders({ mode = process.env.STATION_PROVIDER || 'mock', script, delayMs = 0, log, engineCfg = null, halt = null, demo = false, env = process.env, client = null } = {}) {
+export function createProviders({ mode = process.env.STATION_PROVIDER || 'mock', script, delayMs = 0, log, engineCfg = null, halt = null, demo = false, env = process.env, client = null, fetchImpl = null } = {}) {
   if (mode === 'live') {
     const text = createAnthropicText({ engineCfg, env, demo, halt, log, client });
     const web = createAnthropicWeb({ text, engineCfg, log });
-    log && log.warn('providers: LIVE (Anthropic text and web; images not built)', { models: text.models, web: web.settings.model });
-    const image = { id: 'not-built', get calls() { return 0; }, async generate() { throw new ProviderNotBuilt('image generation (OpenRouter)'); } };
+    let image;
+    try { image = createOpenRouterImage({ engineCfg, env, demo, halt, log, fetchImpl }); }
+    catch (e) {
+      if (!(e instanceof ImageProviderError) || e.code !== 'NO_KEY') throw e;
+      image = { id: 'no-key', models: [], get calls() { return 0; }, async generate() { throw new ImageProviderError('OPENROUTER_API_KEY is not set: no image can be generated (the job stops; no call was made)', { code: 'NO_KEY', hardStop: true }); } };
+    }
+    log && log.warn('providers: LIVE (Anthropic text and web; ' + (image.id === 'openrouter' ? 'OpenRouter images' : 'images refused: no OPENROUTER_API_KEY') + ')', { models: text.models, web: web.settings.model, images: image.models });
     return { mode, text, image, web };
   }
   if (mode !== 'mock') throw new ProviderLocked(mode);

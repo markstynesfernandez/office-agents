@@ -1310,3 +1310,107 @@ Rebuild of the Office unit: 353.1 s (day bake 164.6 s, evening 152.2 s; 512 samp
 - **Default-tier budget headroom:** 8.14 MB now; R4b adds the warm textures to the other rooms (shared, already in) and
   bigger atlases. At the Office's density and bevels the other three units would add roughly 3 MB (an estimate, not measured): over 10 MB unless they stay at
   R3b's density or `office.bin`-style buffers are compressed (meshopt; three's decoder is in the pinned package).
+
+## E6 step c0: owner decisions (17/10/2026)
+
+Recorded as the owner gave them (17/10/2026):
+
+- **D1. Price floor for `pngtuber-prop-pack`: USD 3.50** (was USD 7.19, the fee-model digital floor: Etsy fees incl. VAT +
+  the EUR 5 minimum margin). It is a minimum; agents may price higher when evidence supports it. Configured once, in
+  `config/products.json` (`priceFloorUsd`), and read by every check that reads the floor (below).
+  Workings at the floor: USD 3.50 × 0.893256 = EUR 3.13 (rounded up). Etsy fees on EUR 3.13 = 0.18 listing + 0.20
+  transaction + 0.43 processing + VAT 0.04 + 0.05 + 0.10 = EUR 0.99, so the margin at the floor is **EUR 2.14**, below the
+  EUR 5 minimum margin the fee model uses for every other digital product (flagged, not changed).
+- **D2. Thinking is disabled for every agent in the first full live run**, recorded per agent in config so it can be turned
+  on one agent at a time later.
+- **D3. Check the note "Sonnet 5.5 rejects forced tool calls with a 400".** With D2 in place, use forced tool choice
+  wherever the claude-api skill says it is valid, and record the finding.
+
+Also decided by the owner in this session, before the build (17/10/2026, answers to the three conflicts the build found):
+
+- **Upscaling: keep the pinned local Real-ESRGAN as it is.** The brief said "no upscaling (ESRGAN stays disabled)", but the
+  owner enabled it on 17/10 (DECISIONS.md "Port batch"), `products.json` asks for it (`prep.upscale`), the owner-approved
+  notice promises 2000×2000 and gpt-5-image-mini draws 1024×1024. Nothing changed: digital build only, $0, killed by the E-STOP.
+- **File 1: QA first, then the owner.** QA-DESIGN checks file 1 (redrawn on a fail before any other file), then the job
+  waits for the owner's decision on file 1 (`styleReference.ownerOk`, unchanged), then continues as the same job. Step c's
+  "one job through the whole line" therefore has one planned pause.
+- **DESIGNER's maxImages stays 8:** files 2–12 are drawn in DESIGNER runs of at most 6 (8 less 2 spare for regenerations),
+  each image with file 1 as the reference.
+
+### D3 finding (claude-api skill, read 17/10/2026)
+
+The note was about **Sonnet 5.5, not thinking**. Forced `tool_choice` (`any` or `tool`) returns a 400 on Claude Sonnet 5.5
+(also Opus 5.5 and Fable 5.1) whatever the thinking setting: "a model-specific restriction, not a consequence of always-on
+thinking". Claude Haiku 5.5 accepts a forced choice, with thinking on or off (with thinking on, the forced call skips the
+thinking block). So the existing tiers were already right and stay: `cheap` (Haiku) forces the nudge's tool call, `strong`
+(Sonnet) sends `auto` with the instruction in the message (the skill's own advice for Sonnet 5.5: `auto` plus the prompt,
+`strict: true` for schema-valid arguments). Recorded in `config/engine.json` (`$tiersComment`).
+
+### D2 as built: what "off" means per model
+
+D2 cannot be sent literally on Sonnet: `thinking: {type: "disabled"}` returns a 400 on Claude Sonnet 5.5. Its lowest
+setting is `{type: "between_tools"}` (no extended thinking; the short progress notes between tool calls come back as
+thinking blocks; effort high or below; no other field allowed). Claude Haiku 5.5 accepts `{type: "disabled"}` at effort
+low, medium or high. So each agent's file says `thinking: "off"` and `config/engine.json` `thinking.off` maps it per model
+(Haiku `disabled`, Sonnet `between_tools`); `"default"` sends no thinking field. A model without an entry refuses an "off"
+agent before any call. Every agent's effort is `low` and the page offers only low/medium/high, all valid with
+`between_tools`. The web relay (not an agent) is unchanged.
+
+## E6 step c0 build record: OpenRouter images, vision pricing, the style-reference run (17/10/2026)
+
+No spend: everything below is tested against stubs (no network, no key read).
+
+### As built
+- **`providers/openrouter.mjs`** (new): the live image client behind the existing image interface (same `generate()` as
+  the mock). OpenRouter chat completions with `modalities: ["image","text"]` (the legacy route), one image per call, the
+  image returned as a base64 data URL (a hosted URL is never downloaded). Only `image.allowedModels`
+  (openai/gpt-5-image-mini) and only priced; key `OPENROUTER_API_KEY` from the environment only, in a closure, redacted in
+  every message; live only (`STATION_PROVIDER=live` in the process), never demo. No usage parameter is sent: OpenRouter
+  reports `usage.cost` on every response (its usage-accounting page, read 17/10/2026; `usage.include` is deprecated).
+  Errors sorted from OpenRouter's errors page (read 17/10/2026): **hard stop** for 401, 402 (except an in-flight budget,
+  retried), 403 without moderation metadata (the key's own limit, i.e. the owner's USD 2 a day, a budget or a guardrail),
+  404 and other 400s; **content refusal** for 403 with moderation metadata, a 400 naming the safety system, and a 200
+  without an image; **retry** for 408, 429, 5xx, a 200 carrying an error, network and timeouts. Transparency is asked in
+  the prompt and measured in the returned bytes (alpha channel and clear pixels).
+- **`tools/index.mjs` image_generate**: strict arguments (a string `"true"` for the boolean, a wrong type or an unknown
+  argument is a tool error back to the agent: one turn, nothing called or charged); the e-stop before every attempt;
+  USD 0.08 reserved before every attempt and settled to `usage.cost` (estimated at 0.08 when none is reported); one ledger
+  row per image with the generation id, model, size, cost and job id (`guard.settle` takes `generationId` and `size`);
+  retries per `live.retries`, each reserved again; a hard stop ends the run refused (`ImageStop`) and the job blocked with
+  the key-free reason; a content refusal is a tool error and a failed attempt for that file (job data `imageAttempts`,
+  limit = the design loop's 1 + 2). Refusals before the network are never billed (also in `guardedTextCall`).
+- **Style reference** (`orchestrator.mjs`, owner decisions above): the designer step of a `styleReference.ownerOk` product
+  runs DESIGNER in `[RUN MODE: FIRST FILE ONLY]` (image_generate may draw only `set-vN/raw/01-<subject>.png`), builds file 1
+  as delivered and flattens it on white and dark (`makeReviewImages`, the pinned Real-ESRGAN), then QA-DESIGN checks it
+  (`[RUN MODE: FILE 1 CHECK]`, verdict kind `file1`, written to `qa/file1-pass<k>.json`). A revise, no file 1 (e.g. a
+  content refusal) or a file 1 that cannot be built is a failed attempt: file 1 is drawn again in a new set, before any
+  other file, up to 3 attempts, then REJECTS-DESK. Approved: the job waits (`queued`, `waitingFor: owner-style-ref`,
+  never started by itself); the owner decides with `npm run owner -- style-ref <id> '{"set":N,"status":"approved"}'` (or
+  rejected with a reason, which goes into the next first-file run) and resumes (`npm run line:live -- --resume <id>`, or
+  the page's Restart). After the approval DESIGNER draws files 02–12 in `[RUN MODE: REST OF SET]` batches of at most 6; the
+  engine sends the approved file 1 (checked against its sha256) with every call as the style reference and refuses file 1
+  and any file outside the batch. Prep copies file 1 into raw/ and builds as before (`ensureStyleRefInSet`).
+- **Vision pricing** (row 20): `image_analyze` reserves the image as visual tokens from its pixel size,
+  ceil(w/28) × ceil(h/28), scaled to the long-edge limit and capped (`lib/vision.mjs`, `config/engine.json vision`: Haiku
+  5.5 and Sonnet 5.5 are high-resolution, 2576 px, 4784 tokens; from the vision docs, read 17/10/2026), plus the text
+  estimate of everything else; the settle is the response's usage. A 1024×1024 image reserves 1,369 tokens (USD 0.0027 on
+  Sonnet), not the base64 length.
+- **Packaging** at parity with DESK-PROPS-01: unchanged (transparent PNGs checked for an alpha channel and clear pixels,
+  sizes from the product, the deterministic ZIP, the product's file names).
+- **D1** in `lib/etsy-fees.mjs` (`ownerFloor`, `productFloor`; ported file, change recorded in its header): the brief check,
+  intake, the scout's brief check, the price fill and the package gate all read the product's floor through
+  `variantLadder` / `briefPriceCheck`. `prompts/skills/price-floor.md` (EVIDENCE-CHECKER, the researchers) names it. LISTER
+  writes no price and QA-LISTING checks presence only (their skills say so); the price fill and the gate carry the floor.
+- **`scripts/line-live.mjs`** (`npm run line:live`): the one-shot live command for step c (`--brief <id>`, `--resume <id>`,
+  `--plan` for the pre-run line only); `scripts/owner.mjs resume` refuses a job with live ledger rows on the mock.
+- **Parity check**: the price-fill check now allows exactly one difference, the margin workings' floor figure (EUR 6.42 in
+  the legacy listing, 3.13 now under D1); price EUR 9.00 and margin EUR 7.25 must be unchanged. Listed as explained.
+
+### For the owner (open; nothing decided here)
+- **D1 margin:** at the USD 3.50 floor the margin is EUR 2.14 after fees, not the EUR 5 minimum of the fee model. A brief
+  priced at the floor would list at EUR 3.13. Intended?
+- **Row 19, the per-run cap (USD 1.00):** unchanged. A DESIGNER batch of 6 images plus their checks could come near it
+  (one legacy DESIGNER pass cost about USD 0.92); if a run hits it, the job ends blocked at the cap (no rerun in step c).
+- **Thinking off and quality:** D2 is for the first full live run; the skill recommends adaptive thinking at low effort
+  over thinking off for quality. Per agent in config when the owner wants to turn it on.
+- **The web relay** keeps its default thinking (it is not an agent); say if D2 should cover it too.

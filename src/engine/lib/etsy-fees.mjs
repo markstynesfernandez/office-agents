@@ -1,5 +1,8 @@
 // PORTED from Virtual-workers/station/scripts/lib/etsy-fees.mjs (the owner's own code) at 16/10/2026 19:16 Irish time, source sha256 c22bf16e394b6074b38e2e87d97bffb60a9ef99c76cf69cd0aa8c51389250d19.
-//   change: none (the POD shipping helpers are kept so the ported fee tests run unchanged; the digital line never calls them)
+//   change: the POD shipping helpers are kept so the ported fee tests run unchanged; the digital line never calls them
+//   change (E6 c0, owner D1 17/10/2026): a digital product's owner floor (products.json priceFloorUsd) replaces the fee-model floor in
+//           variantLadder and briefPriceCheck (productFloor), so every check that reads the floor reads the same one
+
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // etsy-fees.mjs — Etsy fee model and the PER-VARIANT PRICE FLOOR, all driven by config.etsyFees (rates, sources and dates live there).
 // Pure functions. Money in EUR unless named Usd. Fees: listing + transaction % + payment processing (% + fixed) + VAT. config.etsyFees.vatOnSellerFees
@@ -97,12 +100,28 @@ export function unconfirmedFeeRates(cfg = config) {
 }
 // the floor of ANY digital item (no production cost, no shipping): fees + minimum margin, with its workings
 export const digitalFloor = (cfg = config) => variantFloor(0, cfg, NO_SHIP);
+// owner D1 (17/10/2026): a digital product may carry the owner's own floor, products.json priceFloorUsd { value } in USD. It is
+// a minimum and replaces the fee-model floor for that product: USD as given, EUR = USD x fx rounded UP to the cent. Malformed: null
+// (the fee-model floor applies, the safe side for a value the owner did not write correctly).
+export function ownerFloor(product, cfg = config) {
+  const f = product && product.digital === true ? product.priceFloorUsd : null;
+  if (!f || typeof f.value !== 'number' || !Number.isFinite(f.value) || !(f.value > 0)) return null;
+  const fx = cfg.fx.usdToEur, floorUsd = r2(f.value), floorEur = Math.ceil(floorUsd * fx * 100 - 1e-9) / 100;
+  return { floorUsd, floorEur, decidedBy: f.decidedBy || null, date: f.date || null };
+}
+// the floor of one variant of a product: the owner floor when the product has one, else the fee-model floor
+export function productFloor(product, v, cfg = config, ship = NO_SHIP) {
+  const f = variantFloor(v.costUsd, cfg, ship), o = ownerFloor(product, cfg);
+  if (!o) return f;
+  return { ...f, floorEur: o.floorEur, floorUsd: o.floorUsd, ownerFloor: true,
+    workings: 'owner floor USD ' + o.floorUsd + ' (products.json priceFloorUsd, ' + (o.decidedBy || 'owner') + ' ' + (o.date || '') + ') x ' + cfg.fx.usdToEur + ' = EUR ' + o.floorEur + ' (rounded up); fee-model floor would be ' + f.workings };
+}
 export const noBriefUplift = (cfg = config) => ((cfg.pricingPolicy && cfg.pricingPolicy.noBriefUpliftPct) ?? 15) / 100;
 // opts.priceEur (digital, owner price): every variant is proposed at exactly that price, never the brief high; the gate checks it against the floor
 export function variantLadder(product, briefUsd = null, cfg = config, { priceEur = null } = {}) {
   const fx = cfg.fx.usdToEur, ship = shippingFor(product, cfg);
   return variantsOf(product).map((v) => {
-    const f = variantFloor(v.costUsd, cfg, ship);
+    const f = productFloor(product, v, cfg, ship);
     const highEur = priceEur != null ? null : briefUsd ? r2(briefUsd.max * fx) : null;
     const proposedEur = r2(priceEur != null ? priceEur : highEur != null ? Math.max(f.floorEur, highEur) : f.floorEur * (1 + noBriefUplift(cfg)));
     return { label: v.label, derived: v.derived, unconfirmed: !!v.unconfirmed, costUsd: v.costUsd, costEur: f.costEur, floorEur: f.floorEur, floorUsd: f.floorUsd, proposedEur,
@@ -116,7 +135,7 @@ export function variantLadder(product, briefUsd = null, cfg = config, { priceEur
 export function briefPriceCheck(usdMin, product, cfg = config, briefUsd = null) {
   const vs = variantsOf(product);
   if (!vs.length) return { ok: false, reason: 'product has no production cost', variants: [] };
-  const ship = shippingFor(product, cfg), floors = vs.map((v) => ({ ...v, ...variantFloor(v.costUsd, cfg, ship) })), cheapest = floors.reduce((a, b) => (b.floorUsd < a.floorUsd ? b : a));
+  const ship = shippingFor(product, cfg), floors = vs.map((v) => ({ ...v, ...productFloor(product, v, cfg, ship) })), cheapest = floors.reduce((a, b) => (b.floorUsd < a.floorUsd ? b : a));
   const ladder = variantLadder(product, briefUsd || (usdMin != null ? { min: usdMin, max: usdMin } : null), cfg);
   if (usdMin == null) return { ok: false, reason: 'brief has no sourced USD price', floorUsd: cheapest.floorUsd, floorEur: cheapest.floorEur, ladder };
   const ok = usdMin >= cheapest.floorUsd - 1e-9;

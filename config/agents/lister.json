@@ -5,6 +5,8 @@
   "department": "OFFICE",
   "tier": "cheap",
   "effort": "low",
+  "thinking": "off",
+  "thinkingNote": "owner D2 17/10/2026: off for the first full live run (config/engine.json thinking); set \"default\" to turn it on for this agent",
   "tools": [
     "fs_read",
     "fs_list",

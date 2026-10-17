@@ -4,6 +4,6 @@ Digital downloads have NO production cost and NO shipping. Every digital item ha
 EU VAT on a digital item is collected by Etsy on top of the price: never add it to a price.
 
 Floor EUR 6.42 / USD 7.19 per sale. No-brief price = floor + 15% = EUR 7.38 (only when the brief has no sourced price).
-BRIEF FLOOR (digital) = USD 7.19: the lowest sourced price in a brief must be at or above it.
+BRIEF FLOOR (digital) = USD 7.19: the lowest sourced price in a brief must be at or above it (an owner floor below replaces it).
 
-### pngtuber-prop-pack: Digital download floor EUR 6.42
+### pngtuber-prop-pack: owner floor USD 3.50 / EUR 3.13 (17/10/2026, a minimum): its BRIEF FLOOR is USD 3.50

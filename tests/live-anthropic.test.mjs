@@ -14,7 +14,8 @@ import { tempRoot } from './helpers/engine.mjs';
 import { createLedger } from '../src/engine/ledger.mjs';
 import { createGuard, CapError, GuardRefusal } from '../src/engine/guard.mjs';
 import { createBus } from '../src/engine/bus.mjs';
-import { createProviders, ProviderNotBuilt } from '../src/engine/providers/index.mjs';
+import { createProviders } from '../src/engine/providers/index.mjs';
+import { ImageProviderError } from '../src/engine/providers/openrouter.mjs';
 import { createAnthropicText, LiveProviderError, allowedModels, makeRedactor } from '../src/engine/providers/anthropic.mjs';
 import { guardedTextCall, backoffDelay, RunStopped } from '../src/engine/runtime.mjs';
 import { APP_ROOT } from '../src/engine/store/jail.mjs';
@@ -234,9 +235,10 @@ test('nothing is added to the request: no tools, no caching, no system prompt; c
     }
     await assert.rejects(s.providers.text.create({ model: 'claude-haiku-5-5', max_tokens: 32, messages: [], mcp_servers: [{ type: 'url', url: 'x', name: 'x' }] }), (e) => e.code === 'TOOLS');
     assert.equal(s.client.seen.length, 3);
-    // the web tools go only through createWithWebTool (b0, tests/live-web.test.mjs); images are not built: they refuse without a call
+    // the web tools go only through createWithWebTool (b0, tests/live-web.test.mjs); without OPENROUTER_API_KEY images refuse without a call (c0)
     await assert.rejects(s.providers.text.create({ model: 'claude-haiku-5-5', max_tokens: 32, messages: [], tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }] }), (e) => e.code === 'TOOLS');
-    await assert.rejects(s.providers.image.generate({ model: 'openai/gpt-5-image-mini', prompt: 'x' }), ProviderNotBuilt);
+    await assert.rejects(s.providers.image.generate({ model: 'openai/gpt-5-image-mini', prompt: 'x' }), (e) => e instanceof ImageProviderError && e.code === 'NO_KEY' && e.hardStop === true);
+    assert.equal(s.providers.image.calls, 0);
   } finally { s.t.cleanup(); }
 });
 

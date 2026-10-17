@@ -27,7 +27,8 @@
     "owner": "node scripts/owner.mjs",
     "parity": "node scripts/parity-pngtuber.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
-    "scout:live": "node scripts/scout-live.mjs"
+    "scout:live": "node scripts/scout-live.mjs",
+    "line:live": "node scripts/line-live.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

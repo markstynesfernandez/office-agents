@@ -9,6 +9,17 @@
 // E5 (the live office): the owner's Stop, Restart (from the failed step, within the caps), Archive (files moved to
 // rerun-archive-*, never deleted) and Re-run listing; an off-duty agent's step waits in `queued` until it is back on duty;
 // the owner's approval decisions write only the approvals and tracker rows.
+// E6 c0, the style-reference set (products.json styleReference.ownerOk; owner decisions 17/10/2026: QA first, then the owner;
+// DESIGNER's maxImages unchanged): the designer step of such a product runs in two phases.
+//   first file  DESIGNER draws ONLY file 1 (set-vN/raw/01-<subject>.png); the station builds it as delivered (clean-up, the pinned
+//               Real-ESRGAN, padding) and flattens it on light and dark (lib/style-ref.mjs makeReviewImages); QA-DESIGN checks file 1
+//               (verdict kind "file1"). A revise, a file 1 that was not made (e.g. a content refusal) or one that cannot be built is a
+//               failed attempt: file 1 is drawn again, in a new set, before any other file, within the design loop limit (then
+//               REJECTS-DESK). Approved: the job waits (queued, waitingFor owner-style-ref) for the owner's decision on file 1
+//               (npm run owner style-ref; then resume). An owner rejection sends its reason to the next first-file run.
+//   rest of set after the owner's approval: DESIGNER draws files 2..N in batches that fit its maxImages (2 spare per batch for
+//               regenerations), each image sent with the approved file 1 as the style reference (tools/index.mjs); prep then copies
+//               the approved file 1 into raw/ and builds the set as before.
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAgent, effectiveAgent } from './runtime.mjs';
@@ -16,7 +27,7 @@ import { VersionConflict } from './store/db.mjs';
 import { checkBrief, briefField } from './lib/brief-check.mjs';
 import { prepareDigitalSet, latestSet, manifestRel } from './lib/digital-prep.mjs';
 import { buildDigitalSet, isPackaged, productFor } from './lib/digital-build.mjs';
-import { usesStyleRef, approvedRef, ensureStyleRefInSet } from './lib/style-ref.mjs';
+import { usesStyleRef, approvedRef, ensureStyleRefInSet, readStyleRef, firstFileOf, fileOneVersion, makeReviewImages } from './lib/style-ref.mjs';
 import { esrganUpscaler } from './lib/esrgan.mjs';
 import { packageDigital } from './lib/package-digital.mjs';
 import { designSignOff } from './lib/owner-approval.mjs';
@@ -187,9 +198,11 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       let r;
       try { r = def.kind === 'agent' ? await agentStep(store.getJob(id), step, def, pass, stopSignal) : await mechStep(store.getJob(id), step, def, stopSignal); }
       catch (e) { r = { blocked: 'engine error in ' + step + ': ' + e.message }; log.error('step crashed', { id, step, error: String(e && e.stack || e) }); }
-      store.closeStage(sid, r.blocked ? 'blocked' : r.stopped ? 'stopped' : r.incomplete ? 'incomplete' : 'done', r.blocked || r.stopped || r.incomplete || r.modeDone || r.note || null);
+      store.closeStage(sid, r.blocked ? 'blocked' : r.stopped ? 'stopped' : r.incomplete ? 'incomplete' : 'done', r.blocked || r.stopped || r.incomplete || r.modeDone || r.waiting || r.note || null);
       job = store.updateJob(id, { data: { costUsd: ledger.spent.job(id) } });
       await callHook('onStep', { job, step, def, pass, phase: 'end', result: r });
+      // E6 c0: the owner decides on file 1 of a style-reference set; the job waits at this step (never started by itself)
+      if (r.waiting) { setJob(id, { state: 'queued', step, reason: r.waiting, data: { waitingFor: 'owner-style-ref', autoStart: false } }, 'job.stage', { step, waiting: 'owner-style-ref' }); return store.getJob(id); }
       if (r.modeDone) { setJob(id, { state: 'stopped', reason: r.modeDone, ended_at: Date.now(), data: { runMode: null, runCapUsd: null, lastRunMode: { ...(store.getJob(id).data.runMode || {}), result: r.modeDone } } }, 'job.stopped'); return store.getJob(id); }
       if (r.stopped) { setJob(id, { state: 'stopped', reason: r.stopped, ended_at: Date.now() }, 'job.stopped'); return store.getJob(id); }
       if (r.blocked) { block(store.getJob(id), r.blocked); return store.getJob(id); }
@@ -286,6 +299,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else if (step === 'qa-listing') input = 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + handoff(job) + qaListingWordNote(job);
     else if (step === 'rejects-desk') { input = '[LOOP — escalated] ' + (job.data.escalation || 'the work was not approved') + '\nRecord why in REJECTED.md.\n\n' + handoff(job); loopNote = 'This job is being stopped: write REJECTED.md only.'; }
     else input = handoff(job);
+    if (step === 'designer' && !research) {
+      const { product } = productFor(dataRoot, job.id, cfg.products);
+      if (product && usesStyleRef(product)) return styleRefDesigner(job, def, pass, input, stopSignal, product);
+    }
     const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart } });
     // owner D2: the agent said it cannot produce its outputs: the job ends incomplete with its reason, nothing downstream
     if (run.reportedBlocked && run.status === 'incomplete') {
@@ -311,6 +328,122 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return { next: def.next };
   }
   const firstLine = (t) => (String(t || '').split('\n').map((x) => x.replace(/^#+\s*/, '').trim()).filter(Boolean)[0] || '');
+
+  // ---- E6 c0: the designer step of a style-reference product (see the header): first file, QA-DESIGN on file 1, the owner's
+  // decision, then the rest of the set in batches with the approved file 1 as the style reference
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const clipText = (t, n) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n) + '…' : x; };
+  const ownerWaitText = (aw) => 'waiting for the owner: file 1 of set-v' + aw.set + ' (' + aw.name + ') passed QA DESIGN (file 1 check, pass ' + aw.qaPass + '); see set-v' + aw.set + '/review/, then decide: npm run owner -- style-ref <id> \'{"set":' + aw.set + ',"status":"approved"}\' (or "rejected" with a "reason"), and resume the job';
+  async function styleRefDesigner(job, def, pass, baseInput, stopSignal, product) {
+    const L = lineOf(job.line), revise = L.steps['qa-design'].onRevise || {}, attemptLimit = 1 + (revise.max ?? 2);
+    const designer = cfg.agents[def.agent] || {}, maxImages = (designer.limits || {}).maxImages || 0;
+    const folder = jobDir(job.id), run0 = { job, line: job.line, folder, folderLabel: 'the job folder of ' + job.id, loopNote: null, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: null, hooks: { onRunStart: hooks.onRunStart }, imageAttemptLimit: attemptLimit };
+    const a = approvedRef(dataRoot, job.id);
+    if (a.ok) {
+      if (job.data.styleRef && job.data.styleRef.awaiting) store.updateJob(job.id, { data: { styleRef: { ...job.data.styleRef, awaiting: null, approved: { set: a.ref.set, name: a.ref.name, sha256: a.ref.sha256, version: a.ref.version || 'raw' } } } });
+      return restOfSet(store.getJob(job.id), def, pass, baseInput, product, a.ref, maxImages, run0);
+    }
+    return firstFile(job, def, baseInput, product, attemptLimit, run0);
+  }
+
+  async function firstFile(job, def, baseInput, product, attemptLimit, run0) {
+    const id = job.id, sr = job.data.styleRef || {}, latest = readStyleRef(dataRoot, id).current;
+    // a file 1 that passed QA and waits for the owner: nothing is drawn again until the owner decides
+    if (sr.awaiting && !(latest && latest.set === sr.awaiting.set)) return { waiting: ownerWaitText(sr.awaiting).replace('<id>', id) };
+    let carry = Array.isArray(sr.lastReasons) ? sr.lastReasons : [];
+    if (sr.awaiting && latest && latest.set === sr.awaiting.set && latest.status === 'rejected') {
+      carry = ['the owner rejected file 1 of set-v' + latest.set + ': ' + (latest.reason || '(no reason given)')];
+      store.updateJob(id, { data: { styleRef: { ...sr, awaiting: null, lastReasons: carry, ownerRejections: (sr.ownerRejections || 0) + 1 } } });
+    }
+    const total = product.deliverables.files.length;
+    for (;;) {
+      job = store.getJob(id);
+      const used = (job.loops || {}).file1 || 0, n = latestSet(dataRoot, id) + 1;
+      const input = '[RUN MODE: FIRST FILE ONLY — the style reference] Plan EVERY file of the set (' + total + ' files), then generate ONLY file 1, to work/' + id + '/set-v' + n + '/raw/01-<subject>.png, check it with image analysis, and write work/' + id + '/set-v' + n + '/design.md with the whole plan and file 1\'s prompt. The station builds file 1 as it will be delivered; QA DESIGN checks it, then the owner approves it before any other file is drawn.'
+        + ' [FILE 1 — attempt ' + (used + 1) + ' of ' + attemptLimit + ']' + (carry.length ? '\nFix EVERY reason from the last attempt:\n' + carry.map((x, i) => (i + 1) + '. ' + x).join('\n') : '') + '\n\n' + baseInput;
+      const run = await runAgent(engine, { ...run0, agentKey: def.agent, step: 'designer', pass: used + 1, input, image: { mode: 'first-file', set: n } });
+      const stop = stopFrom(run, 'DESIGNER'); if (stop) return stop;
+      let reasons = null;
+      const ff = firstFileOf(dataRoot, id, n);
+      if (!ff.ok) {
+        const tried = Object.entries(((store.getJob(id).data || {}).imageAttempts) || {}).filter(([k]) => /^01-/.test(k)).map(([k, v]) => k + ': ' + v.map((x) => x.why).join(', '));
+        reasons = ['file 1 was not made (' + ff.reason + ')' + (tried.length ? '; failed image attempts: ' + tried.join('; ') : '') + (run.text ? '; DESIGNER said: "' + clipText(run.text, 200) + '"' : '')];
+      } else {
+        const rv = await reviewFileOne(job, n, ff.name, product, run0.stopSignal);
+        if (rv.stopped || rv.blocked) return rv;
+        if (!rv.ok) reasons = ['file 1 (' + ff.name + ') could not be built for review: ' + rv.reason];
+        else {
+          const v = fileOneVersion(dataRoot, id, n);
+          if (!v.ok) reasons = ['file 1: ' + v.reason];
+          else {
+            const k = 1 + (fs.existsSync(path.join(jobDir(id), 'qa')) ? fs.readdirSync(path.join(jobDir(id), 'qa')).filter((f) => /^file1-pass\d+\.json$/.test(f)).length : 0);
+            const raw = 'set-v' + n + '/raw/' + ff.name, base = ff.name.replace(/\.png$/i, '');
+            const reviews = Object.values(rv.review || {}).map((x) => 'work/' + id + '/' + x.file.replace(/^jobs\/[^/]+\//, ''));
+            const qaInput = ['[RUN MODE: FILE 1 CHECK — the style reference] Only file 1 of this set exists. Check it before the owner sees it and before any other file is drawn. This is not the set review: there is no deliverables.json yet.',
+              'FILE 1: work/' + id + '/' + raw + ' (the Designer\'s raw file' + (v.version === 'cleaned' ? '; the station\'s cleaned version, the one the owner decides on: work/' + id + '/' + v.file.replace(/^jobs\/[^/]+\//, '') : '') + ')',
+              'REVIEW IMAGES (file 1 built as it will be delivered, flattened on each background): ' + reviews.join(', '),
+              'PLAN: work/' + id + '/set-v' + n + '/design.md; BRIEF: work/' + id + '/brief.md',
+              'Open file 1 and every review image with image analysis. Checks, each "pass" or "fail": originality, trademarks, etsyPolicy, briefFit, usable (clean edges, nothing cut off, no stray text or lettering, a real transparent background), styleReference (one clear, finished style the other ' + (total - 1) + ' files can follow). Any fail = revise, with specific reasons the Designer can act on.',
+              'Call submit_verdict ONCE with record = { "stage": "file1", "listingId": "' + id + '", "file": "' + raw + '", "verdict": "approved" or "revise", "checks": { ... }, "reasons": [ ... ] }, then end your reply. Write no file.'].join('\n');
+            const qa = await runAgent(engine, { ...run0, agentKey: 'qa-design', step: 'qa-design', pass: k, input: qaInput, verdictKind: 'file1', file1: { rel: raw, sha256: ff.sha256 } });
+            const qs = stopFrom(qa, 'QA DESIGN'); if (qs) return qs;
+            const rec = { ...(qa.verdict || { stage: 'file1', listingId: id, file: raw, verdict: 'revise', checks: {}, reasons: ['the QA run ended without a valid verdict (counts as revise)'], recordedBy: 'engine' }), pass: k, set: n, reviewer: 'QA DESIGN', decides: { version: v.version, file: v.file, sha256: v.sha256 } };
+            J.put(path.join(jobDir(id), 'qa', 'file1-pass' + k + '.json'), JSON.stringify(rec, null, 1) + '\n');
+            log.info('file 1 verdict', { jobId: id, set: n, pass: k, verdict: rec.verdict, reasons: rec.reasons });
+            if (rec.verdict === 'approved') {
+              const aw = { set: n, name: ff.name, qaPass: k, version: v.version, file: v.file, sha256: v.sha256, at: Date.now() };
+              store.updateJob(id, { data: { styleRef: { ...((store.getJob(id).data || {}).styleRef || {}), awaiting: aw, lastReasons: null } } });
+              trackerRow(store.getJob(id), { status: 'waiting', status_reason: 'file 1 passed QA DESIGN: owner decision on the style reference' });
+              return { waiting: ownerWaitText(aw).replace('<id>', id) };
+            }
+            reasons = (rec.reasons && rec.reasons.length) ? rec.reasons : ['QA DESIGN asked for a revise of file 1'];
+          }
+        }
+      }
+      // a failed attempt at file 1: drawn again (a new set) before any other file, within the design loop limit
+      const sr2 = (store.getJob(id).data || {}).styleRef || {};
+      store.updateJob(id, { loops: { file1: used + 1 }, data: { styleRef: { ...sr2, lastReasons: reasons } } });
+      log.warn('file 1 attempt failed', { jobId: id, set: n, attempt: used + 1, of: attemptLimit, reasons });
+      if (used + 1 >= attemptLimit) {
+        const why = 'file 1 (the style reference) was not approved by QA DESIGN after ' + (used + 1) + ' attempt(s) (loop limit ' + (attemptLimit - 1) + ' sends back): ' + reasons.join('; ');
+        store.updateJob(id, { data: { escalation: why } });
+        return { next: L_escalate(job), note: 'file 1 loop exhausted: escalated' };
+      }
+      carry = reasons;
+    }
+  }
+  const L_escalate = (job) => (lineOf(job.line).steps['qa-design'].onRevise || {}).escalate || 'rejects-desk';
+
+  // file 1 built as delivered and flattened for the owner (no model, $0): the pinned upscaler, killed by the e-stop or the Stop
+  async function reviewFileOne(job, n, name, product, stopSignal) {
+    const signal = stopSignal ? AbortSignal.any([halt.signal, stopSignal]) : halt.signal;
+    const upscaler = engine.upscaler || esrganUpscaler({ pin: cfg.engine.upscale, workDir: path.join(jobDir(job.id), 'set-v' + n), signal });
+    try { return await makeReviewImages({ roomDir: dataRoot, id: job.id, n, name, product, cfg: cfg.station, upscaler, log }); }
+    catch (e) {
+      if (e.code === 'STOPPED' || signal.aborted) return { stopped: 'stopped during the file 1 build: ' + e.message };
+      return { blocked: 'the file 1 build failed (no retry through the Designer): ' + e.message };
+    }
+  }
+
+  async function restOfSet(job, def, pass, baseInput, product, ref, maxImages, run0) {
+    const id = job.id, n = latestSet(dataRoot, id) + 1, total = product.deliverables.files.length;
+    const refRel = String(ref.file).replace(/^jobs\/[^/]+\//, ''), refAbs = path.join(dataRoot, ref.file);
+    const chunk = Math.max(1, maxImages - 2), batches = [];
+    for (let f = 2; f <= total; f += chunk) batches.push([f, Math.min(total, f + chunk - 1)]);
+    if (!batches.length) return { next: def.next, note: 'the set is file 1 alone (the owner-approved style reference)' };
+    for (let b = 0; b < batches.length; b++) {
+      const [from, to] = batches[b];
+      const input = '[RUN MODE: REST OF SET — batch ' + (b + 1) + ' of ' + batches.length + ': files ' + pad2(from) + '–' + pad2(to) + ' of ' + total + '] STYLE REFERENCE: work/' + id + '/' + refRel + ' (the owner-approved file 1, ' + ref.name + '; the station sends it with every image and copies it into raw/ as file 1). '
+        + 'Write set-v' + n + ': generate ONLY files ' + pad2(from) + '–' + pad2(to) + ', to work/' + id + '/set-v' + n + '/raw/NN-<subject>.png (NN = the file number), each checked with image analysis. Never draw file 1. '
+        + (b === 0 ? 'Write work/' + id + '/set-v' + n + '/design.md with the plan for every file (file 1 = "owner-approved style reference", its prompt copied from set-v' + ref.set + '/design.md) and these files\' prompts and analysis.' : 'Read work/' + id + '/set-v' + n + '/design.md and write it back whole, with these files\' prompts and analysis added.')
+        + '\n\n' + baseInput;
+      const run = await runAgent(engine, { ...run0, job: store.getJob(id), agentKey: def.agent, step: 'designer', pass, input, image: { mode: 'rest', set: n, from, to, reference: { abs: refAbs, rel: refRel, name: ref.name, sha256: ref.sha256 } } });
+      const stop = stopFrom(run, 'DESIGNER'); if (stop) return stop;
+      log.info('rest-of-set batch done', { jobId: id, set: n, batch: b + 1, of: batches.length, from, to, images: run.counters && run.counters.images });
+    }
+    return { next: def.next, note: 'set-v' + n + ': files 02–' + pad2(total) + ' drawn in ' + batches.length + ' DESIGNER run(s), each image with the style reference ' + ref.name };
+  }
+
 
   // one verdict channel: the record from submit_verdict is written by the engine and routes the job
   function routeVerdict(job, step, def, pass, run) {
@@ -666,8 +799,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     store.updateJob(id, { state: 'queued', step, reason: 'restarted by the owner at ' + step, ended_at: null, data: { visited: (j.data.visited || []).filter((x) => x !== step), restarts: (j.data.restarts || 0) + 1, autoStart: true, waitingFor: null, stopRequested: null } }, { expectedVersion });
     bus.emit('job.stage', { jobId: id, data: { state: 'queued', step, restart: true, by } });
     log.info('job restarted', { jobId: id, step, by, spentUsd: spent });
-    startJob(id);
-    return { jobId: id, step, started: isActive(id) };
+    const run = startJob(id);
+    return { jobId: id, step, started: isActive(id), ...(run ? { run } : {}) };
   }
 
   // Archive: the job leaves the board; its files move to jobs/<id>/rerun-archive-<stamp>/ (brief.md stays), never deleted

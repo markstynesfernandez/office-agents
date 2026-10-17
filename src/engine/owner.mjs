@@ -222,7 +222,11 @@ export function createOwnerActions(engine) {
     const r = recordDecision({ roomDir: dataRoot, id, status, reason, date: dateOf(date), decidedBy: 'owner', n: Number(set) });
     if (!r.ok) throw refuse('style reference decision refused: ' + r.reason);
     if (r.action === 'recorded') append(id, { kind: 'style-ref', set: Number(set), status, version: r.decision.version, sha256: r.decision.sha256, reason: r.decision.reason || '', date: r.decision.date });
-    return done(id, 'style-ref', { set: Number(set), status, action: r.action, version: r.decision.version });
+    // E6 c0: a job waiting for this decision (file 1 passed QA DESIGN) may now be resumed by the owner (Restart / owner resume)
+    const j = store.getJob(id), aw = j.data && j.data.styleRef && j.data.styleRef.awaiting;
+    const freed = j.state === 'queued' && j.data.waitingFor === 'owner-style-ref' && aw && aw.set === Number(set);
+    if (freed) store.updateJob(id, { reason: 'owner ' + status + ' file 1 of set-v' + set + ': resume the job to continue (' + (status === 'approved' ? 'the rest of the set is drawn with it as the style reference' : 'file 1 is drawn again with the owner\'s reason') + ')', data: { waitingFor: null } });
+    return done(id, 'style-ref', { set: Number(set), status, action: r.action, version: r.decision.version, resumable: !!freed });
   }
 
   // what the job panel and MANIFEST show: every override with its file, sha256, stage, pass, date, reason and owner

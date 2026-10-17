@@ -11,10 +11,14 @@
 // E6 b2 (owner D2): report_blocked(reason) is the "cannot produce" outcome: it satisfies the contract and ends the run at
 // once (no nudge): `incomplete` with that reason when nothing was written, a recorded shortfall when a partial set exists
 // and the contract allows partials (owner decision 3); a nudge offers exactly fs_write or report_blocked.
+// E6 c0: the agent's thinking setting (config/agents/<key>.json thinking, owner D2) rides on every call's ctx; image_analyze is
+// reserved as vision tokens (the image's own size, lib/vision.mjs), not as the length of its base64 text; the orchestrator's image
+// policy (style-reference run modes, ctx.image), the QA verdict kind (the file-1 check) and the per-file image attempt count (job
+// data imageAttempts, against the QA loop limit) reach the toolbox. A provider refusal raised before the network is never billed.
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { buildAgentPrompt, engineWrapper } from './prompts.mjs';
-import { createToolbox, ToolError } from './tools/index.mjs';
+import { createToolbox, ToolError, PRE_NETWORK } from './tools/index.mjs';
 import { CapError, GuardRefusal } from './guard.mjs';
 import { makeRedactor } from './providers/anthropic.mjs';
 import { urlsIn } from './lib/web-sources.mjs';
@@ -32,6 +36,8 @@ export function effectiveAgent(engine, key) {
 }
 
 export const estimateTokens = (obj) => Math.ceil(JSON.stringify(obj).length / 3);   // conservative (~3 chars per token)
+// the messages with every image's base64 data left out (an image is counted as vision tokens instead: lib/vision.mjs)
+export const withoutImageData = (messages) => messages.map((m) => (Array.isArray(m.content) ? { ...m, content: m.content.map((b) => (b && b.type === 'image' && b.source && b.source.data ? { ...b, source: { ...b.source, data: '' } } : b)) } : m));
 
 const abortableSleep = (ms, signal) => new Promise((res, rej) => { if (signal && signal.aborted) return rej(signal.reason || new Error('aborted')); const t = setTimeout(res, ms); if (signal) signal.addEventListener('abort', () => { clearTimeout(t); rej(signal.reason || new Error('aborted')); }, { once: true }); });
 // wait before attempt n+1: a server retry-after when given, else backoffMs x 2^n; capped at backoffMaxMs
@@ -55,7 +61,9 @@ export async function guardedTextCall({ guard, halt, providers, call, params, ct
     catch (e) {
       if (halt.signal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'aborted by the e-stop mid-call; charged at the reserved maximum' }); throw new RunStopped('e-stop', e); }
       if (stopSignal && stopSignal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'stopped by the owner mid-call; charged at the reserved maximum' }); throw new RunStopped('stopped by the owner', e); }
-      if (e && e.status) guard.release(res, 'provider error ' + e.status); else guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'call failed without a usage report; charged at the reserved maximum' });
+      if (e && e.status) guard.release(res, 'provider error ' + e.status);
+      else if (e && PRE_NETWORK.includes(e.code)) guard.release(res, 'refused before the network: ' + e.code);
+      else guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'call failed without a usage report; charged at the reserved maximum' });
       if (!(e && e.retryable) || attempt >= retries) throw e;
       const waitMs = backoffDelay(retry, attempt, e.retryAfterMs);
       log && log.warn('provider call failed; retrying with a new reservation', { model: call.model, status: e.status ?? null, code: e.code || null, attempt: attempt + 1, retries, waitMs, runId: call.runId || null, jobId: call.jobId ?? null });
@@ -68,7 +76,9 @@ export async function guardedTextCall({ guard, halt, providers, call, params, ct
 }
 
 // stopSignal (E5): the owner's Stop on this job; it aborts the call in flight like the e-stop, for this job only
-export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null }) {
+// image / verdictKind / file1 / imageAttemptLimit (E6 c0, the style-reference set): the orchestrator's run mode for image_generate,
+// the QA verdict kind when it is not the agent's own (the file-1 check), the file that check is about, and the per-file attempt limit
+export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null, image = null, verdictKind = null, file1 = null, imageAttemptLimit = null }) {
   const { store, guard, providers, halt, bus, log, cfg } = engine;
   const agent = effectiveAgent(engine, agentKey);
   if (!agent.enabled) throw new RunStopped(agent.name + ' is off duty');
@@ -78,23 +88,30 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   const runId = 'run_' + new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14) + '_' + crypto.randomBytes(3).toString('hex');
   const run = { runId, runCapUsd };
   let verdict = null, blockedReason = null;
-  const ctx = { J: engine.J, folder, agent, job, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
+  // failed image attempts per file name, kept on the job (a content refusal counts as a failed attempt, owner E6 c0)
+  const imageAttempts = job ? {
+    count: (name) => (((store.getJob(job.id) || {}).data || {}).imageAttempts || {})[name] ? store.getJob(job.id).data.imageAttempts[name].length : 0,
+    add: (name, why) => { const cur = (((store.getJob(job.id) || {}).data || {}).imageAttempts) || {}; const list = [...(cur[name] || []), { at: Date.now(), why: String(why || '') }]; store.updateJob(job.id, { data: { imageAttempts: { ...cur, [name]: list } } }); return list.length; }
+  } : null;
+  const ctx = { J: engine.J, folder, agent, job, model, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
   const box = createToolbox(ctx);
   const wrapper = engineWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, isQa: !!agent.verdict, loopNote });
   const system = [{ type: 'text', text: prompt.soul + '\n' + prompt.text, ...(cfg.engine.runtime.promptCaching ? { cache_control: { type: 'ephemeral' } } : {}) }, { type: 'text', text: wrapper }];
   const promptSha256 = crypto.createHash('sha256').update(JSON.stringify(system)).digest('hex');
   store.insertRun({ runId, jobId: job ? job.id : null, agentKey, step, pass, model, provider, promptSha256 });
-  bus.emit('run.start', { jobId: job ? job.id : null, agentKey, data: { runId, step, pass, model, provider, effort: agent.effort } });
-  log.info('run start', { runId, agent: agentKey, jobId: job && job.id, step, pass, model, provider, effort: agent.effort, promptSha256, promptChars: prompt.chars });
+  bus.emit('run.start', { jobId: job ? job.id : null, agentKey, data: { runId, step, pass, model, provider, effort: agent.effort, thinking: agent.thinking || 'default', ...(image && image.mode ? { imageMode: image.mode } : {}) } });
+  log.info('run start', { runId, agent: agentKey, jobId: job && job.id, step, pass, model, provider, effort: agent.effort, thinking: agent.thinking || 'default', ...(image && image.mode ? { imageMode: image.mode, set: image.set, from: image.from, to: image.to } : {}), ...(verdictKind ? { verdictKind } : {}), promptSha256, promptChars: prompt.chars });
   if (hooks.onRunStart) { try { await hooks.onRunStart({ runId, agentKey, job, step, pass }); } catch (e) { log.warn('hook failed (ignored)', { hook: 'onRunStart', runId, error: e.message }); } }
 
   const totals = { usd: 0, tokensIn: 0, tokensOut: 0, turns: 0, tools: [] };
   // one priced model call through the guard (used by the loop and by image_analyze)
-  async function callModel({ messages, tools, maxOutputTokens, purpose = 'turn', extraCtx = {}, toolChoice = null }) {
+  // visionTokens (image_analyze): the image's visual tokens from its pixel size, added to the text estimate of everything else
+  async function callModel({ messages, tools, maxOutputTokens, purpose = 'turn', extraCtx = {}, toolChoice = null, visionTokens = 0 }) {
     const params = { model, max_tokens: maxOutputTokens, system, messages, ...(tools && tools.length ? { tools } : {}), ...(toolChoice && tools && tools.length ? { tool_choice: toolChoice } : {}) };
+    const inputTokens = estimateTokens({ system, messages: withoutImageData(messages), tools }) + (visionTokens || 0);
     const { resp, row } = await guardedTextCall({ guard, halt, providers, stopSignal, log, params,
-      call: { provider, model, kind: 'text', runId, jobId: job ? job.id : null, agentKey, line, inputTokens: estimateTokens({ system, messages, tools }), maxOutputTokens, runCapUsd },
-      ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, ...extraCtx },
+      call: { provider, model, kind: 'text', runId, jobId: job ? job.id : null, agentKey, line, inputTokens, maxOutputTokens, runCapUsd },
+      ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, thinking: agent.thinking || 'default', ...extraCtx },
       retry: providers.mode === 'live' ? cfg.engine.live || {} : {} });
     totals.usd += row.usd; totals.tokensIn += resp.usage.input_tokens || 0; totals.tokensOut += resp.usage.output_tokens || 0;
     if (purpose === 'image_analyze') return resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
