@@ -154,6 +154,8 @@ export function withScouting(station, terms) {
 }
 
 // the whole-brief screen: scouted names anywhere in the brief; derivative wording too when the brief is a genre-scout one
+// E6 b1: a scout run exits 0 only when its job reached research-done (incomplete, blocked or stopped exit 1)
+export const scoutRunExitCode = (job) => (job && job.state === 'research-done' ? 0 : 1);
 export const isScoutBrief = (t) => new RegExp('^origin:[ \\t]*' + ORIGIN + '[ \\t]*$', 'm').test(String(t || ''));
 export function scoutingBriefProblems(text, station) {
   const lists = (station && station.sloganScreen && station.sloganScreen.lists) || {};

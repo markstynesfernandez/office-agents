@@ -69,7 +69,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
       else { out.stage = 'approval-queue'; out.status = 'waiting'; out.agentId = null; }
     }
     else if (['approved', 'published', 'retired', 'research-done'].includes(j.state)) { out.stage = j.state === 'research-done' ? 'brief' : 'done'; out.status = 'done'; }
-    else if (j.state === 'blocked' || j.state === 'stopped') { out.lane = 'blocked'; out.stage = 'blocked'; out.status = 'blocked'; out.flag = j.state === 'stopped' ? 'stopped' : null; out.qaPassedGateFailed = /^QA passed, package gate failed/.test(j.reason || ''); }
+    else if (j.state === 'blocked' || j.state === 'stopped' || j.state === 'incomplete') { out.lane = 'blocked'; out.stage = 'blocked'; out.status = j.state === 'incomplete' ? 'incomplete' : 'blocked'; out.flag = j.state === 'stopped' ? 'stopped' : j.state === 'incomplete' ? 'incomplete' : null; out.qaPassedGateFailed = /^QA passed, package gate failed/.test(j.reason || ''); }
     else if (j.state === 'rejected' || j.state === 'rejected_by_owner') { out.lane = 'rejected'; out.stage = 'rejected'; out.status = 'rejected'; out.rejectedBy = j.state === 'rejected' ? 'rejects-desk' : 'owner'; }
     else if (j.state === 'parked') { out.lane = 'parked'; out.stage = 'parked'; out.status = 'parked'; }
     else if (j.state === 'archived') { out.stage = 'archived'; out.status = 'archived'; out.agentId = null; }

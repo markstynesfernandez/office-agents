@@ -4,10 +4,19 @@
 //   -> run the tool calls -> repeat
 // A run ends when the agent stops calling tools, hits maxTurns, a cap refuses the next call, or the e-stop fires. Each
 // run records the sha256 of its exact prompt. The page never sees prompts or provider responses.
+// E6 b1: every model call of a job is appended to data/jobs/<id>/transcript.jsonl (key-redacted; internal, never logs/
+// or git). An output contract (the line step's `outputs`, built by the orchestrator) is checked when the agent ends its
+// turn: missing outputs get a follow-up message naming the tool, with tool_choice requiring a call, at most
+// MAX_NUDGES times; still missing -> status `incomplete` (or `done` with a shortfall when the contract allows partial).
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { buildAgentPrompt, engineWrapper } from './prompts.mjs';
 import { createToolbox, ToolError } from './tools/index.mjs';
 import { CapError, GuardRefusal } from './guard.mjs';
+import { makeRedactor } from './providers/anthropic.mjs';
+
+export const MAX_NUDGES = 2;
+export const TRANSCRIPT_RESULT_CHARS = 2000;
 
 export class RunStopped extends Error { constructor(reason, cause) { super(reason); this.code = 'STOPPED'; this.cause = cause; } }
 
@@ -55,7 +64,7 @@ export async function guardedTextCall({ guard, halt, providers, call, params, ct
 }
 
 // stopSignal (E5): the owner's Stop on this job; it aborts the call in flight like the e-stop, for this job only
-export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null }) {
+export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null }) {
   const { store, guard, providers, halt, bus, log, cfg } = engine;
   const agent = effectiveAgent(engine, agentKey);
   if (!agent.enabled) throw new RunStopped(agent.name + ' is off duty');
@@ -77,8 +86,8 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
 
   const totals = { usd: 0, tokensIn: 0, tokensOut: 0, turns: 0, tools: [] };
   // one priced model call through the guard (used by the loop and by image_analyze)
-  async function callModel({ messages, tools, maxOutputTokens, purpose = 'turn', extraCtx = {} }) {
-    const params = { model, max_tokens: maxOutputTokens, system, messages, ...(tools && tools.length ? { tools } : {}) };
+  async function callModel({ messages, tools, maxOutputTokens, purpose = 'turn', extraCtx = {}, toolChoice = null }) {
+    const params = { model, max_tokens: maxOutputTokens, system, messages, ...(tools && tools.length ? { tools } : {}), ...(toolChoice && tools && tools.length ? { tool_choice: toolChoice } : {}) };
     const { resp, row } = await guardedTextCall({ guard, halt, providers, stopSignal, log, params,
       call: { provider, model, kind: 'text', runId, jobId: job ? job.id : null, agentKey, line, inputTokens: estimateTokens({ system, messages, tools }), maxOutputTokens, runCapUsd },
       ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, ...extraCtx },
@@ -89,26 +98,57 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   }
   ctx.callModel = callModel;
 
+  // the job's transcript (E6 b1): one JSON line per model call, every line through the key redaction, inside data/ only
+  const redactKey = makeRedactor([]), redact = (t) => redactKey(log && log.redact ? log.redact(t) : t);
+  const transcriptFile = job ? path.join(engine.J.dataRoot, 'jobs', job.id, 'transcript.jsonl') : null;
+  const addLine = (rec) => { if (!transcriptFile) return; try { engine.J.add(transcriptFile, redact(JSON.stringify(rec)) + '\n'); } catch (e) { log.warn('transcript write failed (ignored)', { runId, error: e.message }); } };
+  const transcript = (resp, uses, results, extra = {}) => addLine({ at: new Date().toISOString(), runId, agent: agentKey, step, pass, turn: totals.turns, requestId: resp.request_id || null, stop_reason: resp.stop_reason || null,
+    text: resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n'), toolCalls: uses.map((u) => ({ name: u.name, input: u.input })),
+    toolResults: results.map((r) => ({ tool_use_id: r.tool_use_id, is_error: !!r.is_error, content: String(r.content).slice(0, TRANSCRIPT_RESULT_CHARS) })), ...extra });
+
   const messages = [{ role: 'user', content: String(input) }];
-  let status = 'done', endReason = 'end_turn', error = null, lastText = '';
+  let status = 'done', endReason = 'end_turn', error = null, lastText = '', nudges = 0, toolChoice = null, shortfall = null, missing = null;
   try {
     for (;;) {
       if (halt.isHalted()) throw new RunStopped('e-stop');
       if (stopSignal && stopSignal.aborted) throw new RunStopped('stopped by the owner');
       if (totals.turns >= agent.limits.maxTurns) { status = 'max-turns'; endReason = 'maxTurns ' + agent.limits.maxTurns + ' reached'; break; }
       totals.turns++;
-      const resp = await callModel({ messages, tools: box.defs, maxOutputTokens: agent.limits.maxOutputTokens });
+      const after = toolChoice ? { afterNudge: nudges } : {};
+      const resp = await callModel({ messages, tools: box.defs, maxOutputTokens: agent.limits.maxOutputTokens, toolChoice });
+      toolChoice = null;
       messages.push({ role: 'assistant', content: resp.content });
       lastText = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n') || lastText;
       const uses = resp.content.filter((b) => b.type === 'tool_use');
-      if (resp.stop_reason !== 'tool_use' || !uses.length) { endReason = resp.stop_reason || 'end_turn'; break; }
+      if (resp.stop_reason !== 'tool_use' || !uses.length) {
+        endReason = resp.stop_reason || 'end_turn';
+        transcript(resp, [], [], after);
+        // the output contract: an agent that ends its turn with required outputs missing is nudged, at most MAX_NUDGES times;
+        // each nudge is one more model call, reserved and capped like any other
+        const c = contract ? contract.check() : null;
+        if (c && c.missing.length && nudges < MAX_NUDGES && !['max_tokens', 'refusal'].includes(endReason)) {
+          nudges++;
+          const msg = '[STATION: required outputs missing, reminder ' + nudges + ' of ' + MAX_NUDGES + '] You ended your turn without: ' + c.missing.join('; ') + '. Call the ' + contract.tool + ' tool now, one call per missing file.' + (contract.hint ? ' ' + contract.hint : '');
+          messages.push({ role: 'user', content: msg });
+          // a forced call where the model accepts it (Claude Haiku 5.5 does; Claude Sonnet 5.5 returns a 400, so its tier sets forcedToolChoice false and the message carries the instruction)
+          toolChoice = tier.forcedToolChoice === false ? { type: 'auto' } : { type: 'tool', name: contract.tool };
+          log.warn('required outputs missing: nudge', { runId, agent: agentKey, jobId: job && job.id, nudge: nudges, missing: c.missing, toolChoice: toolChoice.type });
+          addLine({ at: new Date().toISOString(), runId, agent: agentKey, step, pass, nudge: nudges, message: msg, tool_choice: toolChoice });
+          continue;
+        }
+        if (c && c.missing.length) {
+          if (contract.partialOk && c.have >= 1) { shortfall = { have: c.have, want: c.want, missing: c.missing }; endReason = 'shortfall: ' + c.have + ' of ' + c.want + ' (' + c.missing.join('; ') + ')'; }
+          else { status = 'incomplete'; missing = c.missing; endReason = 'missing outputs: ' + c.missing.join('; '); }
+        }
+        break;
+      }
       const results = [];
       for (const u of uses) {
         totals.tools.push(u.name);
         let out, isError = false;
         try { out = await box.call(u.name, u.input); }
         catch (e) {
-          if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped) throw e;
+          if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped) { transcript(resp, uses, results, { ...after, error: e.message }); throw e; }
           if (halt.signal.aborted) throw new RunStopped('e-stop', e);
           if (stopSignal && stopSignal.aborted) throw new RunStopped('stopped by the owner', e);
           isError = true; out = (e instanceof ToolError ? '' : 'tool failed: ') + e.message;
@@ -117,6 +157,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
         log.info('tool', { runId, agent: agentKey, tool: u.name, error: isError || undefined });
         results.push({ type: 'tool_result', tool_use_id: u.id, content: String(out).slice(0, 20000), ...(isError ? { is_error: true } : {}) });
       }
+      transcript(resp, uses, results, after);
       messages.push({ role: 'user', content: results });
     }
   } catch (e) {
@@ -127,6 +168,6 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   }
   store.finishRun(runId, { status, usd: totals.usd, tokensIn: totals.tokensIn, tokensOut: totals.tokensOut, turns: totals.turns, endReason, error, tools: totals.tools });
   bus.emit('run.end', { jobId: job ? job.id : null, agentKey, data: { runId, status, endReason, usd: Math.round(totals.usd * 1e6) / 1e6, turns: totals.turns, tools: totals.tools.length } });
-  log.info('run end', { runId, agent: agentKey, status, endReason, usd: totals.usd, turns: totals.turns, images: box.counters.images, web: box.counters.web });
-  return { runId, status, endReason, error, verdict, text: lastText, ...totals, counters: box.counters, promptSha256 };
+  log.info('run end', { runId, agent: agentKey, status, endReason, usd: totals.usd, turns: totals.turns, nudges, images: box.counters.images, web: box.counters.web });
+  return { runId, status, endReason, error, verdict, text: lastText, ...totals, nudges, shortfall, missing, counters: box.counters, promptSha256 };
 }

@@ -19,11 +19,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadEnv } from '../src/lib/legacy-readers/common.mjs';
 import { createEngine } from '../src/engine/engine.mjs';
-import { effectiveAgent } from '../src/engine/runtime.mjs';
+import { effectiveAgent, MAX_NUDGES } from '../src/engine/runtime.mjs';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 import { dublinDay } from '../src/engine/time.mjs';
-import { readBlocklist, scoutingBriefProblems, SCOUT_DIR } from '../src/engine/lib/scouting.mjs';
+import { readBlocklist, scoutingBriefProblems, scoutRunExitCode, SCOUT_DIR } from '../src/engine/lib/scouting.mjs';
 import { screenText } from '../src/engine/lib/originality.mjs';
 
 const LINE = 'genre-scout', RUN_CAP_USD = 0.5;
@@ -56,7 +56,7 @@ try {
   const sup = await providers.text.webSearchSupported(W.model);
   if (!sup.supported) throw new Error('the Models API does not report web search support for ' + W.model + (sup.reported ? ' (supported: false)' : ' (field missing)') + ': no model call made');
   const pre = 'scout-live: line=' + LINE + ' agents=' + agents.map((a) => a.key + ':' + a.model + '/effort ' + a.effort).join(',') + ' web_relay=' + W.model + '/effort ' + (W.effort || 'default') + ' (' + W.tools.web_search + ', ' + W.tools.web_fetch + ', max_uses=' + W.maxUsesPerRequest + ', blocked_domains=' + W.blockedDomains.length + ' on both)' +
-    ' web_call_cap=' + agents.map((a) => a.key + ' ' + a.maxWebCalls).join(',') + ' run_cap_usd=' + capUsd.toFixed(2) + ' agent_run_cap_usd=' + cfg.engine.caps.perRunUsd.toFixed(2) + ' retries=' + (cfg.engine.live.retries ?? 0) + ' web_search_supported=yes';
+    ' web_call_cap=' + agents.map((a) => a.key + ' ' + a.maxWebCalls).join(',') + ' run_cap_usd=' + capUsd.toFixed(2) + ' agent_run_cap_usd=' + cfg.engine.caps.perRunUsd.toFixed(2) + ' retries=' + (cfg.engine.live.retries ?? 0) + ' max_nudges=' + MAX_NUDGES + ' web_search_supported=yes';
   log.info('scout-live: one run', { line: LINE, agents, webRelay: W.model, maxUses: W.maxUsesPerRequest, runCapUsd: capUsd, retries: cfg.engine.live.retries });
   out(pre);
 
@@ -90,8 +90,9 @@ try {
   const added = readBlocklist(rdir).terms.filter((t) => !before.has(t.kind + '|' + t.term)).map((t) => ({ term: t.term, kind: t.kind }));
   const today = dublinDay(Date.now());
   out(JSON.stringify({
-    job: { id: job.id, state: job.state, reason: job.reason, day, minutes: r6((Date.now() - t0) / 60000) },
+    job: { id: job.id, state: job.state, reason: job.reason, day, minutes: r6((Date.now() - t0) / 60000), shortfalls: job.data.shortfalls || [] },
     steps: (job.data.scouting || {}).drafts || [],
+    nudges: (() => { const tf = path.join(J.dataRoot, 'jobs', job.id, 'transcript.jsonl'); if (!fs.existsSync(tf)) return []; const ls = fs.readFileSync(tf, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); return ls.filter((l) => l.nudge).map((n) => ({ agent: n.agent, nudge: n.nudge, toolChoice: n.tool_choice && n.tool_choice.type, after: ls.filter((l) => l.afterNudge === n.nudge && l.agent === n.agent).map((l) => ({ stop: l.stop_reason, tools: l.toolCalls.map((c) => c.name + (c.input && c.input.path ? ' ' + c.input.path : '')) })) })); })(),
     briefs: { verified, rejected, blocked },
     web: { requests: rows.filter((r) => r.kind === 'web').length, searches, fetches, byAgent: Object.fromEntries(agents.map((a) => [a.key, { rows: rows.filter((r) => r.kind === 'web' && r.agentKey === a.key).length, cap: a.maxWebCalls }])) },
     cost: { totalUsd: r6(rows.reduce((s, r) => s + r.usd, 0)), byModel, searchFeesUsd: searchFees, capUsd, estimatedRows: rows.filter((r) => r.estimated).length },
@@ -100,6 +101,8 @@ try {
     blocklistAdded: { file: 'research/scouting/blocklist.json (internal)', names: added },
     customerFacingCheck: { files: facing.length, clean: facing.every((f) => !f.scoutedNames.length && !f.scoutingScreen && !f.originality.length), detail: facing }
   }, null, 1));
+  // E6 b1: anything but research-done (incomplete, blocked, stopped) exits non-zero; the transcript is internal (data/ only)
+  if (scoutRunExitCode(job) !== 0) { console.error(log.redact('scout-live: the job ended ' + job.state + ': ' + (job.reason || '') + ' (transcript: data/jobs/' + job.id + '/transcript.jsonl)')); process.exitCode = scoutRunExitCode(job); }
 } catch (e) {
   console.error(log.redact('scout-live failed (no rerun): ' + (e.message || e) + (e.status ? ' [status ' + e.status + ']' : '') + (e.requestId ? ' [request ' + e.requestId + ']' : '')));
   process.exitCode = 1;

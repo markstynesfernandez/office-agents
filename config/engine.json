@@ -3,8 +3,8 @@
   "timezone": "Europe/Dublin",
   "provider": "mock",
   "tiers": {
-    "cheap": { "model": "claude-haiku-5-5", "provider": "anthropic" },
-    "strong": { "model": "claude-sonnet-5-5", "provider": "anthropic" }
+    "cheap": { "model": "claude-haiku-5-5", "provider": "anthropic", "forcedToolChoice": true },
+    "strong": { "model": "claude-sonnet-5-5", "provider": "anthropic", "forcedToolChoice": false }
   },
   "effortLevels": ["low", "medium", "high"],
   "image": {

@@ -85,10 +85,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (event) bus.emit(event, { jobId: id, agentKey: data.agentKey || null, data: { state: j.state, step: j.step, reason: j.reason, ...data } });
     return j;
   }
-  function block(job, reason, extra = {}) {
-    log.warn('job blocked', { jobId: job.id, step: job.step, reason });
-    const j = setJob(job.id, { state: 'blocked', reason, ended_at: Date.now() }, 'job.blocked', extra);
-    if (job.kind !== 'research') trackerRow(j, { status: 'blocked', status_reason: reason });
+  function block(job, reason, { state = 'blocked', ...extra } = {}) {
+    log.warn('job ' + state, { jobId: job.id, step: job.step, reason });
+    const j = setJob(job.id, { state, reason, ended_at: Date.now() }, 'job.blocked', { ...extra, ...(state !== 'blocked' ? { incomplete: true } : {}) });
+    if (job.kind !== 'research') trackerRow(j, { status: state, status_reason: reason });
     return j;
   }
 
@@ -168,12 +168,14 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       let r;
       try { r = def.kind === 'agent' ? await agentStep(store.getJob(id), step, def, pass, stopSignal) : await mechStep(store.getJob(id), step, def, stopSignal); }
       catch (e) { r = { blocked: 'engine error in ' + step + ': ' + e.message }; log.error('step crashed', { id, step, error: String(e && e.stack || e) }); }
-      store.closeStage(sid, r.blocked ? 'blocked' : r.stopped ? 'stopped' : 'done', r.blocked || r.stopped || r.modeDone || r.note || null);
+      store.closeStage(sid, r.blocked ? 'blocked' : r.stopped ? 'stopped' : r.incomplete ? 'incomplete' : 'done', r.blocked || r.stopped || r.incomplete || r.modeDone || r.note || null);
       job = store.updateJob(id, { data: { costUsd: ledger.spent.job(id) } });
       await callHook('onStep', { job, step, def, pass, phase: 'end', result: r });
       if (r.modeDone) { setJob(id, { state: 'stopped', reason: r.modeDone, ended_at: Date.now(), data: { runMode: null, runCapUsd: null, lastRunMode: { ...(store.getJob(id).data.runMode || {}), result: r.modeDone } } }, 'job.stopped'); return store.getJob(id); }
       if (r.stopped) { setJob(id, { state: 'stopped', reason: r.stopped, ended_at: Date.now() }, 'job.stopped'); return store.getJob(id); }
       if (r.blocked) { block(store.getJob(id), r.blocked); return store.getJob(id); }
+      // missing outputs after the nudges: routed like a failure (no later step runs), state incomplete, never done
+      if (r.incomplete) { block(store.getJob(id), r.incomplete, { state: 'incomplete' }); return store.getJob(id); }
       if (r.end === 'rejected') { setJob(id, { state: 'rejected', reason: r.reason, ended_at: Date.now() }, 'job.rejected'); return store.getJob(id); }
       if (r.end === 'approval') { setJob(id, { state: 'approval', reason: 'packaged, waiting for the owner\'s decision', ended_at: Date.now() }, 'job.queued-for-approval'); return store.getJob(id); }
       if (r.end === 'research-done') { setJob(id, { state: 'research-done', reason: r.reason, ended_at: Date.now() }, 'job.stage', { step: 'done' }); return store.getJob(id); }
@@ -197,9 +199,30 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (step === 'lister' || step === 'qa-listing') return 1 + (l.listing || 0);
     return 1;
   }
-  const stopFrom = (run, who) => (run.status === 'stopped' ? { stopped: who + ' run stopped: ' + run.endReason } : run.status === 'cap' ? { blocked: run.endReason } : run.status === 'refused' ? { blocked: who + ' run refused: ' + run.endReason } : run.status === 'failed' ? { blocked: who + ' run failed: ' + run.error } : run.status === 'max-turns' ? { blocked: who + ' run hit ' + run.endReason } : null);
+  const stopFrom = (run, who) => (run.status === 'stopped' ? { stopped: who + ' run stopped: ' + run.endReason } : run.status === 'cap' ? { blocked: run.endReason } : run.status === 'refused' ? { blocked: who + ' run refused: ' + run.endReason } : run.status === 'failed' ? { blocked: who + ' run failed: ' + run.error } : run.status === 'max-turns' ? { blocked: who + ' run hit ' + run.endReason } : run.status === 'incomplete' ? { incomplete: run.endReason } : null);
 
   function handoff(job, extra = []) { const n = latestSet(dataRoot, job.id); return ['```', 'LISTING_ID: ' + job.id, 'BRIEF: work/' + job.id + '/brief.md', ...(n ? ['DESIGN: work/' + job.id + '/set-v' + n + '/deliverables.json'] : []), ...extra, '```'].join('\n'); }
+
+  // ---- the output contract (E6 b1): a line step's `outputs` says what its agent must leave behind before the step ends
+  //   drafts:   `count` new genre drafts in this line's drafts folder for the day (partial allowed: >= 1 continues the line)
+  //   verdicts: a verdict (status verified or rejected) on every draft that was in that folder when the step started
+  // check() returns { want, have, missing: [what is missing, in words the agent can act on] }.
+  function outputContract(job, def) {
+    const o = def.outputs; if (!o || job.kind !== 'research') return null;
+    const day = job.data.day || dublinDay(), dd = draftsDirOf(lineOf(job.line)), dir = path.join(dataRoot, 'research', dd, day), rel = dd + '/' + day + '/';
+    const mds = () => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : []);
+    if (o.kind === 'drafts') {
+      const before = new Set(mds()), want = o.count;
+      return { tool: o.tool, partialOk: o.partialOk !== false, hint: 'Write each genre draft to ' + rel + '<id>.md in the RESEARCH BRIEF FORMAT, status: candidate, one ' + o.tool + ' call per draft.',
+        check() { const have = mds().filter((f) => !before.has(f)).length; return { want, have, missing: have >= want ? [] : [(want - have) + ' of ' + want + ' genre drafts (' + rel + '<id>.md)'] }; } };
+    }
+    if (o.kind === 'verdicts') {
+      const received = mds();
+      return { tool: o.tool, partialOk: false, hint: 'For each brief: fill in the Evidence check section, set status: verified or status: rejected, and write the whole brief back in one ' + o.tool + ' call.',
+        check() { const open = received.filter((f) => { try { return !['verified', 'rejected'].includes(briefField(fs.readFileSync(path.join(dir, f), 'utf8'), 'status')); } catch (_) { return false; } }); return { want: received.length, have: received.length - open.length, missing: open.map((f) => 'a verdict for ' + rel + f) }; } };
+    }
+    throw new Error('unknown outputs kind ' + o.kind + ' on ' + def.agent);
+  }
 
   async function agentStep(job, step, def, pass, stopSignal = null) {
     const L = lineOf(job.line), research = job.kind === 'research', folder = research ? path.join(dataRoot, 'research') : jobDir(job.id), l = job.loops || {}, max = research ? 0 : (L.steps['qa-design'].onRevise || {}).max ?? 2;
@@ -226,9 +249,15 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else if (step === 'qa-listing') input = 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + handoff(job) + qaListingWordNote(job);
     else if (step === 'rejects-desk') { input = '[LOOP — escalated] ' + (job.data.escalation || 'the work was not approved') + '\nRecord why in REJECTED.md.\n\n' + handoff(job); loopNote = 'This job is being stopped: write REJECTED.md only.'; }
     else input = handoff(job);
-    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, hooks: { onRunStart: hooks.onRunStart } });
+    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart } });
     const stop = stopFrom(run, def.agent.toUpperCase());
     if (stop) return stop;
+    if (run.shortfall) {
+      const sf = { step, agent: def.agent, ...run.shortfall };
+      store.updateJob(job.id, { data: { shortfalls: [...(store.getJob(job.id).data.shortfalls || []), sf] } });
+      log.warn('agent produced fewer outputs than required; the line continues with what it has', { jobId: job.id, ...sf });
+      return { next: def.next, note: def.agent.toUpperCase() + ' shortfall: ' + run.shortfall.have + ' of ' + run.shortfall.want + ' outputs' };
+    }
     if (def.verdict) return routeVerdict(store.getJob(job.id), step, def, pass, run);
     if (step === 'rejects-desk') {
       const rf = path.join(folder, 'REJECTED.md');
