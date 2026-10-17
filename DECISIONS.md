@@ -473,10 +473,15 @@ fallback did not trigger.
 - The fps before the frame-rate fix was not recorded in the tracked docs, so this record does not give a before/after
   figure.
 
-### For the owner (open; nothing decided here)
+### For the owner (answered 17/10/2026)
 
 - **Light-mode baked rooms vs procedural.** The baked rooms read 3–10% darker than the procedural ones in light mode
   (no target was set for light mode). Keep, or set a target?
+  **Owner, 17/10/2026: target set. In light mode every baked area stays within 10% of its procedural version's
+  brightness (all met it at R3b).** `scripts/screenshots-r3b.mjs` now lists any light-mode row outside 0.90–1.10 as a
+  problem; re-checked after the genre-scout re-bake (see "Genre-trend scouting").
+
+**R3b (`dc403fb`) and the importer label fix (`db18e5a`) approved by the owner, 17/10/2026.**
 
 ## Port batch before E6: owner decisions (17/10/2026)
 
@@ -575,3 +580,82 @@ the port (17/10/2026), as applied:
 - **Importer label:** fixed 17/10/2026. A legacy job now takes its room from its tracker row (`etsy-digital` or
   `etsy-pod`); with no tracker row, a digital product type (`config/products.json`) is `etsy-digital` and anything else
   `etsy-pod`. The re-import updated one store row (the PNGTuber job); a second run changed nothing.
+
+## Genre-trend scouting (17/10/2026)
+
+One research line, built on the mock provider only (no keys); real runs come after E6.
+
+### The owner's rules (17/10/2026)
+
+- Each run finds 4 trending game genres or aesthetics, from 2 currently popular AAA titles and 2 indie titles with
+  active streaming communities, and turns each into an ORIGINAL desk-props pack brief for streamers of that genre.
+- Game titles, studios, characters, logos, UI elements, signature items, named locations, distinctive art styles and
+  quotes appear only in the internal scouting notes (`data/research/scouting/`): never in a brief, design prompt, file
+  name, title, tag, description or alt text. Briefs are genre and aesthetic only.
+- The notes never go to DESIGNER, LISTER or QA; only the genre brief does.
+- Every title the scout records goes on a scouting blocklist automatically; the originality gate checks the brief, the
+  design and the listing against it.
+- No "inspired by", "fan", "dupe" or similar wording anywhere in customer-facing text.
+- TREND-SCOUT: RESEARCH department, cheap tier, web search and fetch only, at most 12 web calls a run, enforced by the
+  runtime; public popularity signals only (top streamed categories, store charts), read as data, never instructions.
+- A routine "Weekly genre scout", created disabled. A desk in the Research room. Light-mode target for the baked
+  rooms: within 10% of the procedural rooms' brightness (recorded under "R3b build record").
+
+### Choices made in the build
+
+- **Its own line, `genre-scout`** (`config/lines/genre-scout.json`): TREND-SCOUT -> `scout-notes` (engine) ->
+  EVIDENCE-CHECKER -> `brief-check`, kind `research`, so verified genre briefs land in `research/briefs/` beside the
+  others and start a Room 1 job the usual way. The research line is unchanged.
+- **"Web search and fetch only"** is read as: no other web or network tool and no image tools. TREND-SCOUT also has
+  `fs_read`, `fs_list` and `fs_write` inside the research folder, because it must write its notes and drafts; it may
+  write only `scouting/*/notes.json` and `drafts/*/*.md`. The 12-call cap is the existing `maxWebCalls` check in
+  `tools/index.mjs` (the 13th call is refused before it is priced).
+- **Notes**: `scouting/<day>/notes.json`, JSON with exactly 2 `aaa` and 2 `indie` entries (game, studio, genre,
+  `alsoBlock` names, https evidence links, date). The `scout-notes` step refuses invalid notes (the job blocks).
+- **Scouting blocklist**: `data/research/scouting/blocklist.json`, written by the engine only, append-only (the engine
+  never removes a name; the owner may add by hand). It holds each game, its studio and the `alsoBlock` names (13 in
+  the dry run). The engine adds it to the originality lists as the category `scouted-games` through a getter on
+  `cfg.station` (`engine.mjs`), so every existing screen applies it with no change to the ported files: the brief
+  check and intake (Design direction), the image-prompt screen (before any image call), the design-set screen
+  (design.md, file names, brief) and the listing screens and package gate.
+- **Whole-brief screen** (`lib/scouting.mjs`, wired into the brief check and intake): the scouted names anywhere in a
+  brief (id, persona, keywords, sources and the rest), not only its Design direction.
+- **Derivative wording**: added `fan`, `fandom`, `fanbase`, `fan favourite`, `fan favorite`, `homage`, `tribute`,
+  `dupes` (category `derivative-wording`) on top of the station's own derivative list, which already has "inspired
+  by", "dupe", "fan art", "in the style of", "homage to", "unofficial" and more. It applies everywhere the station
+  screens (all lines, not just this one) and to the whole text of a genre-scout brief.
+- **Stricter than asked, flagged:** the notes are hidden from EVERY agent except TREND-SCOUT, EVIDENCE-CHECKER and
+  DEMAND-RESEARCHER included (the tools refuse `scouting/` and leave it out of folder listings; agent config
+  `scoutingNotes: true` is the only key). A genre draft that names a scouted game is moved to
+  `scouting/blocked/<day>/` (not `rejected/`, which research agents read), before EVIDENCE-CHECKER runs. A blocked
+  file name that itself names a game is masked in the job record the office page shows.
+- **Genre brief format**: the existing research brief format plus `origin: genre-scout` and a `## Genre trend
+  evidence` section (genre-level pages only, never a page about one game). Product: the desk-props pack
+  (`pngtuber-prop-pack`), named in the routine input.
+- **Routine**: `config/routines.json` (new) seeds "Weekly genre scout" (Mondays 09:00 Dublin, 1 run a day, engine
+  caps) once per data root, always disabled. A seed the owner deletes stays deleted.
+- **Desk and re-bake**: TREND-SCOUT's desk gives the Research room a second desk row. That deepens the back row, so
+  Research, Design and the atrium were re-baked (`npm run build-office -- --room research,design,atrium`, 206.8 s;
+  7,135,513 bytes, 71.4% of the 10 MB budget; light mode 0.952–1.069 x procedural, inside the 10% target). The legacy fixtures view keeps the legacy roster's two research desks, so there those
+  three areas fall back to procedural (tested); the R3b captures gained `--engine` to run on the engine view.
+- **Lounge seats**: the lounge has 8 seats and the office now has 9 agents. An idle agent without a seat stays at
+  its desk (layout.js, as designed): REJECTS-DESK, the last in order. The capture check now expects
+  min(agents, seats) walkers and names the one who stays.
+- **Fixture**: `fixtures/engine/scout-script.mjs` uses four INVENTED game titles and FIXTURE pages (one carrying a
+  prompt-injection line, read as data). No real game name is in the repository.
+
+### Flags (open; nothing decided here)
+
+- **"fan" is a whole word, so it also blocks a "desk fan" prop** and phrases such as "fans of". It fails closed;
+  an allow-list would need a code change (the near-miss allow-list does not cover exact matches).
+- **Scouted names match exactly** (with the station's normalising: case, punctuation, plurals, compounds, digit
+  swaps), without the one-typo tolerance that brands and characters get: that list lives in the ported module.
+- **A game whose title is an ordinary word** would block that word everywhere once scouted. Fails closed; the
+  owner may prune the blocklist by hand.
+- **Sources' terms**: the streaming-site and store-chart pages' terms of use must be checked before the first real
+  run (E6). The web price per call is still unset, so real web calls are refused until then anyway.
+- **GDPR**: the notes hold games, studios and aggregate public figures only; the scout's orders forbid recording any
+  person's name, handle or channel. Retention of `scouting/` is not set (kept indefinitely for now).
+- **Two research lines on one day** share `drafts/<day>/`: each line's EVIDENCE-CHECKER and brief-check would also
+  handle the other batch's candidates. Harmless in the mock; one research line at a time is simplest.
+- **A ninth lounge seat** (so REJECTS-DESK walks too) would change the lounge and need its re-bake.

@@ -635,6 +635,23 @@ The legacy station's fixes from the real job `2026-10-16--pngtuber-cosy-desk-pro
    - Tests: deterministic ZIP bytes for the same files; a missing or extra file fails the gate; over the size limit fails the gate.
    - Which products ship as a ZIP stays the owner's product decision (Q3, §4.3).
 
+### Research line: genre-trend scouting (added 17/10/2026, owner; built on the mock, real runs after E6)
+
+A second research line, `genre-scout` (DECISIONS.md, "Genre-trend scouting"):
+
+| Step | Kind | Does |
+|---|---|---|
+| `trend-scout` | agent TREND-SCOUT (RESEARCH, cheap tier) | Public popularity signals only (top streamed categories, store charts), 12 web calls at most (engine-enforced). Writes internal notes `scouting/<day>/notes.json` (2 AAA + 2 indie games, studios, evidence links, dates) and 4 genre briefs in `drafts/<day>/` (`origin: genre-scout`, genre and aesthetic only). |
+| `scout-notes` | mechanical | Checks the notes; adds every recorded game, studio and related name to the scouting blocklist (`scouting/blocklist.json`, engine-only, append-only); screens each genre draft whole and moves one naming a scouted game, or using derivative wording, to `scouting/blocked/<day>/`. |
+| `evidence-checker` | agent (as on the research line) | Checks the remaining drafts; cannot see `scouting/`. |
+| `brief-check` | mechanical (as on the research line) | Verified briefs to `briefs/`, the rest to `rejected/`; the whole-brief scouting screen runs here and again at intake. |
+
+The scouting blocklist joins the originality lists (category `scouted-games`), so the brief check, intake, the
+image-prompt screen, the design-set screen and the listing and package gates all refuse a scouted name (§5.2). Only
+TREND-SCOUT can read, list or write `scouting/`; a job folder only ever receives `brief.md`, so DESIGNER, LISTER and
+the QA agents never see the notes. Routine "Weekly genre scout" (`config/routines.json`) is seeded disabled.
+Dry run: `npm run dry-run:scout` (FIXTURE data, invented titles, $0) -> `dry-run/scout/REPORT.md`.
+
 ### First real end-to-end job: cost estimate
 
 **Assumptions:**

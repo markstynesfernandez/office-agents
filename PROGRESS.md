@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (R3b: baked Research, lounge and atrium, phase 2 of 2, for the owner's review; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (genre-trend scouting line, for the owner's review; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -20,13 +20,45 @@ Last updated: 17/10/2026 (R3b: baked Research, lounge and atrium, phase 2 of 2, 
 | Pre-E6 housekeeping | Done (17/10/2026). Line endings fixed; port drift measured (not ported); port-step items planned; E6 readiness checklist below. |
 | **R3 spike** Baked lighting, Design room only | Done (17/10/2026). **Owner's decision:** roll the baked look out in two phases (R3a now, phase 2 later). Was behind `?scene=baked`. 71+ fps full quality on the Intel iGPU in every measured view, walking included (headed Chromium; see below), 1.41 MiB of assets, 41 s rebuild. Screenshots in `screenshots/r3-spike/`. See below. |
 | **R3a** Baked look, phase 1 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026). Shared Blender library; the Design room fixed (readable in dark mode, mood board and pictures back, warm-white walls by day); the Office room baked; one oak floor everywhere; baked rooms are the default (`?scene=procedural` turns them off). 66+ fps full quality on the Intel iGPU in every measured view, walking included; 2.76 MB of the 10 MB office budget; full rebuild 104–127 s. Screenshots in `screenshots/r3a/`. See below. |
-| **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **for the owner's review**. The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
+| **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026), with the importer label fix (`db18e5a`). The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
+| **Genre-trend scouting** Research line | Done (17/10/2026), **for the owner's review**. TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
 | E6 First real job | Not started. Blocked: see the E6 readiness checklist below. |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
 
-### R3b: baked Research, lounge and atrium, phase 2 of 2 (17/10/2026) — for the owner's review
+### Genre-trend scouting line (17/10/2026) — for the owner's review
+
+The owner's rules, the build choices and the open flags are in DECISIONS.md, "Genre-trend scouting". Mock only, no keys.
+
+- **Line `genre-scout`:** TREND-SCOUT -> `scout-notes` (engine) -> EVIDENCE-CHECKER -> `brief-check`. TREND-SCOUT:
+  RESEARCH, cheap tier, web search and fetch (12 calls a run, the 13th refused by the engine), fs tools only for its
+  notes and drafts. Prompt `prompts/agents/trend-scout.md`.
+- **IP fence:** `src/engine/lib/scouting.mjs`. Notes at `research/scouting/<day>/notes.json` (2 AAA + 2 indie). Each
+  game, studio and related name goes on `research/scouting/blocklist.json` (engine-only, append-only), which joins the
+  originality lists as `scouted-games`, so the brief check, intake, the image-prompt screen, the design-set screen and
+  the listing and package gates refuse it. Whole-brief screen; extra derivative wording ("fan", "fandom", "homage",
+  "tribute" and more). Only TREND-SCOUT can see `scouting/`; a genre draft naming a game goes to
+  `scouting/blocked/<day>/` before EVIDENCE-CHECKER runs; job folders receive `brief.md` only.
+- **Routine:** "Weekly genre scout" (Mondays 09:00 Dublin) seeded disabled from `config/routines.json`; a deleted seed
+  stays deleted.
+- **Office:** TREND-SCOUT's desk in the Research room (a second desk row). Research, Design and the atrium re-baked
+  (206.8 s; 7,135,513 bytes, 71.4% of the 10 MB budget). The legacy fixtures view keeps two research desks, so those
+  three areas are procedural there (tested); `screenshots-r3b.mjs --engine` captures the engine view. 9 agents and 8
+  lounge seats: REJECTS-DESK stays at its desk when idle (flagged).
+- **Measured** (`screenshots/r3b-scout/`, engine view, headed Playwright Chromium on the Intel UHD iGPU), full quality:
+  overview 83.8 light / 77.1 dark; Research 74.8 / 71.8; lounge 83.1 / 77.1; atrium 64.9 / 64.8; Design (light) 78.9;
+  8 agents walking 75.5 light / 66.5 dark. One moving reading under 60 (atrium dark 57.9; 67.1 in the first run).
+  **Light-mode brightness:** every baked area 0.952–1.069 x its procedural version, inside the owner's 10% target;
+  Design vs the other rooms 1.01 (light).
+- **Dry run** (`npm run dry-run:scout`, FIXTURE data with invented titles, `dry-run/scout/REPORT.md`): 4 genre briefs
+  verified (candlelit dark fantasy, cozy farming, neon cyberpunk, survival camp); the deliberately bad brief naming a
+  scouted game blocked at `scout-notes` and refused again at intake; 13 blocklist names; 12 web calls, the 13th
+  refused; 23 ledger rows, USD 0.00, all mock.
+- **Also:** `.gitignore` `tools/` anchored to `/tools/` (it also matched `src/engine/tools/`); the R3b capture script
+  flags light-mode rows outside the 10% target.
+
+### R3b: baked Research, lounge and atrium, phase 2 of 2 (17/10/2026) — approved by the owner (17/10/2026)
 
 The owner's answers to the R3a questions and the build record are in DECISIONS.md, "R3b build record". Mock data only.
 
@@ -46,7 +78,8 @@ The owner's answers to the R3a questions and the build record are in DECISIONS.m
 - **Assets:** 6,877,262 bytes, 68.8% of the 10 MB budget (`screenshots/r3b/asset-sizes.json`). **Rebuild:** full 261.8 s;
   one unit 43.2–91.0 s.
 - **Brightness** (`screenshots/r3b/brightness.json`): dark mode, every baked area is 5–33% brighter than its procedural
-  version; light mode, the baked rooms are 3–10% darker (open question in DECISIONS.md).
+  version; light mode, the baked rooms are 3–10% darker. **Owner, 17/10/2026: light-mode target = every baked area within
+  10% of its procedural version (all met it); recorded in DECISIONS.md.**
 - **Captures:** `node scripts/screenshots-r3b.mjs --headed --channel chromium --expect-gpu intel` -> `screenshots/r3b/`
   (01–09 PNGs, `ref/` procedural references, `fps-headed.json`, `brightness.json`, `asset-sizes.json`, `build.json`).
   Demo video re-recorded (`npm run demo:record`).
@@ -478,7 +511,9 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `cb4bdcc`: Port batch milestone (the PNGTuber fixes at the 5th moment, tests green)
 - `edd26a1`: Port PNGTuber batch before E6 (owner CLI, US spelling, docs); approved by the owner 17/10/2026
 - `dc403fb`: R3b: baked Research, lounge and atrium (the frame-rate fix, capture robustness, docs)
-- The next commit: the importer's room label for digital legacy jobs (fix, re-import, test)
+- `db18e5a`: Importer: digital legacy jobs labelled with their digital room; approved by the owner 17/10/2026 (with R3b)
+- `b75cfac`: Genre-scout milestone (TREND-SCOUT, scouting blocklist, re-bake, tests green)
+- The next commit: "Genre-trend scouting line" (docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -488,7 +523,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 - **Packaged digital products** build in the engine since the port batch (17/10/2026): the pinned Real-ESRGAN runs as the one child process; a missing or changed binary blocks the job (it never falls back silently to a file the gate would pass).
 - **Style-reference workflow:** the library and the owner's decisions are ported (17/10/2026); there is still no first-file run mode and no `reference_image` in `image_generate`, so a new style-reference job fails closed at the package gate.
-- **Routines** run `line:research` and `line:room1-digital` (E5). With the mock replies the research line ends "no drafts" (the fixture script has no researcher replies), so no test runs a research batch that verifies a brief; the demo's script does.
+- **Routines** run `line:research`, `line:genre-scout` and `line:room1-digital` (E5; genre scout 17/10/2026). "Weekly genre scout" is seeded disabled from `config/routines.json`. With the mock replies the research line ends "no drafts" (the fixture script has no researcher replies), so no test runs a research batch that verifies a brief; the demo's script does.
 - **The package folder** cannot be opened from the page (the server starts no process); the page shows its path with a copy button.
 - **Live providers** are locked (`ProviderLocked`). The Anthropic SDK is not installed and the effort mapping is not written (E6).
 - **Web search and fetch** return canned text in the mock, and the `anthropic-web` price is unset, so a live web call would be refused (E6).
@@ -499,7 +534,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **268 passed, 0 failed**, after the genre-trend scouting line (17/10/2026; new: `genre-scout` 10/10; changed: `baked-room` (the legacy fixtures view differs in the Research row only)). Before that: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -548,9 +583,9 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-0. **R3b review, then genre-trend scouting line.** The owner reviews R3b (`screenshots/r3b/`; DECISIONS.md, "R3b build
-   record", one open question); then the genre-trend scouting line.
-1. Done: R3a and the port batch before E6 are approved by the owner (17/10/2026).
+0. **Genre-trend scouting review.** The owner reviews the line (DECISIONS.md, "Genre-trend scouting", flags;
+   `dry-run/scout/REPORT.md`; `screenshots/r3b-scout/`). The routine stays disabled; real runs come after E6.
+1. Done: R3a, R3b, the importer label fix and the port batch before E6 are approved by the owner (17/10/2026).
 2. **E6** starts when every open row of the E6 readiness checklist above is done: Q1 billing, Q2 caps, the opaque image model and OpenRouter terms, provider prices, the separate API keys; and, before a new style-reference job, the first-file run mode (row 13).
 
 Re-run `npm run import-legacy` at any time to pick up legacy deltas; it backs up first and changes nothing when there is nothing new.
