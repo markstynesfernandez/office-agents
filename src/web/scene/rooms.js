@@ -95,7 +95,7 @@ export function buildRooms(L, p, accents) {
   }
   // ---- props (positions and footprints from layout.js; each faces local -z, turned by its yaw)
   function bench(S, o) {
-    for (let i = 0; i < 3; i++) S.add(rbox(1.7, 0.05, 0.13, 0.02), local(o, 0, FLOOR + 0.45, -0.15 + i * 0.15), p.woodSolid);
+    for (let i = 0; i < 3; i++) S.add(box(1.7, 0.05, 0.13), local(o, 0, FLOOR + 0.45, -0.15 + i * 0.15), p.woodSolid);
     for (const sx of [-0.68, 0.68]) { S.add(box(0.05, 0.42, 0.4), local(o, sx, FLOOR + 0.22, 0), p.metal); }
     S.add(box(1.36, 0.035, 0.035), local(o, 0, FLOOR + 0.12, 0), p.metal);
   }

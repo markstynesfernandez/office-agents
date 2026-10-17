@@ -1,10 +1,13 @@
 // ui/board.js — jobs by stage, using the line's stage names (the column subtitle names the agent that owns the stage), plus the
 // rejected and blocked lanes. Active jobs show progress; lane jobs show a status pill and the status reason.
+// R2: the Rejected lane is collapsed by default to its count and the 3 most recent jobs, with "show all".
 import { esc, money, duration, when, statusPill, synthTag, legacyTag } from './format.js';
 import { PALETTE } from '../config/palette.js';
 
 export function createBoard({ root, onOpenJob }) {
   const body = root.querySelector('#board-body');
+  const REJECTED_SHOWN = 3;
+  let showAllRejected = false, lastSnap = null;
   function card(j, agents, now) {
     const a = agents.find((x) => x.id === j.agentId);
     const head = (j.progress != null ? '<span class="pct">' + j.progress + '%</span>' : statusPill(j)) + legacyTag(j);
@@ -15,15 +18,23 @@ export function createBoard({ root, onOpenJob }) {
       + '<div class="when">' + esc(when(j.stageChangedAt, now)) + '</div></div>';
   }
   function render(snap) {
+    lastSnap = snap;
     const now = snap.generatedAt || Date.now();
     const byId = Object.fromEntries(snap.jobs.map((j) => [j.id, j]));
     const cols = snap.board.columns.map((c) => '<div class="col"><h3>' + esc(c.label) + '<b>' + c.jobIds.length + '</b></h3><div class="sub">' + esc(c.dock ? c.agentName + ' · ' + c.dock : c.agentName || '') + '</div>' + (c.jobIds.map((id) => card(byId[id], snap.agents, now)).join('') || '<div class="empty">empty</div>') + '</div>').join('');
-    const lane = (key, label, sub, ids) => '<div class="col lane ' + key + '"><h3>' + label + '<b>' + ids.length + '</b></h3><div class="sub">' + sub + '</div><div class="lane-cards">' + (ids.map((id) => card(byId[id], snap.agents, now)).join('') || '<div class="empty">none</div>') + '</div></div>';
+    const recent = (id) => { const j = byId[id] || {}, v = j.stageChangedAt || j.updatedAt || j.startedAt || 0; return typeof v === 'number' ? v : Date.parse(v) || 0; };
+    const lane = (key, label, sub, ids, limit = null) => {
+      const sorted = limit ? ids.slice().sort((a, b) => recent(b) - recent(a)) : ids;
+      const shown = limit && !showAllRejected ? sorted.slice(0, limit) : sorted;
+      const more = limit && ids.length > limit ? '<button class="ctl chip lane-more" data-more="' + key + '">' + (showAllRejected ? 'show the 3 most recent' : 'show all ' + ids.length) + '</button>' : '';
+      return '<div class="col lane ' + key + '"><h3>' + label + '<b>' + ids.length + '</b>' + more + '</h3><div class="sub">' + sub + (limit && !showAllRejected && ids.length > limit ? ' · the ' + limit + ' most recent' : '') + '</div><div class="lane-cards">' + (shown.map((id) => card(byId[id], snap.agents, now)).join('') || '<div class="empty">none</div>') + '</div></div>';
+    };
     body.innerHTML = '<div class="board">' + cols + '</div><div class="lanes">'
       + lane('blocked', 'blocked', 'blocked or stopped, with the reason · incl. QA passed, gate failed', snap.board.lanes.blocked)
-      + lane('rejected', 'rejected', 'REJECTS-DESK · rejected/ · rejected_by_owner', snap.board.lanes.rejected)
+      + lane('rejected', 'rejected', 'REJECTS-DESK · rejected/ · rejected_by_owner', snap.board.lanes.rejected, REJECTED_SHOWN)
       + (snap.board.lanes.parked ? lane('parked', 'parked', 'kept, not publishing (owner Q11): not in the approval queue', snap.board.lanes.parked) : '') + '</div>';
     body.querySelectorAll('.card').forEach((el) => el.addEventListener('click', () => onOpenJob(el.dataset.id)));
+    body.querySelectorAll('[data-more]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); showAllRejected = !showAllRejected; render(lastSnap); }));
   }
   return { render, show: () => root.classList.remove('hidden'), hide: () => root.classList.add('hidden'), isOpen: () => !root.classList.contains('hidden') };
 }

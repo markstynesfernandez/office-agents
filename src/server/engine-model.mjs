@@ -8,6 +8,7 @@ import { nextRuns } from '../engine/scheduler.mjs';
 import { cronWords } from './model.mjs';
 import { latestSet } from '../engine/lib/digital-prep.mjs';
 import { loadLegacy, legacyJobView, legacyMemory } from './legacy-view.mjs';
+import { roleLabel } from '../web/ui/role.js';
 
 const PROGRESS = { brief: 0.08, design: 0.25, 'qa-design': 0.42, listing: 0.6, 'qa-listing': 0.75, 'approval-queue': 0.9, done: 1 };
 const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
@@ -114,7 +115,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     const myJobs = jobs.filter((j) => j.hops.some((h) => h.agentId === a.key));
     const imgJob = a.key === 'designer' ? myJobs.find((j) => j.images.length) : null;
     return {
-      id: a.key, name: a.name, model: providers.mode === 'mock' ? 'mock (' + t.model + ')' : t.model, provider: providers.mode === 'mock' ? 'mock' : t.provider, role: a.role || '', modelSource: 'config/agents/' + a.key + '.json + config/engine.json tiers',
+      id: a.key, name: a.name, model: providers.mode === 'mock' ? 'mock (' + t.model + ')' : t.model, provider: providers.mode === 'mock' ? 'mock' : t.provider, role: roleLabel(a.role, { dept: deptOf[a.key] ? deptOf[a.key].name : null, name: a.name }), modelSource: 'config/agents/' + a.key + '.json + config/engine.json tiers',
       color: a.color || null, gear: a.tools, tier, effort, enabled, warnings: [], dept: deptOf[a.key] ? deptOf[a.key].key : null, deptName: deptOf[a.key] ? deptOf[a.key].name : null, desk, status, statusText,
       since: live ? live.started_at : last ? (last.ended_at || last.started_at) : null, services: live ? [providers.mode === 'mock' ? 'mock' : t.provider] : [], synthetic: false, syntheticWhat: null,
       currentJob: liveJob ? { id: liveJob.id, stage: liveJob.stage, stageLabel: liveJob.stageLabel, status: liveJob.status, pass: live.pass } : null,
@@ -133,7 +134,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     d.counts.next = ownJobs.filter((j) => (j.status === 'backlog' || j.status === 'waiting') && j.dept === d.key).length;
     d.counts.done = ownJobs.filter((j) => (j.status === 'done' || j.lane) && j.dept === d.key).length;
     const lineJobs = jobs.filter((j) => j.kind !== 'research' && j.kind !== 'legacy');   // engine work only; legacy history is not counted here
-    if (d.key === 'research') d.metrics = [{ label: 'research jobs', value: jobs.filter((j) => j.kind === 'research').length, source: 'engine store' }, { label: 'verified briefs', value: fs.existsSync(path.join(J.dataRoot, 'research', 'briefs')) ? fs.readdirSync(path.join(J.dataRoot, 'research', 'briefs')).length : 0, source: 'data/research/briefs' }];
+    if (d.key === 'research') d.metrics = [{ label: 'research jobs', value: jobs.filter((j) => j.kind === 'research').length, source: 'engine store' }, { label: 'verified', value: fs.existsSync(path.join(J.dataRoot, 'research', 'briefs')) ? fs.readdirSync(path.join(J.dataRoot, 'research', 'briefs')).length : 0, source: 'data/research/briefs' }];
     else if (d.key === 'design') { const all = lineJobs.flatMap((j) => j.qaDesign || []); d.metrics = [{ label: 'sets made', value: lineJobs.reduce((s, j) => s + new Set(j.images.map((i) => i.n)).size, 0), source: 'jobs/*/set-vN' }, { label: 'QA pass rate', value: all.length ? Math.round(100 * all.filter((p) => p.verdict === 'approved').length / all.length) + '%' : 'n/a', source: 'jobs/*/qa/design-passN.json' }]; }
     else d.metrics = [{ label: 'listings drafted', value: lineJobs.filter((j) => j.listing).length, source: 'jobs/*/outbox/listing.json' }, { label: 'approval queue', value: jobs.filter((j) => j.state === 'approval').length, source: 'approvals' }];
   }

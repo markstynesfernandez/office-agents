@@ -1,10 +1,12 @@
 // ui/taskpanel.js — right-hand task panel: department dropdown + task input (preview only until E5, nothing is sent),
-// status chips whose counts add up to All, scope toggle, and the task list. Active jobs (in progress / waiting) show a
+// an "Active" chip (the default since R2: in progress + waiting for my OK + backlog + blocked), status chips whose
+// counts add up to All, scope toggle, and the task list. Active jobs (in progress / waiting) show a
 // progress %; blocked, rejected, done and backlog jobs show a status pill, and blocked/rejected show the status reason.
 import { esc, duration, jobStatusLabel, statusPill, synthTag } from './format.js';
 
-// every job has exactly one of these statuses, so the chip counts add up to All
-const FILTERS = [['all', 'All'], ['in_progress', 'In progress'], ['waiting', 'Waiting for my OK'], ['backlog', 'Backlog'], ['done', 'Done'], ['blocked', 'Blocked'], ['rejected', 'Rejected'], ['parked', 'Parked']];
+// every job has exactly one of these statuses, so the status chip counts add up to All; Active groups the open ones
+const ACTIVE = ['in_progress', 'waiting', 'backlog', 'blocked'];
+const FILTERS = [['active', 'Active'], ['all', 'All'], ['in_progress', 'In progress'], ['waiting', 'Waiting for my OK'], ['backlog', 'Backlog'], ['done', 'Done'], ['blocked', 'Blocked'], ['rejected', 'Rejected'], ['parked', 'Parked']];
 
 // agent · department · stage, leaving out what is unknown (lane jobs show their stage as the pill instead)
 const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(Boolean).join(' · ') || j.id;
@@ -12,7 +14,7 @@ const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(B
 export function createTaskPanel({ root, onOpenJob }) {
   const sel = root.querySelector('#task-dept'), input = root.querySelector('#task-input'), submit = root.querySelector('#task-submit');
   const filtersEl = root.querySelector('#task-filters'), list = root.querySelector('#task-list');
-  const state = { filter: 'all', scope: 'office', dept: null, snap: null };
+  const state = { filter: 'active', scope: 'office', dept: null, snap: null };
   submit.addEventListener('click', (e) => { e.preventDefault(); });   // v1: UI only, no request is made
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) e.preventDefault(); });
   root.querySelectorAll('.scope .chip').forEach((b) => b.addEventListener('click', () => { state.scope = b.dataset.scope; root.querySelectorAll('.scope .chip').forEach((x) => x.classList.toggle('chip-on', x === b)); render(); }));
@@ -27,13 +29,14 @@ export function createTaskPanel({ root, onOpenJob }) {
   }
   function setDept(key) { if (state.snap && state.snap.departments.some((d) => d.key === key)) { sel.value = key; state.dept = key; render(); } }
   const scoped = () => { const s = state.snap; return state.scope === 'dept' && state.dept ? s.jobs.filter((j) => j.dept === state.dept) : s.jobs; };
-  function counts() { const base = scoped(); return Object.fromEntries(FILTERS.map(([k]) => [k, k === 'all' ? base.length : base.filter((j) => j.status === k).length])); }
+  const matches = (j, f) => (f === 'all' ? true : f === 'active' ? ACTIVE.includes(j.status) : j.status === f);
+  function counts() { const base = scoped(); return Object.fromEntries(FILTERS.map(([k]) => [k, base.filter((j) => matches(j, k)).length])); }
   function render() {
     if (!state.snap) return;
     const c = counts();
-    filtersEl.innerHTML = FILTERS.map(([k, l]) => '<button class="chip ' + (state.filter === k ? 'chip-on' : '') + (c[k] === 0 && k !== 'all' ? ' chip-zero' : '') + '" data-f="' + k + '">' + l + '<b>' + c[k] + '</b></button>').join('');
+    filtersEl.innerHTML = FILTERS.map(([k, l]) => '<button class="chip ' + (state.filter === k ? 'chip-on' : '') + (c[k] === 0 && k !== 'all' && k !== 'active' ? ' chip-zero' : '') + (k === 'active' ? ' chip-active' : '') + '" data-f="' + k + '">' + l + '<b>' + c[k] + '</b></button>').join('');
     filtersEl.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => { state.filter = b.dataset.f; render(); }));
-    const jobs = state.filter === 'all' ? scoped() : scoped().filter((j) => j.status === state.filter);
+    const jobs = scoped().filter((j) => matches(j, state.filter));
     list.innerHTML = jobs.length ? jobs.map((j) => {
       const active = j.progress != null;
       const left = active ? '<div class="pct">' + j.progress + '%</div>' : '<div class="pct">' + statusPill(j) + '</div>';

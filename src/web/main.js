@@ -57,11 +57,21 @@ function openBoard() { closeOverlays(); board.render(snap); board.show(); syncPa
 function openCalendar() { closeOverlays(); calendar.render(snap); calendar.show(); syncPause(); }
 function setTheme(t) { theme = t; document.body.dataset.theme = t; store.set('office-theme', t); office.setTheme(t); labelsDirty = true; }
 
-const SVC_ICON = { anthropic: 'A', openrouter: 'OR', realesrgan: 'ES', etsy: 'Et', mock: 'M' };
+// services in the top bar (R2): a small glyph and a short name, then the status dot. The glyphs are plain generic
+// shapes drawn here (a spark, a route, an upscale arrow, a shop bag, a dashed ring), not anyone's logo.
+const SVC_NAME = { anthropic: 'Anthropic', openrouter: 'OpenRouter', realesrgan: 'ESRGAN', etsy: 'Etsy', mock: 'Mock' };
+const SVC_GLYPH = {
+  anthropic: '<path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8"/>',
+  openrouter: '<path d="M2 4h7.5a2.5 2.5 0 0 1 0 5h-3a2.5 2.5 0 0 0 0 5H14"/><path d="M11.8 11.6L14 14l-2.2 2.4"/>',
+  realesrgan: '<rect x="2" y="8" width="6" height="6" rx="1"/><path d="M7 9l6-6M9 3h4v4"/>',
+  etsy: '<path d="M3 5.5h10l-1 8.5H4z"/><path d="M5.8 5.5a2.2 2.2 0 0 1 4.4 0"/>',
+  mock: '<circle cx="8" cy="8" r="5.5" stroke-dasharray="2.2 2"/>'
+};
+const svcGlyph = (id) => '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="' + (PALETTE.services[id] || '#999') + '" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + (SVC_GLYPH[id] || '<circle cx="8" cy="8" r="5"/>') + '</svg>';
 function renderTopbar(s) {
   $('#station-name').textContent = s.station.name;
-  // services: compact icon + status dot, details in the tooltip (they are also on the services rack)
-  $('#services').innerHTML = s.services.map((sv) => '<span class="svc" title="' + esc(sv.label + ' — ' + sv.status + '\n' + sv.detail + '\nsource: ' + sv.source) + '"><b style="background:' + (PALETTE.services[sv.id] || '#999') + '">' + esc(SVC_ICON[sv.id] || sv.label.slice(0, 2)) + '</b><i style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i></span>').join('');
+  // services: glyph + short name + status dot, details in the tooltip (they are also on the services rack)
+  $('#services').innerHTML = s.services.map((sv) => '<span class="svc" title="' + esc(sv.label + ' — ' + sv.status + '\n' + sv.detail + '\nsource: ' + sv.source) + '">' + svcGlyph(sv.id) + '<span class="svc-name">' + esc(SVC_NAME[sv.id] || sv.label) + '</span><i style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i></span>').join('');
   // engine status badge; the runtime line (engine, Node, host) lives in its tooltip
   const badge = $('#source-badge');
   const eng = s.engine || { state: 'legacy', label: 'legacy view' };

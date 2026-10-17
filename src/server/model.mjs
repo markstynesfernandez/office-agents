@@ -2,6 +2,7 @@
 // Pure: no fs, no network, no clock except the `now` passed in. Every derived figure names its source so nothing is
 // invented (DECISIONS.md 5, 7, 8, 10). Phase 2 merges the allow-listed live reads into the same shape.
 import { rosterList, activeAgents, nameKey, isListingId, briefUsdRange, today } from '../lib/legacy-readers/index.mjs';
+import { roleLabel } from '../web/ui/role.js';
 
 // Owner-named board columns (DECISIONS.md 6) keyed by the StarNet dock agent that owns the stage.
 const COLUMN_KEY_OF_AGENT = { DESIGNER: 'design', QADESIGN: 'qa-design', LISTER: 'listing', QALISTING: 'qa-listing', REJECTSDESK: 'rejected' };
@@ -243,8 +244,9 @@ export function buildSnapshot(raw, { now = Date.now(), host = {} } = {}) {
     const latestImage = (cfg.gear || []).includes('studio') && designJobs.length ? { ...last(designJobs[0].images), jobId: designJobs[0].id } : null;
     const overseer = nameKey(a.name) === 'STATIONOVERSEER';
     return {
-      // model, provider and role come from agent.roster.json only; the roster's system prompt is never read into the snapshot
-      id, name: a.name, model: a.model || null, provider: a.provider || null, role: String(a.role || '').replace(/\s+/g, ' ').slice(0, 240), modelSource: 'agent.roster.json', color: sa.color || null, gear: cfg.gear || [], tier: cfg.tier || null, warnings: agentWarnings,
+      // model, provider and role come from agent.roster.json only; the roster's system prompt is never read into the snapshot.
+      // R2: a prompt-like roster role becomes a short label (department + duty), ui/role.js
+      id, name: a.name, model: a.model || null, provider: a.provider || null, role: roleLabel(a.role, { dept: dept ? dept.name : null, name: a.name }), modelSource: 'agent.roster.json', color: sa.color || null, gear: cfg.gear || [], tier: cfg.tier || null, warnings: agentWarnings,
       dept: dept ? dept.key : null, deptName: dept ? dept.name : null, desk, status, statusText, since, services, synthetic: !!synthetic, syntheticWhat: synthetic,
       currentJob: curJob ? { id: curJob.id, stage: curJob.stage, stageLabel: curJob.stageLabel, status: curJob.status, pass: liveHop ? liveHop.pass : null } : null,
       lastOutput, spendToday: { usd: r6(todayRows.reduce((s, r) => s + r.usd, 0)), runs: todayRows.length, date: todayStr, label: 'calendar day ' + dmy(dayStart) },
@@ -261,7 +263,7 @@ export function buildSnapshot(raw, { now = Date.now(), host = {} } = {}) {
   const passRate = allDesignPasses.length ? Math.round(100 * allDesignPasses.filter((v) => v === 'approved').length / allDesignPasses.length) : null;
   for (const d of departments) {
     const k = nameKey(d.name);
-    if (k === 'RESEARCH') d.metrics = [{ label: 'briefs produced', value: raw.research.drafts.length + raw.research.briefs.length + raw.research.rejected.length, source: 'research-lab/drafts + briefs + rejected' }, { label: 'evidence checks passed', value: raw.research.briefs.length, source: 'research-lab/briefs' }];
+    if (k === 'RESEARCH') d.metrics = [{ label: 'briefs produced', value: raw.research.drafts.length + raw.research.briefs.length + raw.research.rejected.length, source: 'research-lab/drafts + briefs + rejected' }, { label: 'verified', value: raw.research.briefs.length, source: 'research-lab/briefs' }];
     else if (k === 'DESIGN') d.metrics = [{ label: 'designs made', value: designsMade, source: 'work/*/design-vN.png' }, { label: 'QA pass rate', value: passRate == null ? 'n/a' : passRate + '%', source: 'work/*/qa/design-passN.json' }];
     else if (k === 'OFFICE') d.metrics = [{ label: 'listings drafted', value: Object.keys(raw.outbox).length, source: 'outbox/*/listing.json' }, { label: 'approval queue', value: Object.keys(raw.queue).length, source: 'approval-queue/' }];
     else d.metrics = [{ label: 'agents', value: d.agents.length, source: 'save' }];

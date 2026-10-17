@@ -70,14 +70,20 @@ class MSAARenderPass extends Pass {
 // cannot create AO halos; they are already in the frame from the main render pass.
 // The AO is multiplied straight onto the frame in the read buffer (no swap), which saves the full-screen copy GTAOPass's
 // default output makes first (~1 ms a frame on the iGPU).
+// R2: the AO is cached. Everything that moves or changes on its own (people, screens, glows, lines, the crystal) is left
+// out of the pre-pass, so the AO depends only on the static scene and the camera: it is computed again only when the
+// camera has moved, the canvas is resized or the static scene or theme changes (aoDirty), and every other frame (idle
+// animation, people walking) only multiplies the cached AO onto the frame.
 class HalfResGTAOPass extends GTAOPass {
-  constructor(...a) { super(...a); this.needsSwap = false; }
-  setSize(w, h) { super.setSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2))); }
+  constructor(...a) { super(...a); this.needsSwap = false; this.aoDirty = true; this.aoRuns = 0; }
+  setSize(w, h) { super.setSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2))); this.aoDirty = true; }
   render(renderer, writeBuffer, readBuffer, dt, mask) {
-    const hidden = (this.hideDuringAO ? this.hideDuringAO() : []).filter((o) => o && o.visible);
-    for (const o of hidden) o.visible = false;
-    const output = this.output; this.output = GTAOPass.OUTPUT.Off;          // AO + denoise only
-    try { super.render(renderer, writeBuffer, readBuffer, dt, mask); } finally { this.output = output; for (const o of hidden) o.visible = true; }
+    if (this.aoDirty) {
+      const hidden = (this.hideDuringAO ? this.hideDuringAO() : []).filter((o) => o && o.visible);
+      for (const o of hidden) o.visible = false;
+      const output = this.output; this.output = GTAOPass.OUTPUT.Off;          // AO + denoise only
+      try { super.render(renderer, writeBuffer, readBuffer, dt, mask); this.aoDirty = false; this.aoRuns++; } finally { this.output = output; for (const o of hidden) o.visible = true; }
+    }
     this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
     this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
     this._renderPass(renderer, this.blendMaterial, readBuffer);
@@ -154,8 +160,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // are per instance.
   const PERSON = (() => {
     const sph = (r, ws, hs, ...a) => new THREE.SphereGeometry(r, ws, hs, ...a);
-    const head = merge([new THREE.CylinderGeometry(0.052, 0.06, 0.12, 8).translate(0, 0.05, 0), sph(0.148, 12, 9).scale(0.95, 1.1, 1).translate(0, 0.24, 0), rbox(0.04, 0.055, 0.04, 0.015).translate(0, 0.22, -0.145), sph(0.03, 6, 4).scale(0.6, 1, 1).translate(-0.142, 0.235, 0), sph(0.03, 6, 4).scale(0.6, 1, 1).translate(0.142, 0.235, 0)]);
-    const cap = (k = 1) => sph(0.162 * k, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(0.97, 1.08, 1.02).rotateX(-0.28).translate(0, 0.25, 0.02);
+    const head = merge([new THREE.CylinderGeometry(0.052, 0.06, 0.12, 8).translate(0, 0.05, 0), sph(0.148, 10, 8).scale(0.95, 1.1, 1).translate(0, 0.24, 0), rbox(0.04, 0.055, 0.04, 0.015).translate(0, 0.22, -0.145), sph(0.03, 6, 4).scale(0.6, 1, 1).translate(-0.142, 0.235, 0), sph(0.03, 6, 4).scale(0.6, 1, 1).translate(0.142, 0.235, 0)]);
+    const cap = (k = 1) => sph(0.162 * k, 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(0.97, 1.08, 1.02).rotateX(-0.28).translate(0, 0.25, 0.02);
     const FRONT = Math.PI * 1.5, CUT = 0.95;   // the face (local -z) is left open in the longer styles
     const hair = [
       merge([cap()]),                                                                                             // short crop
@@ -164,15 +170,16 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       merge([cap(0.98), ...Array.from({ length: 9 }, (_, i) => new THREE.IcosahedronGeometry(0.055, 0).translate(Math.cos(i * 2.4) * 0.1, 0.36 + (i % 3) * 0.015, Math.sin(i * 2.4) * 0.1 + 0.02))])   // curls
     ];
     return {
+      // limbs are six-sided prisms and plain boxes (low-poly on purpose: about 900 triangles a person)
       pelvis: rbox(0.34, 0.17, 0.22, 0.07),
       torso: merge([rbox(0.34, 0.3, 0.21, 0.08).translate(0, 0.15, 0), rbox(0.42, 0.24, 0.24, 0.1).translate(0, 0.37, 0)]),
       head, hair,
-      upperArm: rbox(0.105, 0.31, 0.105, 0.045).translate(0, -0.14, 0),
-      forearm: rbox(0.085, 0.27, 0.085, 0.038).translate(0, -0.13, 0),
-      hand: rbox(0.075, 0.1, 0.055, 0.025).translate(0, -0.05, 0),
-      thigh: rbox(0.15, 0.44, 0.16, 0.06).translate(0, -0.2, 0),
-      shin: rbox(0.12, 0.43, 0.12, 0.05).translate(0, -0.21, 0),
-      shoe: rbox(0.12, 0.08, 0.25, 0.035).translate(0, -0.04, -0.06)
+      upperArm: new THREE.CylinderGeometry(0.056, 0.05, 0.31, 6).translate(0, -0.14, 0),
+      forearm: new THREE.CylinderGeometry(0.046, 0.04, 0.27, 6).translate(0, -0.13, 0),
+      hand: new THREE.BoxGeometry(0.07, 0.1, 0.05).translate(0, -0.05, 0),
+      thigh: new THREE.CylinderGeometry(0.085, 0.07, 0.44, 6).translate(0, -0.2, 0),
+      shin: new THREE.CylinderGeometry(0.065, 0.055, 0.43, 6).translate(0, -0.21, 0),
+      shoe: new THREE.BoxGeometry(0.12, 0.08, 0.25).translate(0, -0.04, -0.06)
     };
   })();
   // ---- shared geometries (merged per object, then instanced)
@@ -219,6 +226,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // ---- static rooms (rebuilt on structure or theme change)
   let glowMesh = null;
   function buildStatic() {
+    if (gtao) gtao.aoDirty = true;   // the cached AO (R2) follows the static scene
     for (const s of statics) { world.remove(s); s.geometry.dispose(); }
     statics = []; glowMesh = null;
     const R = buildRooms(L, P(), PALETTE.departments);
@@ -356,7 +364,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // on the lap), walking (legs and arms swing, the hips ride on the supporting leg).
   const SEG = { thigh: 0.42, shin: 0.42, upper: 0.3, fore: 0.26, ankle: 0.08, waist: 0.06, shoulderY: 0.45, shoulderX: 0.24, hipX: 0.09, neckY: 0.48 };
   const CHAIR_TOP = PT + 0.49;                              // the desk chair's seat
-  const PARTS = ['pelvis', 'torso', 'head', 'upperArm', 'forearm', 'hand', 'thigh', 'shin', 'shoe', 'blobs', 'hair0', 'hair1', 'hair2', 'hair3'];
+  const PEOPLE_PARTS = ['pelvis', 'torso', 'head', 'upperArm', 'forearm', 'hand', 'thigh', 'shin', 'shoe', 'hair0', 'hair1', 'hair2', 'hair3'];
+  const PARTS = [...PEOPLE_PARTS, 'blobs'];
   const dirOf = (a, d = 0) => [-Math.sin(a) * Math.sin(d), -Math.cos(a), -Math.sin(a) * Math.cos(d)];
   const add = (p, d, l) => [p[0] + d[0] * l, p[1] + d[1] * l, p[2] + d[2] * l];
   function poseWorkers(t) {
@@ -493,6 +502,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (gtao) gtao.blendIntensity = p.aoBlend;
     colourServices(); updateScreens(); paintBackdrop(); setHubGlow(0);
     for (const s of screens) if (s.textured) { const a = data && data.agents.find((x) => x.id === s.agentId); if (a) s.tex.draw(a, theme); }
+    if (gtao) gtao.aoDirty = true;
     renderer.shadowMap.needsUpdate = true; invalidate(2);
   }
   function setTheme(t) { theme = t; applyTheme(true); }
@@ -527,7 +537,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
         gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: aq.rings, samples: aq.pdSamples });
         gtao.blendIntensity = P().aoBlend;
         // left out of the AO pre-pass: overlays (they would make halos) and small details that gain nothing from AO
-        gtao.hideDuringAO = () => [glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
+        // R2: the people are left out too (small, they move, and they have blob shadows): 15 fewer draws in the pre-pass
+        gtao.hideDuringAO = () => [...PEOPLE_PARTS.map((n) => inst[n]), crystal, coreRing, glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
         composer.addPass(gtao);
       } catch (e) { console.warn('GTAO unavailable, continuing without AO', e); gtao = null; }
     }
@@ -621,7 +632,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (now < benchUntil) dirty = Math.max(dirty, 1);
     // AO is skipped while the camera moves (the frame budget goes to smooth motion) and fades back in once it settles
     if (gtao) {
-      if (cameraChanged) { if (gtao.enabled) { gtao.enabled = false; aoFadeAt = -1; } }
+      if (cameraChanged) { gtao.aoDirty = true; if (gtao.enabled) { gtao.enabled = false; aoFadeAt = -1; } }
       else if (!gtao.enabled) { gtao.enabled = true; aoFadeAt = now; dirty = Math.max(dirty, 1); }
       if (aoFadeAt >= 0) { const k = Math.min(1, (now - aoFadeAt) / 220); gtao.blendIntensity = P().aoBlend * k; if (k < 1) dirty = Math.max(dirty, 1); else aoFadeAt = -1; }
     }
@@ -638,7 +649,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     return { rendered: true, cameraChanged };
   }
   const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
-  function getStats() { return { fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res' : 'skipped while moving') : 'off', textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
+  function getStats() { return { fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
   // continuous rendering for `ms` (as if the camera were moving every frame): average fps and frame times
   // (the page's own loop keeps calling tick(); while benchUntil is in the future every tick renders)
   // move: true orbits the target a little every frame (the real camera-motion path: AO off while moving)

@@ -1,7 +1,9 @@
 // ui/sidepanel.js — the slide-in panel for a desk (agent: role, model, recent jobs, outputs, costs, latest design) or a
-// job. Model, provider and role come from the roster; the system prompt is never sent to the page.
+// job. Model, provider and role come from the roster; the system prompt is never sent to the page, and a prompt-like
+// role is shown as a short label (ui/role.js; R2).
 import { esc, money, price, when, duration, statusLabel, jobStatusLabel, statusPill, synthTag, legacyTag } from './format.js';
 import { PALETTE } from '../config/palette.js';
+import { roleLabel } from './role.js';
 
 export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => {}, getNow = () => Date.now() }) {
   const body = root.querySelector('#sidepanel-body');
@@ -26,7 +28,7 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
       + '<div class="sp-head"><div class="ell"><h2>' + esc(a.name) + synthTag(a) + '</h2><div class="sp-sub">' + esc(a.deptName || '') + (a.gear.length ? ' · gear: ' + esc(a.gear.join(', ')) : '') + '</div></div><span class="close btn-icon" title="close (Esc)">×</span></div>'
       + '<div class="sp-status">' + dot(a.status) + esc(a.statusText || statusLabel[a.status]) + '</div>'
       + synthBox(a) + warnBox(a.warnings)
-      + '<dl class="kv"><dt>role</dt><dd class="role" title="' + esc(a.role) + '">' + esc(a.role || '—') + '</dd>'
+      + '<dl class="kv"><dt>role</dt><dd class="role" title="' + esc(roleLabel(a.role, { dept: a.deptName, name: a.name })) + '">' + esc(roleLabel(a.role, { dept: a.deptName, name: a.name }) || '—') + '</dd>'
       + '<dt>model</dt><dd>' + esc(a.model || '—') + ' <span class="muted">(' + esc(a.modelSource) + ')</span></dd><dt>provider</dt><dd>' + esc(a.provider || '—') + (a.tier ? ' <span class="muted">· tier ' + esc(a.tier) + ' in station.config.json</span>' : '') + '</dd>'
       + '<dt>current job</dt><dd>' + (a.currentJob ? '<a data-job="' + esc(a.currentJob.id) + '" class="lnk">' + esc(a.currentJob.id) + '</a> · ' + esc(a.currentJob.stageLabel) + (a.currentJob.pass ? ' pass ' + a.currentJob.pass : '') : '—') + '</dd>'
       + '<dt>today</dt><dd>' + money(a.spendToday.usd) + ' · ' + a.spendToday.runs + ' runs <span class="muted">(' + esc(a.spendToday.label) + ', ledger)</span></dd>'

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { readTracker, STATUSES, COLUMNS, readLedger, isListingId, briefUsdRange, activeAgents, rosterList, nameKey, idsForNames } from '../src/lib/legacy-readers/index.mjs';
 import { readStation } from '../src/server/sources/files.mjs';
 import { buildSnapshot, cronNext, cronWords, dmy } from '../src/server/model.mjs';
+import { roleLabel } from '../src/web/ui/role.js';
 import { createOfficeServer } from '../src/server/index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,7 +58,9 @@ test('model, provider and role come from the roster; the system prompt never rea
   for (const a of s.agents) {
     const r = roster.agents.find((x) => x.agentId === a.id);
     assert.equal(a.model, r.model, a.name + ' model'); assert.equal(a.provider, r.provider, a.name + ' provider');
-    assert.equal(a.role, String(r.role || '').replace(/\s+/g, ' ').slice(0, 240)); assert.equal(a.modelSource, 'agent.roster.json');
+    // R2: a prompt-like roster role ("You are ...", or over 80 characters) is replaced by a short label
+    assert.equal(a.role, roleLabel(r.role, { dept: a.deptName, name: a.name })); assert.equal(a.modelSource, 'agent.roster.json');
+    assert.ok(!/^\s*you are/i.test(a.role) && a.role.length <= 80 && !a.role.includes(String(r.role).slice(0, 40)), a.name + ' role is a short label, not prompt text: ' + a.role);
     assert.ok(!('purpose' in a));
   }
   // even if a roster still carried its prompt, nothing of it is copied into the snapshot
