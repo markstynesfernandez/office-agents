@@ -120,7 +120,7 @@ export function createToolbox(ctx) {
       // owner D3: a genre-scout draft is validated against the one brief schema before it is written; an invalid draft is
       // not written and the agent gets the problems back (one turn, within its caps) to fix and write it again
       if (isScoutDraftPath(rel, SCOUT_DRAFTS_DIR)) {
-        const v = validateScoutBrief(content, { day: rel.split('/')[1], file: rel, agent: true });
+        const v = validateScoutBrief(content, { day: rel.split('/')[1], file: rel, agent: true, productKey: (job && job.product_key) || null });
         if (!v.ok) { log.warn('genre draft refused by the brief schema', { runId: run.runId, agent: agent.key, path: rel, problems: v.problems.length }); throw new ToolError('brief schema: ' + rel + ' was NOT written. Fix every point and write it again: ' + v.problems.join('; ') + '. ' + FORMAT_HINT); }
       }
       J.put(abs, content);

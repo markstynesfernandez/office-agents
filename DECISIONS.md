@@ -1090,3 +1090,57 @@ Tests: new `tests/scout-b2-owner.test.mjs` 4/4 (partial + report_blocked continu
 names on the review list only; retention refuses while a brief is open, keeps for 90 days after the last closes, then
 allows; the approval card's banner). `tests/scout-b2.test.mjs`: the report_blocked test now says "with 0 drafts"; the
 blocklist test counts the review-list log line.
+
+## E6 step b2: product key as data (owner-approved, 17/10/2026)
+
+After the b2 rerun stopped on "the desk-props pack key": **the product key is data, never prose.**
+1. The scout run input and the weekly genre-scout routine carry product_key explicitly (default: pngtuber-prop-pack,
+   from products.json). The engine validates it against products.json before any model call or reservation; an unknown
+   or missing key ends the job "incomplete" with reason "unknown product key: <key>" at USD 0, exit 1.
+2. TREND-SCOUT's step 1 uses the injected key and no longer describes it in words. The "desk-props pack key" wording is
+   removed. The IP-rule lines are unchanged word for word.
+3. Sweep every prompt, skill, routine, line config, fixture and mock scout script for legacy product names or keys, and
+   make every reference use the injected key or the products.json key. The customer-facing SKU DESK-PROPS-01 stays where
+   it is a SKU, not a key.
+4. Tests: unknown key; missing key defaults only via config; no product description used as a key in a prompt; the mock
+   dry run uses the same input path as live.
+
+### As built
+- `config/lines/genre-scout.json`: `requiresProductKey: true`, `productKey: "pngtuber-prop-pack"` (the default).
+  `createResearchJob({ productKey })` stores the key on the job (`product_key`, with its source: "given" or "line
+  config"); with no key given, only the line config supplies one. `runSteps` checks it against `config/products.json`
+  before the first step (scout-retention included), so an unknown or missing key ends the job incomplete, "unknown
+  product key: <key>", with no stage, no reservation, no model call and USD 0; scout-live exits 1.
+- The key reaches TREND-SCOUT as one data line in the run input, `product_key: <key>`. Every genre draft's
+  `product_type` must equal it: checked on write (schema), at the screen and at brief-check.
+- `scripts/scout-live.mjs`: optional `-- --product-key <key>`, else the line default; the pre-run line now starts
+  `product_key=<key> (<source>, in products.json | NOT in products.json)`, and the report's job record shows the key.
+- The routine: `config/routines.json` gives the seed `productKey`; `engine.runRoutine` passes a shipped routine's
+  `productKey` to the job (any other routine uses the line default). No database change.
+
+### The sweep: every reference changed
+| File | Was | Now |
+|---|---|---|
+| `prompts/agents/trend-scout.md` step 1 | "Use the product key the routine prompt names (default: the desk-props pack key); if it is not listed, reply `NO PRODUCT` and stop." | "Your run input has a line `product_key: <key>`; the station has already checked that key against `products.json`. Read `products.json` and use the entry with exactly that key: what the product is (its kind and the files it delivers) comes from that entry. Every brief's `product_type` is exactly that key." |
+| `prompts/agents/trend-scout.md` SOUL | "an ORIGINAL desk-props pack brief" | "an ORIGINAL brief, for the product your run is given" |
+| `prompts/agents/trend-scout.md` step 4 | "the desk-props demand for that genre … search for that genre's desk props, stream props or overlays" | "the demand for that product in that genre … search for the genre together with what the product entry delivers" |
+| `config/agents/trend-scout.json` role | "…into original desk-props briefs" (and "public popularity signals") | "…into original genre briefs for the product key its run is given" (and "public trend coverage") |
+| `config/routines.json` weekly scout input | "…for the desk-props pack (product key pngtuber-prop-pack)…, from public popularity signals only…" | no product in the text ("…for the product_key in this run input", sources as the b0 rule); `productKey: "pngtuber-prop-pack"` as data |
+| `fixtures/engine/scout-script.mjs` | the mock scout wrote `product_type: pngtuber-prop-pack` into every draft, whatever the run input said | it reads `product_key:` from the run input (and stops without one, as the live model would); `FIXTURE_PRODUCT_KEY` is used only by tests that build a brief directly |
+
+Kept, because they are not keys: the brief id slugs `…-desk-props` (fixture and the format skill's example id), the
+genre-brief rule's "original props" (an IP-rule line, unchanged), `productKey` fields in listing records (they hold the
+products.json key), the demo's `demo-sticker-pack-5` and the dry run's `dry-run-sticker-pack-5` (their own products files).
+No prompt, skill, line config or fixture uses DESK-PROPS-01 (it appears only as the SKU in the published job's records).
+
+**The mock dry run and the live run now share the input path.** Both call `createResearchJob` without a key, so both get
+the line config default and the same `product_key:` line. The mock passed before only because the fixture hard-coded
+the key in its drafts and never read the run input; that is why the dry run could not catch b2's failure.
+
+**Not changed (for the owner):** the routine row already seeded in `data/station.db` still has the old input text
+("…for the desk-props pack (product key pngtuber-prop-pack)…"). It is the owner's record (disabled); the engine no
+longer takes the key from it (the seed's `productKey` is passed). Edit or re-seed it from the page if wanted.
+
+Tests: new `tests/product-key.test.mjs` 5/5 (an unknown key: incomplete, USD 0, no model call, no stage, exit 1;
+missing: the config default only, and with no default incomplete the same way; the routine seed's key; no prompt or skill
+describes a product as its key; the mock takes the key from the run input, a draft with another key refused on write).

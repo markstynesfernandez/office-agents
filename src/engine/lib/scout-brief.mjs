@@ -51,13 +51,15 @@ export const FORMAT_HINT = 'Genre brief format (skills/scout-brief-format.md): f
 
 // agent: the text comes from an agent's write (the owner's own marker lines are refused then, allowed in an owner's edit)
 // -> { ok, problems: [], id, status, day, cited: [every URL in the brief, canonical] }
-export function validateScoutBrief(text, { day = null, file = null, agent = false } = {}) {
+// productKey: the job's product key (owner, 17/10/2026, "product key as data"): product_type must be exactly that key
+export function validateScoutBrief(text, { day = null, file = null, agent = false, productKey = null } = {}) {
   const t = norm(text), problems = [];
   const fm = /^---\n([\s\S]*?)\n---\n/.exec(t);
   if (!fm) problems.push('front matter (--- ... ---) missing at the top');
   const head = fm ? fm[1] : '', f = Object.fromEntries(FRONT.map((k) => [k, line(head, k)]));
   for (const k of FRONT) if (!f[k]) problems.push('front matter: ' + k + ' missing (one "' + k + ': ..." line each)');
   if (f.origin != null && f.origin !== ORIGIN) problems.push('front matter: origin must be "' + ORIGIN + '"');
+  if (productKey && f.product_type && f.product_type !== productKey) problems.push('front matter: product_type must be this run\'s product_key, ' + productKey + ' (got ' + f.product_type + ')');
   if (/\borigin:/i.test(f.audience_segment || '')) problems.push('front matter: origin must be its own line, not part of audience_segment');
   if (f.id && !isListingId(f.id)) problems.push('id must be YYYY-MM-DD--<slug> (a-z, 0-9, hyphens, at most 60 characters): ' + f.id);
   if (f.id && f.date && f.id.slice(0, 10) !== f.date) problems.push('id must start with the brief date ' + f.date);
@@ -122,9 +124,9 @@ export function citationProblems(text, returned) {
 // job's returned URLs (when given), then the same checks in the same order as brief-check.mjs checkBrief after its
 // demand-evidence step: a digital product, the originality of the Design direction, the image policy, the price floor
 // (or the owner price line). -> { ok, reasons, key, product, evidence, price }
-export function checkScoutBrief(text, { products = [], cfg, returned = null, today = new Date() } = {}) {
+export function checkScoutBrief(text, { products = [], cfg, returned = null, today = new Date(), productKey = null } = {}) {
   const t = norm(text), key = briefField(t, 'product_type'), prod = products.find((x) => x.key === key) || null;
-  const v = validateScoutBrief(t);
+  const v = validateScoutBrief(t, { productKey });
   if (!v.ok) return { ok: false, reasons: ['genre brief format: ' + v.problems.join('; ')], key, product: prod };
   const checked = line(section(t, '## Demand evidence'), 'checked'), age = (today - new Date(checked + 'T00:00:00Z')) / 86400000;
   if (age > MAX_AGE_DAYS) return { ok: false, reasons: ['demand evidence: ' + Math.floor(age) + ' days old (max ' + MAX_AGE_DAYS + ')'], key, product: prod };

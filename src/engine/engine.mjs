@@ -89,7 +89,10 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.runRoutine = async (routine) => {
       const cap = routine.per_run_cap_usd ?? null;
       const rl = /^line:(.+)$/.exec(routine.target), rline = rl && cfg.lines[rl[1]];
-      if (rline && rline.kind === 'research') { const r = engine.orchestrator.createResearchJob({ line: rline.id, input: routine.input || undefined, by: 'routine ' + routine.id }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
+      // the product key is data (owner, 17/10/2026): a shipped routine carries it in config/routines.json (productKey);
+      // any other routine uses the line's config default; the orchestrator checks it against products.json at start
+      const seed = (cfg.routines || []).find((s) => s.id === routine.id);
+      if (rline && rline.kind === 'research') { const r = engine.orchestrator.createResearchJob({ line: rline.id, input: routine.input || undefined, by: 'routine ' + routine.id, ...(seed && seed.productKey !== undefined ? { productKey: seed.productKey } : {}) }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
       if (routine.target === 'line:room1-digital') {
         // the oldest verified brief that has no job yet (owner Q13: once the owner enables a line routine)
         const b = engine.orchestrator.verifiedBriefs().find((x) => x.status === 'verified' && x.id && !x.jobId);

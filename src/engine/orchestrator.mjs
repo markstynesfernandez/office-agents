@@ -61,12 +61,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // brief-check the running job's transcript (citationsJob); at intake the job named in the station's citation line
   // (no line or no transcript: refused, fails closed)
   const transcriptOf = (id) => path.join(dataRoot, 'jobs', id, 'transcript.jsonl');
-  function checkBriefAll(t, { citationsJob = null } = {}) {
+  function checkBriefAll(t, { citationsJob = null, productKey = null } = {}) {
     let c;
     if (isScoutBrief(t)) {
       const jid = citationsJob || ([...t.matchAll(new RegExp(STATION_CITATIONS_RE.source, 'gm'))].pop() || [])[2] || null;   // the last one: brief-check appends it
       const tf = jid && isListingId(jid) ? transcriptOf(jid) : null;
-      c = tf && fs.existsSync(tf) ? checkScoutBrief(t, { products: cfg.products, cfg: cfg.station, returned: returnedUrls(tf) })
+      c = tf && fs.existsSync(tf) ? checkScoutBrief(t, { products: cfg.products, cfg: cfg.station, returned: returnedUrls(tf), productKey })
         : { ok: false, reasons: ['citations: no transcript to check them against (' + (jid ? 'job ' + jid + ' has none' : 'no station citation line from brief-check') + ')'], key: briefField(t, 'product_type') };
     } else c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
     const sp = scoutingBriefProblems(t, cfg.station), warnings = commonWordWarnings({ brief: t }, commonWords(researchDir()));
@@ -147,6 +147,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   async function runSteps(id, stopSignal) {
     let job = setJob(id, { state: 'running', started_at: store.getJob(id).started_at || Date.now(), reason: null, data: { stopRequested: null } }, 'job.stage', { step: store.getJob(id).step });
     const L = lineOf(job.line);
+    // owner, 17/10/2026: the product key is checked against products.json before any step, model call or reservation;
+    // a missing or unknown key ends the job incomplete at USD 0
+    if (job.kind === 'research' && L.requiresProductKey && !(job.product_key && (cfg.products || []).some((p) => p.key === job.product_key))) {
+      block(job, 'unknown product key: ' + (job.product_key || '(none)'), { state: 'incomplete' });
+      return store.getJob(id);
+    }
     let step = job.step === 'intake' ? L.steps.intake.next : job.step;
     while (step) {
       job = store.getJob(id);
@@ -243,7 +249,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (research) {
       // each research line has its own drafts folder (the genre scout: scout-drafts/), so two lines can run on one day
       const dd = draftsDirOf(L);
-      J.makeDir(path.join(folder, dd, job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: ' + dd + '/' + job.data.day + '/.' + (dd !== 'drafts' ? ' This line keeps its drafts in ' + dd + '/: wherever your orders say drafts/<today>/, use ' + dd + '/' + job.data.day + '/.' : '');
+      // the product key is data (owner, 17/10/2026): one exact line, validated against products.json before the job started
+      const pk = L.requiresProductKey ? '\nproduct_key: ' + job.product_key + '\n(the products.json entry for this batch; every brief\'s product_type is exactly this key)' : '';
+      J.makeDir(path.join(folder, dd, job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + pk + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: ' + dd + '/' + job.data.day + '/.' + (dd !== 'drafts' ? ' This line keeps its drafts in ' + dd + '/: wherever your orders say drafts/<today>/, use ' + dd + '/' + job.data.day + '/.' : '');
       if ((cfg.agents[def.agent] || {}).scoutingNotes) { J.makeDir(path.join(folder, SCOUT_DIR, job.data.day)); input += ' Your internal scouting notes for this run: ' + SCOUT_DIR + '/' + job.data.day + '/notes.json.'; }
       // owner D1: the checker verifies every citation against what this job's web calls really returned (the transcript)
       if (def.returnedSources) {
@@ -471,7 +479,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')) : []) {
       const t = fs.readFileSync(path.join(drafts, f), 'utf8'), st = briefField(t, 'status');
       if (st !== 'verified') { out.push(f + ': ' + (st || 'no status') + ' (not moved)'); continue; }
-      const scout = isScoutBrief(t), c = checkBriefAll(t, { citationsJob: scout ? job.id : null });
+      const scout = isScoutBrief(t), c = checkBriefAll(t, { citationsJob: scout ? job.id : null, productKey: scout ? job.product_key || null : null });
       // a verified genre brief carries the station's citation record, so intake can check the citations again later
       const kept = scout && c.ok ? t.replace(/\s*$/, '\n') + '\n## Station brief check\n' + stationCitationLine(urlsIn(t).length, job.id) + '\n- evidence level: indicative (web search results only; competitor count not measured)\n' : t;
       if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), kept); out.push(f + ': verified -> briefs/' + (scout ? ' (evidence indicative)' : '') + (c.warnings.length ? ' (common-word warning, not a fail: ' + c.warnings.join('; ') + ')' : '')); }
@@ -500,7 +508,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const t = fs.readFileSync(path.join(drafts, f), 'utf8');
       const sp = scoutingBriefProblems(t, cfg.station, { scout: true });
       if (!sp.length) {
-        const sv = validateScoutBrief(t, { day, file: f });
+        const sv = validateScoutBrief(t, { day, file: f, productKey: job.product_key || null });
         if (!sv.ok) {
           J.move(path.join(drafts, f), path.join(rdir, 'rejected', f));
           J.put(path.join(rdir, 'rejected', f), t + '\n\n## Station brief schema\n' + sv.problems.map((r) => '- ' + r).join('\n') + '\n');
@@ -535,10 +543,14 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   }
 
   // ---- research jobs (the research line and the genre-scout line)
-  function createResearchJob({ input = 'Run your standing orders for this batch.', by = 'owner', line = 'research' } = {}) {
+  // productKey (owner, 17/10/2026, "product key as data"): a line with requiresProductKey (the genre scout) runs for one
+  // product key, carried as data on the job. Not given (undefined) -> the line config's default (config/lines/*.json
+  // productKey), never anything from prompt wording; it is checked against products.json when the job starts (runSteps)
+  function createResearchJob({ input = 'Run your standing orders for this batch.', by = 'owner', line = 'research', productKey } = {}) {
     const L = lineOf(line); if (L.kind !== 'research') throw new Error('not a research line: ' + line);
     const day = dublinDay(), n = store.listJobs().filter((j) => j.kind === 'research' && (j.line || 'research') === line && j.id.startsWith(day)).length + 1, id = day + '--' + line + '-' + n;
-    store.insertJob({ id, line, kind: 'research', title: (L.label || 'Research') + ' batch ' + n, state: 'queued', step: L.start, data: { day, input, createdBy: by } });
+    const key = L.requiresProductKey ? (productKey !== undefined ? productKey : L.productKey) ?? null : null;
+    store.insertJob({ id, line, kind: 'research', title: (L.label || 'Research') + ' batch ' + n, product_key: key, state: 'queued', step: L.start, data: { day, input, createdBy: by, ...(L.requiresProductKey ? { productKey: key, productKeySource: productKey !== undefined ? 'given' : 'line config' } : {}) } });
     bus.emit('job.created', { jobId: id, data: { line, by } });
     return { ok: true, id };
   }

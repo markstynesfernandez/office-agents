@@ -8,6 +8,9 @@
   "start": "scout-retention",
   "kind": "research",
   "drafts": "scout-drafts",
+  "$productKeyComment": "OWNER DECISION 17/10/2026 (DECISIONS.md 'E6 step b2: product key as data'): the product key is data, never prose. Every job of this line carries product_key (given by scout-live's --product-key or the routine seed in config/routines.json; otherwise this default). The engine checks it against config/products.json before any step, model call or reservation (unknown or missing: the job ends incomplete, 'unknown product key: <key>', USD 0) and hands it to TREND-SCOUT as a 'product_key: <key>' line in the run input.",
+  "requiresProductKey": true,
+  "productKey": "pngtuber-prop-pack",
   "steps": {
     "scout-retention": {
       "kind": "mechanical",

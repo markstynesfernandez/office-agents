@@ -27,6 +27,9 @@ import { readBlocklist, scoutingBriefProblems, scoutRunExitCode, customerFacingC
 import { fetchRefusedDomains } from '../src/engine/lib/web-sources.mjs';
 
 const LINE = 'genre-scout', RUN_CAP_USD = 0.5;
+// the product key is data (owner, 17/10/2026): `npm run scout:live -- --product-key <key>`, else the line's config default
+// (config/lines/genre-scout.json productKey); the engine checks it against products.json before any call
+const KEY_ARG = (() => { const i = process.argv.indexOf('--product-key'); return i >= 0 ? String(process.argv[i + 1] || '') : undefined; })();
 const r6 = (n) => Math.round(n * 1e6) / 1e6;
 const field = (t, k) => (new RegExp('^' + k + ':[ \\t]*(.+)$', 'm').exec(t) || [])[1] || '';
 const niche = (t) => (/^# Niche\s*\n(.+)$/m.exec(t) || [])[1] || '';
@@ -55,15 +58,16 @@ try {
   const off = agents.filter((a) => !a.enabled); if (off.length) throw new Error('agent(s) off duty: ' + off.map((a) => a.key).join(', '));
   const sup = await providers.text.webSearchSupported(W.model);
   if (!sup.supported) throw new Error('the Models API does not report web search support for ' + W.model + (sup.reported ? ' (supported: false)' : ' (field missing)') + ': no model call made');
-  const pre = 'scout-live: line=' + LINE + ' agents=' + agents.map((a) => a.key + ':' + a.model + '/effort ' + a.effort).join(',') + ' web_relay=' + W.model + '/effort ' + (W.effort || 'default') + ' (' + W.tools.web_search + ', ' + W.tools.web_fetch + ', max_uses=' + W.maxUsesPerRequest + ', blocked_domains=' + W.blockedDomains.length + ' on both; fetch_refused=' + fetchRefusedDomains(cfg.engine).join('+') + ' engine-only, not sent)' +
+  const productKey = KEY_ARG !== undefined ? KEY_ARG : L.productKey, keyKnown = (cfg.products || []).some((p) => p.key === productKey);
+  const pre = 'scout-live: line=' + LINE + ' product_key=' + (productKey || '(none)') + ' (' + (KEY_ARG !== undefined ? '--product-key' : 'line config default') + ', ' + (keyKnown ? 'in products.json' : 'NOT in products.json: the engine ends the job at USD 0') + ') agents=' + agents.map((a) => a.key + ':' + a.model + '/effort ' + a.effort).join(',') + ' web_relay=' + W.model + '/effort ' + (W.effort || 'default') + ' (' + W.tools.web_search + ', ' + W.tools.web_fetch + ', max_uses=' + W.maxUsesPerRequest + ', blocked_domains=' + W.blockedDomains.length + ' on both; fetch_refused=' + fetchRefusedDomains(cfg.engine).join('+') + ' engine-only, not sent)' +
     ' web_call_cap=' + agents.map((a) => a.key + ' ' + a.maxWebCalls).join(',') + ' run_cap_usd=' + capUsd.toFixed(2) + ' agent_run_cap_usd=' + cfg.engine.caps.perRunUsd.toFixed(2) + ' retries=' + (cfg.engine.live.retries ?? 0) + ' max_nudges=' + MAX_NUDGES + ' (offer: fs_write or report_blocked) draft_schema=on-write web_search_supported=yes';
-  log.info('scout-live: one run', { line: LINE, agents, webRelay: W.model, maxUses: W.maxUsesPerRequest, runCapUsd: capUsd, retries: cfg.engine.live.retries });
+  log.info('scout-live: one run', { line: LINE, productKey: productKey || null, agents, webRelay: W.model, maxUses: W.maxUsesPerRequest, runCapUsd: capUsd, retries: cfg.engine.live.retries });
   out(pre);
 
   const rdir = path.join(J.dataRoot, 'research');
   const before = new Set(readBlocklist(rdir).terms.map((t) => t.kind + '|' + t.term));
   const t0 = Date.now();
-  const c = orchestrator.createResearchJob({ line: LINE, by: 'owner (scripts/scout-live.mjs, E6 step b)' });
+  const c = orchestrator.createResearchJob({ line: LINE, by: 'owner (scripts/scout-live.mjs, E6 step b)', ...(KEY_ARG !== undefined ? { productKey: KEY_ARG } : {}) });
   await orchestrator.startJob(c.id);
   const job = store.getJob(c.id), day = job.data.day || dublinDay(t0);
 
@@ -98,7 +102,7 @@ try {
   const added = readBlocklist(rdir).terms.filter((t) => !before.has(t.kind + '|' + t.term)).map((t) => ({ term: t.term, kind: t.kind }));
   const today = dublinDay(Date.now());
   out(JSON.stringify({
-    job: { id: job.id, state: job.state, reason: job.reason, day, minutes: r6((Date.now() - t0) / 60000), shortfalls: job.data.shortfalls || [] },
+    job: { id: job.id, productKey: job.product_key || null, productKeySource: job.data.productKeySource || null, state: job.state, reason: job.reason, day, minutes: r6((Date.now() - t0) / 60000), shortfalls: job.data.shortfalls || [] },
     steps: (job.data.scouting || {}).drafts || [],
     reportedBlocked: job.data.reportedBlocked || null,
     nudges: tl.filter((l) => l.nudge).map((n) => ({ agent: n.agent, nudge: n.nudge, toolChoice: n.tool_choice && n.tool_choice.type, offered: n.offered || null, after: tl.filter((l) => l.afterNudge === n.nudge && l.agent === n.agent).map((l) => ({ stop: l.stop_reason, tools: l.toolCalls.map((c) => c.name + (c.input && c.input.path ? ' ' + c.input.path : '')) })) })),

@@ -26,5 +26,5 @@
   },
   "color": "#6fb3c9",
   "enabled": true,
-  "role": "Reads public popularity signals and turns trending game genres into original desk-props briefs."
+  "role": "Reads public trend coverage and turns trending game genres into original genre briefs for the product key its run is given."
 }
