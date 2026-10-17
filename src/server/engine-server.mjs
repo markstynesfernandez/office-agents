@@ -87,7 +87,19 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/routines/enable': (body) => engine.routines.enable(str(body.id), body.enabled === true, { expectedVersion: ver(body) }),
     'POST /api/routines/delete': (body) => engine.routines.remove(str(body.id), { expectedVersion: ver(body) }),
     // the approval queue: approvals and tracker rows only; nothing is sent anywhere
-    'POST /api/approvals/decide': (body) => O.decide(str(body.jobId), { action: str(body.action, 20), reason: str(body.reason, 600), etsyUrl: str(body.etsyUrl, 300), publishedOn: str(body.publishedOn, 10), expectedVersion: ver(body), by: BY }),
+    'POST /api/approvals/decide': (body) => O.decide(str(body.jobId), { action: str(body.action, 20), reason: str(body.reason, 600), etsyUrl: str(body.etsyUrl, 300), publishedOn: str(body.publishedOn, 10), finalTitle: str(body.finalTitle, 200), finalPriceEur: body.finalPriceEur == null || body.finalPriceEur === '' ? null : Number(body.finalPriceEur), sku: str(body.sku, 40), expectedVersion: ver(body), by: BY }),
+    // the owner's decisions and owner-started mechanical steps on a job (src/engine/owner.mjs; port batch 17/10/2026). Each checks the job's
+    // version; an override applies only to a QA judgement verdict, never to the originality screen
+    'POST /api/owner/file-decision': (body) => engine.owner.recordFileDecision(str(body.jobId), { set: Number(body.set), name: str(body.name, 100), decision: str(body.decision, 20), qaAgent: str(body.qaAgent, 20) || 'qa-design', qaPass: body.qaPass == null ? null : Number(body.qaPass), qaSaid: str(body.qaSaid, 2000), check: str(body.check, 40) || null, reason: str(body.reason, 2000), fix: str(body.fix, 2000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
+    'POST /api/owner/set-approval': (body) => engine.owner.approveSet(str(body.jobId), { set: Number(body.set), words: str(body.words, 2000), worthThePrice: body.worthThePrice && typeof body.worthThePrice === 'object' ? body.worthThePrice : null, date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
+    'POST /api/owner/listing-approval': (body) => engine.owner.approveListing(str(body.jobId), { reason: str(body.reason, 2000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
+    'POST /api/owner/edit-set': (body) => engine.owner.editSet(str(body.jobId), { set: Number(body.set), plan: body.plan && typeof body.plan === 'object' ? body.plan : null, expectedVersion: ver(body) }),
+    'POST /api/owner/fix-listing-text': (body) => engine.owner.fixListingText(str(body.jobId), { ownerWords: str(body.ownerWords, 2000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
+    'POST /api/owner/listing-photos': (body) => engine.owner.makeListingPhotos(str(body.jobId), { plan: body.plan && typeof body.plan === 'object' ? body.plan : null, expectedVersion: ver(body) }),
+    'POST /api/owner/style-ref': (body) => engine.owner.styleRefDecision(str(body.jobId), { set: Number(body.set), status: str(body.status, 20), reason: str(body.reason, 1000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
+    'POST /api/jobs/qa-only': (body) => O.qaOnly(str(body.jobId), { set: Number(body.set), maxUsd: Number(body.maxUsd), expectedVersion: ver(body), by: BY }),
+    'POST /api/jobs/listing-only': (body) => O.listingOnly(str(body.jobId), { maxUsd: Number(body.maxUsd), expectedVersion: ver(body), by: BY }),
+    'POST /api/jobs/package': (body) => O.packageJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
     // desk panels: on/off duty, tier, effort (applies at the next run)
     'POST /api/agents/update': (body) => engine.updateAgent(str(body.agentKey, 60), { enabled: body.enabled, tier: body.tier, effort: body.effort }, { expectedVersion: ver(body) }),
     // job panel and board

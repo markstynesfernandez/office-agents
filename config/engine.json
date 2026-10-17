@@ -14,6 +14,16 @@
     "opaqueModel": "google/gemini-3.1-flash-image",
     "source": "station.config.json imagePolicy (owner OpenRouter guardrail 15/10/2026)"
   },
+  "upscale": {
+    "$comment": "OWNER DECISION 17/10/2026: local Real-ESRGAN may run as a child process (src/engine/lib/esrgan.mjs only): this pinned copy, no network, inside the job jail, killed by the E-STOP. Copied from the legacy station's download (realesrgan-ncnn-vulkan v0.2.5.0 build 20220424, model realesrgan-x4plus; github.com/xinntao/Real-ESRGAN releases) and sha256-identical to it. Licences in ASSETS.md. tools/ is git-ignored: the binary is never committed. Method, model, scale and alpha method come from station.config.json upscale (they are part of the build key).",
+    "binary": "tools/realesrgan/realesrgan-ncnn-vulkan.exe",
+    "sha256": "07e49f7cbb4ede01ae4dd4c399d3a7e5846e3d2085c3128eff881e55cb7b1a0c",
+    "files": {
+      "vcomp140.dll": "8f72ef2e483465444b2059fc6744d6cb22cd8d8a27f6fa56befd2a42dcd0f78b",
+      "models/realesrgan-x4plus.param": "35330ececcea33b6c397a72548e788d5d53becee4734c50b7fada36e89f10a86",
+      "models/realesrgan-x4plus.bin": "713ee713b0353afaa27976f0563a64a5043bd70b9bd8936c2e26e25ebcdbcddf"
+    }
+  },
   "pricing": {
     "anthropic": {
       "models": {

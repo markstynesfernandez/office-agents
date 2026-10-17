@@ -15,6 +15,7 @@ import { createScheduler } from './scheduler.mjs';
 import { createProviders } from './providers/index.mjs';
 import { loadConfig, demoMarkers } from './config.mjs';
 import { useJail } from './store/active.mjs';
+import { createOwnerActions } from './owner.mjs';
 import { createOrchestrator } from './orchestrator.mjs';
 import { effectiveAgent } from './runtime.mjs';
 import { validSchedule } from './scheduler.mjs';
@@ -60,7 +61,7 @@ export function recover({ store, bus, log, resumeOnRestart = 1 }) {
   return out;
 }
 
-export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false } = {}) {
+export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false, upscaler = null } = {}) {
   J = J || createJail({ dataRoot });
   const unlock = takeLock(J, log);
   useJail(J);   // the ported station modules write through this engine's jail
@@ -76,8 +77,9 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     const recovered = guard.recoverPending();
     const rec = recover({ store, bus, log, resumeOnRestart: cfg.engine.runtime.resumeOnRestart });
     const prov = providers || createProviders({ mode: process.env.STATION_PROVIDER || cfg.engine.provider, script, delayMs: mockDelayMs, log });
-    const engine = { J, cfg, store, ledger, bus, halt, guard, providers: prov, log, clock, recovered: { charged: recovered, ...rec } };
+    const engine = { J, cfg, store, ledger, bus, halt, guard, providers: prov, log, clock, upscaler, recovered: { charged: recovered, ...rec } };
     engine.orchestrator = createOrchestrator(engine, { hooks });
+    engine.owner = createOwnerActions(engine);   // the owner's decisions and owner-started mechanical steps (port batch 17/10/2026)
     // a routine fires a line (verified briefs, up to its daily limit) or a research batch; created disabled, enabled by the owner only
     engine.runRoutine = async (routine) => {
       const cap = routine.per_run_cap_usd ?? null;

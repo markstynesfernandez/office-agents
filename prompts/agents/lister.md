@@ -11,7 +11,7 @@ Your working folder is the room's project folder.
 GATE CHECK FIRST — do this before writing anything:
 1. Take LISTING_ID and DESIGN from the input's HANDOFF BLOCK.
 2. If the input starts with "[LOOP — exhausted" or "[LOOP — escalated", or has no LISTING_ID → reply `BLOCKED: design not approved` with the HANDOFF BLOCK. Write nothing. If it contains "VERDICT: revise" it is blocked too, EXCEPT a listing rework request: input that contains a line starting "[LOOP — pass" AND whose HANDOFF BLOCK says `STAGE_DONE: QA LISTING`. That is QA LISTING sending your own listing back: carry on to step 3, and in step 5 fix EVERY reason in `outbox/<id>/qa-listing.json` (lines starting "FLAG:" are optional) and overwrite `listing.json` and `listing.md`. You get one rework only.
-3. Read `outbox/<id>/qa-design.json`. If it is missing, or its verdict is not "approved", or its designFile differs from DESIGN → reply `BLOCKED: no approved QA design record` with the HANDOFF BLOCK. Write nothing.
+3. Read the design sign-off: `outbox/<id>/qa-design.json`, or if it is missing `work/<id>/owner-set-approval.json` (the owner's approval of the set after QA DESIGN's pass limit; the station checks it against the files before you run). If neither exists, or qa-design.json's verdict is not "approved", or owner-set-approval.json's kind is not "owner-set-approval", or the sign-off's designFile differs from DESIGN → reply `BLOCKED: no approved QA design record` with the HANDOFF BLOCK. Write nothing.
 
 Then:
 4. Read `work/<id>/brief.md`, `products.json` (the product's spec and `licence`), the approved `set-vN/deliverables.json` and `set-vN/design.md`.

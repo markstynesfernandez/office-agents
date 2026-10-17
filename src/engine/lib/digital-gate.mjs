@@ -1,4 +1,5 @@
-// PORTED from Virtual-workers/station/scripts/lib/digital-gate.mjs (the owner's own code) at 16/10/2026 20:04 Irish time (re-ported: it changed after 19:42), source sha256 e833a1740a66ea0d693796a06c9e044b1093fd2b7bba76cfac9304c5022995e9.
+// PORTED from Virtual-workers/station/scripts/lib/digital-gate.mjs (the owner's own code) at 17/10/2026 12:34 Irish time (5th moment, re-ported: it changed after 16/10 20:04), source sha256 7a81b0ff6cac146bc631bec5dc60a05cf8a0feb49e8961fa6b71aff7ccdf6ebe.
+//   5th moment: the removed-area and near-white fill rules, fileLimitProblems from digital-files.mjs, digitalDesignChecks' ownerApproved, as in the source
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // digital-gate.mjs (lib) — the DIGITAL parts of the package gate (productType "digital"; checkPackage in gates.mjs calls these). Pure reads.
@@ -10,7 +11,9 @@
 //     the product spec in products.json (count, format, pixel size); a packaged product delivers ONE zip whose entries are the spec's files
 //     (read back and measured, png/jpg only) and NOTHING else (owner, 2026-10-16: the download is exactly the one zip), every entry the
 //     station built, cleaned up and upscaled (set-vN/build.json), with no enclosed background-like region left (a handle hole that is not
-//     see-through: digital-build.mjs enclosedBackgroundRegions); its preview is a listing photo in set-vN/listing/, never in files/;
+//     see-through: digital-build.mjs enclosedBackgroundRegions), no opaque area removed by the clean-up that was not background-coloured in
+//     the generated file, and, for the products under the palette rule (config.digital.build.cleanup.palette, owner 2026-10-17), no
+//     near-white fill; its preview is a listing photo in set-vN/listing/, never in files/;
 //   - the design notes passed the originality screen (set-vN/originality.json, for the current design.md);
 //   - every asset the set used is in config.digital.assetRegister with commercialUse true and an owner-confirmed status;
 //   - the listing states the deliverables EXACTLY (name, format, pixel size, count), delivery "automatic download", the owner-approved
@@ -21,7 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config as defaultConfig, productsFile, sha256, sha256File } from './common.mjs';
-import { measureDir, publicView } from './digital-files.mjs';
+import { measureDir, publicView, fileLimitProblems } from './digital-files.mjs';
 import { MANIFEST_RE } from './digital-prep.mjs';
 import { isPackaged, noticeFor, previewDirOf } from './digital-build.mjs';
 import { styleRefProblems } from './style-ref.mjs';
@@ -79,6 +82,17 @@ export function buildProblems(product, manifest, files, setDir = null, cfg = def
       const enc = r.cleanup.enclosed, left = enc && Array.isArray(enc.remainingAfterBuild) ? enc.remainingAfterBuild : null;
       if (!left) out.push(e.name + ': no enclosed-transparency check in the build record (built before it existed: rebuild the set)');
       else if (left.length) out.push(e.name + ': ' + left.length + ' enclosed region(s) of background-like pixels, opaque near-white inside a closed shape (content px x,y,w,h: ' + left.map((x) => x.box.join(',')).join('; ') + '): a hole that should be see-through? Owner check; make it transparent or redraw');
+      // the clean-up may remove only what was background-coloured in the generated file (owner, 2026-10-17; every packaged product)
+      const rm = enc && enc.removed;
+      if (enc && !rm) out.push(e.name + ': no removed-area check in the build record (built before it existed: rebuild the set)');
+      else if (rm && rm.nonBackgroundPx) out.push(e.name + ': the clean-up made ' + rm.nonBackgroundPx + ' px transparent that were not background-coloured in the generated file (luminance >= ' + rm.background.minLum + ', channels within ' + rm.background.maxChroma + '; generator px x,y,w,h: ' + rm.nonBackgroundBox.join(',') + '): it removed part of the drawing. Owner check; redraw');
+      // the palette rule (owner, 2026-10-17): no pure-white or grey-white fills, for the products config.digital.build.cleanup.palette lists
+      const pal = ((cfg.digital.build || {}).cleanup || {}).palette;
+      if (pal && (pal.products || []).includes(product.key)) {
+        const nw = r.cleanup.palette && r.cleanup.palette.nearWhiteFills;
+        if (!Array.isArray(nw)) out.push(e.name + ': no near-white fill check in the build record (built before it existed: rebuild the set)');
+        else if (nw.length) out.push(e.name + ': ' + nw.length + ' near-white fill(s), pure white or grey-white (channels within ' + r.cleanup.palette.threshold.maxChroma + '; generator px x,y,w,h: ' + nw.map((x) => x.box.join(',')).join('; ') + '): the palette rule for this product wants cream or a pale palette tint. Redraw');
+      }
     }
     if (prep && prep.upscale && (!r.upscale || r.upscale.method !== prep.upscale)) out.push(e.name + ': upscaled with ' + ((r.upscale && r.upscale.method) || 'nothing') + ', not ' + prep.upscale + ' as the product spec requires');
   }
@@ -90,34 +104,8 @@ export function buildProblems(product, manifest, files, setDir = null, cfg = def
   return out;
 }
 
-// Etsy limits, our formats, never a font
-export function fileLimitProblems(files, cfg = defaultConfig) {
-  const d = cfg.digital, lim = d.etsyFileLimits, out = [];
-  if (!files.length) out.push('the deliverable set has no files');
-  if (files.length > lim.maxFiles) out.push(files.length + ' files: Etsy allows at most ' + lim.maxFiles + ' per digital listing');
-  for (const f of files) {
-    if (f.bytes > lim.maxFileBytes) out.push(f.name + ' is ' + (f.bytes / 1e6).toFixed(1) + ' MB: Etsy allows at most ' + lim.maxFileMbAsStated + ' MB per file (enforced as ' + lim.maxFileBytes + ' bytes)');
-    if (f.bytes === 0) out.push(f.name + ' is empty');
-    if (d.formats.neverDeliver.includes(f.format)) out.push(f.name + ' is a font file (' + f.format + '): font files are never delivered (licence)');
-    else if (!d.formats.allowed.includes(f.format)) out.push(f.name + ' is ' + f.format + ': not a format the station can build and measure (' + d.formats.allowed.join(', ') + ')' + (d.formats.notYet[f.format] ? '; ' + d.formats.notYet[f.format] : ''));
-    const ext = path.extname(f.name).slice(1).toLowerCase().replace('jpeg', 'jpg');
-    if (ext !== f.format && f.format !== 'unknown') out.push(f.name + ': the extension says "' + ext + '" but the file is ' + f.format);
-    if (['png', 'jpg'].includes(f.format) && !(f.widthPx > 0 && f.heightPx > 0)) out.push(f.name + ': pixel size could not be measured');
-    // inside a zip: readable, flat, only images we can measure (never a font, never another zip)
-    if (f.format === 'zip') {
-      for (const p of f.zipProblems || []) out.push(f.name + ': ' + p);
-      if (!(f.entries || []).length) out.push(f.name + ' holds no files');
-      for (const e of f.entries || []) {
-        if (d.formats.neverDeliver.includes(e.format)) out.push(f.name + ' > ' + e.name + ' is a font file: font files are never delivered (licence)');
-        else if (!['png', 'jpg'].includes(e.format)) out.push(f.name + ' > ' + e.name + ' is ' + e.format + ': a zip may hold only png or jpg images');
-        else if (!(e.widthPx > 0 && e.heightPx > 0)) out.push(f.name + ' > ' + e.name + ': pixel size could not be measured');
-        const ee = path.extname(e.name).slice(1).toLowerCase().replace('jpeg', 'jpg');
-        if (ee !== e.format && e.format !== 'unknown') out.push(f.name + ' > ' + e.name + ': the extension says "' + ee + '" but the file is ' + e.format);
-      }
-    }
-  }
-  return out;
-}
+// Etsy limits, our formats, never a font: lives in digital-files.mjs so digital-prep can write the same answer into the manifest QA DESIGN reads
+export { fileLimitProblems };
 
 export function assetProblems(assets, cfg = defaultConfig) {
   const reg = ((cfg.digital || {}).assetRegister || {}).assets || {}, out = [];
@@ -130,7 +118,9 @@ export function assetProblems(assets, cfg = defaultConfig) {
   return out;
 }
 
-export function digitalDesignChecks({ id, roomDir, workDir, designFile, qaDesign, reasons, cfg = defaultConfig, products = null }) {
+// ownerApproved: the design sign-off is a valid owner set approval (lib/owner-approval.mjs, checked by the caller against these exact bytes),
+// not qa-design.json: QA DESIGN's per-check verdicts are not required; every check below them still runs.
+export function digitalDesignChecks({ id, roomDir, workDir, designFile, qaDesign, ownerApproved = false, reasons, cfg = defaultConfig, products = null }) {
   const res = { manifest: null, product: null };
   if (!designFile) return res;
   const norm = String(designFile).replace(/\\/g, '/'), mm = MANIFEST_RE(id).exec(norm);
@@ -138,12 +128,14 @@ export function digitalDesignChecks({ id, roomDir, workDir, designFile, qaDesign
   const mf = path.join(roomDir, norm), sd = path.dirname(mf), m = readJsonSafe(mf);
   if (!m.ok) { reasons.push('deliverables manifest ' + m.err + ': ' + norm); return res; }
   res.manifest = m.v;
-  if (qaDesign && qaDesign.manifestSha256 !== sha256File(mf)) reasons.push('qa-design.json manifestSha256 does not match ' + norm + ': QA DESIGN did not review this exact set');
-  // QA DESIGN's digital checks and the worth-the-price judgement
-  const ch = (qaDesign && qaDesign.checks) || {};
-  for (const c of QA_DIGITAL_CHECKS) if (ch[c] !== 'pass') reasons.push('qa-design.json check "' + c + '" is ' + (ch[c] === undefined ? 'missing' : '"' + ch[c] + '"') + ' (digital QA requires it to pass)');
-  const wp = qaDesign && qaDesign.worthThePrice;
-  if (!wp || wp.verdict !== 'pass' || !String(wp.reason || '').trim()) reasons.push('qa-design.json worthThePrice needs verdict "pass" and a written reason (would a buyer feel this was worth the price?)');
+  if (!ownerApproved) {
+    if (qaDesign && qaDesign.manifestSha256 !== sha256File(mf)) reasons.push('qa-design.json manifestSha256 does not match ' + norm + ': QA DESIGN did not review this exact set');
+    // QA DESIGN's digital checks and the worth-the-price judgement
+    const ch = (qaDesign && qaDesign.checks) || {};
+    for (const c of QA_DIGITAL_CHECKS) if (ch[c] !== 'pass') reasons.push('qa-design.json check "' + c + '" is ' + (ch[c] === undefined ? 'missing' : '"' + ch[c] + '"') + ' (digital QA requires it to pass)');
+    const wp = qaDesign && qaDesign.worthThePrice;
+    if (!wp || wp.verdict !== 'pass' || !String(wp.reason || '').trim()) reasons.push('qa-design.json worthThePrice needs verdict "pass" and a written reason (would a buyer feel this was worth the price?)');
+  }
   // the files on disk are exactly the manifest's
   const now = measureDir(path.join(sd, 'files')), was = Array.isArray(m.v.files) ? m.v.files : [];
   const sig = (fs_) => JSON.stringify(fs_.map((f) => [f.name, f.bytes, f.sha256]));

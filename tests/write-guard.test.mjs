@@ -93,8 +93,15 @@ test('no messaging: no mail, chat or SMS library in package.json, no messaging i
   for (const f of code) assert.ok(!/from\s+['"](nodemailer|twilio|@slack\/|discord\.js|telegraf|node-telegram-bot-api|@sendgrid\/|web-push)/.test(read(f)), rel(f) + ' imports a messaging library');
 });
 
-test('no shelling out anywhere in src/ (the upscaler binary is not wired yet)', () => {
-  for (const f of code.filter((x) => rel(x).startsWith('src/'))) assert.ok(!/child_process|execSync|spawnSync|\bspawn\s*\(|\bexecFile\s*\(/.test(read(f)), rel(f) + ' shells out');
+// owner decision 17/10/2026: Real-ESRGAN may run as a local child process, from ONE module only, pinned, without a shell, killable
+const UPSCALER_MODULE = 'src/engine/lib/esrgan.mjs';
+test('no shelling out anywhere in src/ except the pinned upscaler module, which runs execFile without a shell, hidden and killable', () => {
+  for (const f of code.filter((x) => rel(x).startsWith('src/') && rel(x) !== UPSCALER_MODULE)) assert.ok(!/child_process|execSync|spawnSync|\bspawn\s*\(|\bexecFile\s*\(/.test(read(f)), rel(f) + ' shells out');
+  const u = read(path.join(ROOT, UPSCALER_MODULE));
+  assert.match(u, /import \{ execFile \} from 'node:child_process'/);
+  assert.ok(!/execSync|spawnSync|\bspawn\s*\(|(?<!\.)\bexec\s*\(|shell\s*:\s*true/.test(u), 'only execFile, never a shell');
+  assert.equal((u.match(/execFile\(/g) || []).length, 1, 'one call site');
+  for (const must of ['signal: signal || undefined', 'windowsHide: true', 'cwd: dataJail(cwd)', 'checkPin(pin)', 'env,']) assert.ok(u.includes(must), UPSCALER_MODULE + ' lacks ' + must);
 });
 
 test('the page only ever talks to its own origin', () => {

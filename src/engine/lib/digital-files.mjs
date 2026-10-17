@@ -1,5 +1,6 @@
-// PORTED from Virtual-workers/station/scripts/lib/digital-files.mjs (the owner's own code) at 16/10/2026 19:16 Irish time, source sha256 57bff4f9fd0ca0f88dc88eb6685782ef06a27c73ce58b1c4725163c1d8ac518a.
-//   change: none (sha256 from ./common.mjs, which is the engine's)
+// PORTED from Virtual-workers/station/scripts/lib/digital-files.mjs (the owner's own code) at 17/10/2026 12:34 Irish time (5th moment, re-ported: it changed after 16/10 19:16), source sha256 51145814831cb99ea5b9c03286b30f8acc1aa6fcb82253d8a987f3e66ece92ef.
+//   5th moment: fileLimitProblems moved here from digital-gate.mjs, as in the source (digital-prep writes its answer into the manifest QA DESIGN reads)
+//   change: none (sha256 and the config default from ./common.mjs, which is the engine's)
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // digital-files.mjs (lib) — measure a digital deliverable set: format from the file's own bytes (never the extension alone), pixel size
 // for PNG/JPEG from the headers, byte size and sha256; a zip's entries are read (lib/zip.mjs) and measured the same way. Pure, synchronous,
@@ -7,7 +8,7 @@
 // what is on disk).
 import fs from 'node:fs';
 import path from 'node:path';
-import { sha256 } from './common.mjs';
+import { sha256, config as defaultConfig } from './common.mjs';
 import { readZip } from './zip.mjs';
 
 // format from magic bytes; 'unknown' when not recognised
@@ -65,3 +66,33 @@ export const publicView = (f) => {
   const inner = Array.isArray(f.entries) ? f.entries : Array.isArray(f.contents) ? f.contents : null;   // measured zip, or a listing's stated zip
   return { name: f.name, format: f.format, widthPx: f.widthPx, heightPx: f.heightPx, ...(inner ? { contents: inner.map(publicView) } : {}) };
 };
+
+// Etsy limits, our formats, never a font. One answer for two readers: the package gate (digital-gate.mjs) and the manifest QA DESIGN reads
+// (digital-prep.mjs writes it as deliverables.json limitProblems), measured from the real files on disk.
+export function fileLimitProblems(files, cfg = defaultConfig) {
+  const d = cfg.digital, lim = d.etsyFileLimits, out = [];
+  if (!files.length) out.push('the deliverable set has no files');
+  if (files.length > lim.maxFiles) out.push(files.length + ' files: Etsy allows at most ' + lim.maxFiles + ' per digital listing');
+  for (const f of files) {
+    if (f.bytes > lim.maxFileBytes) out.push(f.name + ' is ' + (f.bytes / 1e6).toFixed(1) + ' MB: Etsy allows at most ' + lim.maxFileMbAsStated + ' MB per file (enforced as ' + lim.maxFileBytes + ' bytes)');
+    if (f.bytes === 0) out.push(f.name + ' is empty');
+    if (d.formats.neverDeliver.includes(f.format)) out.push(f.name + ' is a font file (' + f.format + '): font files are never delivered (licence)');
+    else if (!d.formats.allowed.includes(f.format)) out.push(f.name + ' is ' + f.format + ': not a format the station can build and measure (' + d.formats.allowed.join(', ') + ')' + (d.formats.notYet[f.format] ? '; ' + d.formats.notYet[f.format] : ''));
+    const ext = path.extname(f.name).slice(1).toLowerCase().replace('jpeg', 'jpg');
+    if (ext !== f.format && f.format !== 'unknown') out.push(f.name + ': the extension says "' + ext + '" but the file is ' + f.format);
+    if (['png', 'jpg'].includes(f.format) && !(f.widthPx > 0 && f.heightPx > 0)) out.push(f.name + ': pixel size could not be measured');
+    // inside a zip: readable, flat, only images we can measure (never a font, never another zip)
+    if (f.format === 'zip') {
+      for (const p of f.zipProblems || []) out.push(f.name + ': ' + p);
+      if (!(f.entries || []).length) out.push(f.name + ' holds no files');
+      for (const e of f.entries || []) {
+        if (d.formats.neverDeliver.includes(e.format)) out.push(f.name + ' > ' + e.name + ' is a font file: font files are never delivered (licence)');
+        else if (!['png', 'jpg'].includes(e.format)) out.push(f.name + ' > ' + e.name + ' is ' + e.format + ': a zip may hold only png or jpg images');
+        else if (!(e.widthPx > 0 && e.heightPx > 0)) out.push(f.name + ' > ' + e.name + ': pixel size could not be measured');
+        const ee = path.extname(e.name).slice(1).toLowerCase().replace('jpeg', 'jpg');
+        if (ee !== e.format && e.format !== 'unknown') out.push(f.name + ' > ' + e.name + ': the extension says "' + ee + '" but the file is ' + e.format);
+      }
+    }
+  }
+  return out;
+}

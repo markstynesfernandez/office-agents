@@ -8,7 +8,7 @@ listing.json schema:
 {
   "listingId": "<id>",
   "productKey": "<key from products.json>",
-  "designFile": "work/<id>/set-vN/deliverables.json",   — must equal qa-design.json designFile
+  "designFile": "work/<id>/set-vN/deliverables.json",   — must equal the design sign-off's designFile
   "title": "≤140 chars",
   "tags": ["≤13 tags, each ≤20 chars"],
   "description": "plain text; contains, word for word, the AI disclosure line, the digital-download notice and the product's license text (DIGITAL PRODUCT TERMS)",

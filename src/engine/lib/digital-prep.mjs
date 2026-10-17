@@ -1,4 +1,5 @@
-// PORTED from Virtual-workers/station/scripts/lib/digital-prep.mjs (the owner's own code) at 16/10/2026 19:16 Irish time, source sha256 361d8ac33e12c8ffafe8fcf7901d2f6023a7c9fce50768ee045b629315d8ec53.
+// PORTED from Virtual-workers/station/scripts/lib/digital-prep.mjs (the owner's own code) at 17/10/2026 12:34 Irish time (5th moment, re-ported: it changed after 16/10 19:16), source sha256 f075e4f0ab18bc34de89cf8f18f692c80c7206a7fe3106b1a7eb0fbbfc97f058.
+//   5th moment: limitProblems and buildWarnings in the manifest, the set screen (screenDigitalSetOnDisk), as in the source
 //   change: file writes go through the engine's data jail (dataJail from ../store/active.mjs)
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 //   change: measuredBy names the engine module
@@ -6,17 +7,18 @@
 // digital-prep.mjs (lib) — gets a DIGITAL deliverable set ready for QA DESIGN (productType "digital"), the digital counterpart of
 // design-prep.mjs. Before QA DESIGN's model call (design hook) it measures work/<id>/set-vN/files/* and writes, with no model and no clock:
 //   set-vN/deliverables.json  the manifest: every file's format (from its bytes), pixel size, byte size, sha256; the assets the set used
-//   set-vN/originality.json   the originality screen of set-vN/design.md (the Designer's prompts and notes), with design.md's sha256
+//   set-vN/originality.json   the originality screen of the set (lib/originality.mjs screenDigitalSet: everything except the Designer's self-check
+//                             section: design.md, the delivered file names, the brief, the listing text when written), with design.md's sha256
 // Same inputs -> same bytes -> nothing written (idempotent). QA DESIGN judges from these records; the package gate re-measures the files.
 // A PACKAGED product (products.json deliverables.package: one zip + a preview) is built from set-vN/raw/ by lib/digital-build.mjs first; this
 // refuses a set whose build is missing or stale and copies the build record (clean-up, upscale, padding per file) into the manifest.
 import fs from 'node:fs';
 import path from 'node:path';
 import { config as defaultConfig, isListingId, sha256 } from './common.mjs';
-import { measureDir } from './digital-files.mjs';
-import { screenText, hitLine, SOFT_CATEGORIES } from './originality.mjs';
-import { buildStatus, isPackaged, productFor } from './digital-build.mjs';
+import { measureDir, fileLimitProblems } from './digital-files.mjs';
+import { screenDigitalSetOnDisk, hitLine } from './originality.mjs';
 import { dataJail } from '../store/active.mjs';
+import { buildStatus, isPackaged, productFor } from './digital-build.mjs';
 
 export const setDir = (roomDir, id, n) => path.join(roomDir, 'jobs', id, 'set-v' + n);
 export const manifestRel = (id, n) => 'jobs/' + id + '/set-v' + n + '/deliverables.json';
@@ -70,14 +72,19 @@ export function prepareDigitalSet({ roomDir, id, n, cfg = defaultConfig, product
   if (!fs.existsSync(fd)) return { ok: false, reason: 'jobs/' + id + '/set-v' + n + '/files/ is missing: no deliverables' };
   if (!fs.existsSync(dm)) return { ok: false, reason: 'jobs/' + id + '/set-v' + n + '/design.md is missing: the prompts and notes are required for the originality screen' };
   const m = measureDir(fd);
-  const manifest = { listingId: id, set: n, productKey, count: m.files.length, totalBytes: m.files.reduce((s, f) => s + f.bytes, 0), files: m.files, subfolders: m.subfolders,
+  // stated up front for QA DESIGN (owner, 2026-10-17: a 28 MB zip was reviewed as "no build warnings"): the gate's own limit check on the real files,
+  // and the build's warnings. Empty arrays mean none; anything listed fails the set at the package gate.
+  const limitProblems = fileLimitProblems(m.files, cfg), buildWarnings = (build && build.warnings) || [];
+  const manifest = { listingId: id, set: n, productKey, limitProblems, buildWarnings, count: m.files.length, totalBytes: m.files.reduce((s, f) => s + f.bytes, 0), files: m.files, subfolders: m.subfolders,
     assets: assetsOf(sd, cfg), designNotes: 'jobs/' + id + '/set-v' + n + '/design.md', measuredBy: 'engine prep step, src/engine/lib/digital-prep.mjs (file bytes; no model)', ...(build ? { build } : {}) };
-  const text = fs.readFileSync(dm, 'utf8'), sc = screenText(text, cfg, { ignore: SOFT_CATEGORIES });
-  const orig = { stage: 'design-originality', listingId: id, set: n, designNotesSha256: sha256(text), result: sc.hits.length ? 'hit' : 'clear', hits: sc.hits.map((h) => ({ field: 'design.md', ...h })), note: 'local deterministic screen: a clear result is not clearance, judge the files and anything the lists cannot know' };
+  const names = [...m.files.map((f) => f.name), ...((build && build.files) || []).map((f) => f.name)];
+  const sc = screenDigitalSetOnDisk({ roomDir, id, n, fileNames: names, cfg }), text = sc.designMd;
+  const orig = { stage: 'design-originality', listingId: id, set: n, designNotesSha256: sha256(text), result: sc.hits.length ? 'hit' : 'clear', hits: sc.hits, screened: sc.screened, skipped: sc.skipped,
+    note: 'local deterministic screen of everything except the Designer\'s self-check section: design.md, the delivered file names, the brief and the listing text when written: a clear result is not clearance, judge the files and anything the lists cannot know' };
   const a1 = write(path.join(sd, 'deliverables.json'), manifest), a2 = write(path.join(sd, 'originality.json'), orig);
   // the manifest's sha256 for QA DESIGN to copy into its record (agents cannot hash; the gate compares it with the manifest on disk)
   { const sf = path.join(sd, 'deliverables.sha256'), h = sha256(fs.readFileSync(path.join(sd, 'deliverables.json'))) + '\n'; if (!fs.existsSync(sf) || fs.readFileSync(sf, 'utf8') !== h) fs.writeFileSync(dataJail(sf), h); }
-  log.info('digital set prepared ' + id + '/set-v' + n, { files: m.files.length, manifest: a1, originality: orig.result + ' (' + a2 + ')', hits: orig.hits.map(hitLine) });
+  log.info('digital set prepared ' + id + '/set-v' + n, { files: m.files.length, manifest: a1, originality: orig.result + ' (' + a2 + ')', hits: orig.hits.map(hitLine), limitProblems, buildWarnings });
   return { ok: true, manifest, originality: orig, designFile: manifestRel(id, n), productKey };
 }
 

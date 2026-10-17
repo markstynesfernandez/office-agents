@@ -14,7 +14,13 @@ import path from 'node:path';
 import { runAgent, effectiveAgent } from './runtime.mjs';
 import { VersionConflict } from './store/db.mjs';
 import { checkBrief, briefField } from './lib/brief-check.mjs';
-import { prepareDigitalSet, latestSet } from './lib/digital-prep.mjs';
+import { prepareDigitalSet, latestSet, manifestRel } from './lib/digital-prep.mjs';
+import { buildDigitalSet, isPackaged, productFor } from './lib/digital-build.mjs';
+import { usesStyleRef, approvedRef, ensureStyleRefInSet } from './lib/style-ref.mjs';
+import { esrganUpscaler } from './lib/esrgan.mjs';
+import { packageDigital } from './lib/package-digital.mjs';
+import { designSignOff } from './lib/owner-approval.mjs';
+import { readJsonSafe, designPasses } from './lib/gates.mjs';
 import { fillDigitalPrices } from './lib/digital-prices.mjs';
 import { checkPackage } from './lib/gates.mjs';
 import { isListingId, sha256 } from './lib/common.mjs';
@@ -122,6 +128,13 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
         setJob(id, { state: 'queued', step, reason: 'waiting: ' + who + ' is off duty', data: { waitingFor: def.agent, autoStart: true } }, 'job.stage', { step, waiting: def.agent });
         return store.getJob(id);
       }
+      // listing-only (the owner's cap): before every hop, spend so far + the estimate of this agent's run must fit under the cap
+      const mode = job.data.runMode;
+      if (mode && mode.kind === 'listing-only' && def.kind === 'agent') {
+        const spent = ledger.spent.job(id) - (mode.spentAtStart || 0), est = agentEstimate(def.agent);
+        if (spent + est > mode.maxUsd) { setJob(id, { state: 'stopped', step, reason: 'listing-only run stopped before ' + step + ': USD ' + spent.toFixed(4) + ' spent + USD ' + est.toFixed(4) + ' estimated would go over the owner cap USD ' + mode.maxUsd.toFixed(2), ended_at: Date.now(), data: { runMode: null } }, 'job.stopped'); return store.getJob(id); }
+        store.updateJob(id, { data: { runCapUsd: Math.max(0, mode.maxUsd - spent) } });
+      }
       const pass = def.kind === 'agent' ? passFor(job, step) : 1;
       if (def.kind === 'agent' && pass === 1 && step !== 'rejects-desk') {
         const visited = (job.data.visited || []);
@@ -133,11 +146,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       bus.emit('job.stage', { jobId: id, agentKey: def.agent || null, data: { step, column: def.column, pass, kind: def.kind } });
       await callHook('onStep', { job: store.getJob(id), step, def, pass, phase: 'start' });
       let r;
-      try { r = def.kind === 'agent' ? await agentStep(store.getJob(id), step, def, pass, stopSignal) : await mechStep(store.getJob(id), step, def); }
+      try { r = def.kind === 'agent' ? await agentStep(store.getJob(id), step, def, pass, stopSignal) : await mechStep(store.getJob(id), step, def, stopSignal); }
       catch (e) { r = { blocked: 'engine error in ' + step + ': ' + e.message }; log.error('step crashed', { id, step, error: String(e && e.stack || e) }); }
-      store.closeStage(sid, r.blocked ? 'blocked' : r.stopped ? 'stopped' : 'done', r.blocked || r.stopped || r.note || null);
+      store.closeStage(sid, r.blocked ? 'blocked' : r.stopped ? 'stopped' : 'done', r.blocked || r.stopped || r.modeDone || r.note || null);
       job = store.updateJob(id, { data: { costUsd: ledger.spent.job(id) } });
       await callHook('onStep', { job, step, def, pass, phase: 'end', result: r });
+      if (r.modeDone) { setJob(id, { state: 'stopped', reason: r.modeDone, ended_at: Date.now(), data: { runMode: null, runCapUsd: null, lastRunMode: { ...(store.getJob(id).data.runMode || {}), result: r.modeDone } } }, 'job.stopped'); return store.getJob(id); }
       if (r.stopped) { setJob(id, { state: 'stopped', reason: r.stopped, ended_at: Date.now() }, 'job.stopped'); return store.getJob(id); }
       if (r.blocked) { block(store.getJob(id), r.blocked); return store.getJob(id); }
       if (r.end === 'rejected') { setJob(id, { state: 'rejected', reason: r.reason, ended_at: Date.now() }, 'job.rejected'); return store.getJob(id); }
@@ -146,6 +160,14 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       step = r.next;
     }
     return store.getJob(id);
+  }
+
+  // the estimate of one run of an agent for the owner's cap: the dearest of its last 10 runs in the ledger (all jobs), 0 with no history
+  // (legacy run-line agentRunEstimate; a run = the rows sharing a runId)
+  function agentEstimate(agentKey, last = 10) {
+    const by = new Map(); for (const r of ledger.rows()) if (r.agentKey === agentKey) { const x = by.get(r.runId) || { usd: 0, ts: 0 }; x.usd += Number(r.usd) || 0; x.ts = Math.max(x.ts, Number(r.ts) || 0); by.set(r.runId, x); }
+    const runs = [...by.values()].sort((a, b) => b.ts - a.ts).slice(0, last);
+    return runs.length ? Number(Math.max(...runs.map((x) => x.usd)).toFixed(6)) : 0;
   }
 
   // the pass number of an agent step: design = 1 + sends back + prep retries; listing = 1 + sends back
@@ -168,7 +190,13 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       if (pass === 1) input = 'New verified brief for the Room 1 line. Write set-v' + n + '.\n\n' + readBrief(job.id) + '\n\n' + handoff(job);
       else if (job.data.prepFailure && (l.prep || 0) > 0 && !job.data.prepFailureSeen) { input = '[STATION — the set could not be prepared] ' + job.data.prepFailure + '\nWrite a corrected set-v' + n + '.\n\n' + handoff(job); store.updateJob(job.id, { data: { prepFailureSeen: true } }); }
       else { const q = readJson(path.join(folder, 'qa', 'design-pass' + (l.design || 0) + '.json')) || {}; input = '[LOOP — pass ' + pass + ' of ' + (max + 1) + '] QA DESIGN asked for a revise. Write set-v' + n + ' and fix EVERY reason:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' + handoff(job); }
-    } else if (step === 'qa-design') input = 'Review the newest set.' + (pass > 1 ? ' [LOOP — pass ' + pass + ' of ' + (max + 1) + ']' : '') + '\n\n' + handoff(job);
+    } else if (step === 'qa-design' && job.data.runMode && job.data.runMode.kind === 'qa-only') input = job.data.runMode.startText;
+    else if (step === 'qa-design') input = 'Review the newest set.' + (pass > 1 ? ' [LOOP — pass ' + pass + ' of ' + (max + 1) + ']' : '') + '\n\n' + handoff(job);
+    else if (job.data.runMode && job.data.runMode.kind === 'listing-only' && (step === 'lister' || step === 'qa-listing')) {
+      const m = job.data.runMode, q = step === 'lister' && pass > 1 ? readJson(path.join(folder, 'qa-listing', 'pass' + ((job.data.qaPasses || {}).listing || 0) + '.json')) || {} : null;
+      const ho = ['```', 'LISTING_ID: ' + job.id, 'BRIEF: work/' + job.id + '/brief.md', 'DESIGN: ' + m.designFile.replace(/^jobs\//, 'work/'), 'STAGE_DONE: ' + (m.signOff === 'owner-set-approval' ? 'OWNER SET APPROVAL' : 'QA DESIGN'), '```'].join('\n');
+      input = step === 'lister' ? (q ? '[LOOP — pass ' + pass + '] QA LISTING asked for a revise:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' + ho : m.startText) : 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + ho;
+    }
     else if (step === 'lister') { const q = pass > 1 ? readJson(path.join(folder, 'qa-listing', 'pass' + (l.listing || 0) + '.json')) || {} : null; input = (q ? '[LOOP — pass ' + pass + '] QA LISTING asked for a revise:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' : 'Write the listing for the QA-approved set.\n\n') + handoff(job); }
     else if (step === 'qa-listing') input = 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + handoff(job);
     else if (step === 'rejects-desk') { input = '[LOOP — escalated] ' + (job.data.escalation || 'the work was not approved') + '\nRecord why in REJECTED.md.\n\n' + handoff(job); loopNote = 'This job is being stopped: write REJECTED.md only.'; }
@@ -191,36 +219,75 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   function routeVerdict(job, step, def, pass, run) {
     const folder = jobDir(job.id), kind = def.verdict;
     const dir = kind === 'design' ? 'qa' : 'qa-listing', prefix = kind === 'design' ? 'design-pass' : 'pass';
-    const n = (fs.existsSync(path.join(folder, dir)) ? fs.readdirSync(path.join(folder, dir)).filter((f) => new RegExp('^' + prefix + '\\d+\\.json$').test(f)).length : 0) + 1;
+    // the pass number is the job's own counter (port item 20: never the count of files in a folder); a record already on disk under
+    // that number is never overwritten (the counter moves past it)
+    const qp = { ...(job.data.qaPasses || {}) }; let n = (qp[kind] || 0) + 1;
+    while (fs.existsSync(path.join(folder, dir, prefix + n + '.json'))) n++;
+    store.updateJob(job.id, { data: { qaPasses: { ...qp, [kind]: n } } });
     let rec = run.verdict;
     if (!rec) rec = { stage: kind, listingId: job.id, pass: n, verdict: 'revise', checks: {}, reasons: ['the QA run ended without a valid verdict (counts as revise)'], reviewer: def.agent.toUpperCase(), recordedBy: 'engine' };
     rec = { ...rec, pass: n };
     J.put(path.join(folder, dir, prefix + n + '.json'), JSON.stringify(rec, null, 1) + '\n');
     if (rec.verdict === 'approved') J.put(path.join(folder, 'outbox', kind === 'design' ? 'qa-design.json' : 'qa-listing.json'), JSON.stringify(rec, null, 1) + '\n');
     log.info('verdict', { jobId: job.id, step, pass: n, verdict: rec.verdict, reasons: rec.reasons });
+    // the owner's run modes stop after the verdict they were started for (QA-only: one QA DESIGN pass; listing-only: no package step,
+    // no Rejects Desk: the owner decides what comes next)
+    const mode = job.data.runMode;
+    if (mode && mode.kind === 'qa-only') return { modeDone: 'QA-only run finished: QA DESIGN pass ' + n + ' ' + rec.verdict + ' (nothing listed or packaged; the owner decides next)' };
+    if (mode && mode.kind === 'listing-only' && kind === 'listing' && rec.verdict === 'approved') return { modeDone: 'listing-only run finished: QA LISTING pass ' + n + ' approved (the package step is the owner\'s next action)' };
     if (rec.verdict === 'approved') return { next: def.onApproved, note: 'approved (pass ' + n + ')' };
     const o = def.onRevise, used = (job.loops || {})[o.loop] || 0;
+    if (mode && mode.kind === 'listing-only' && kind === 'listing' && used >= o.max) return { modeDone: 'listing-only run finished: QA LISTING pass ' + n + ' ' + rec.verdict + ', no rework left (the owner decides: a text fix, an owner listing approval, or a re-run)' };
     if (used < o.max) { store.updateJob(job.id, { loops: { [o.loop]: used + 1 } }); return { next: o.back, note: 'revise (pass ' + n + '): back to ' + o.back }; }
     const why = (kind === 'design' ? 'QA DESIGN' : 'QA LISTING') + ' did not approve after ' + (used + 1) + ' review(s) (' + o.loop + ' loop limit ' + o.max + '): ' + (rec.reasons || []).join('; ');
     store.updateJob(job.id, { data: { escalation: why } });
     return { next: o.escalate, note: 'loop exhausted: escalated to ' + o.escalate };
   }
 
+  // ---- the build of a packaged set (lib/digital-build.mjs): the Designer's raw/ -> files/<zip> + listing preview, no model. A Designer
+  // problem (raw names, count, a transparent background missing) is a prep failure; anything else (the upscaler pin, the binary failing,
+  // the e-stop) blocks the job at once and is never retried through the Designer.
+  async function buildStep(job, n, product, stopSignal) {
+    if (usesStyleRef(product) && approvedRef(dataRoot, job.id).ok) {
+      const s = ensureStyleRefInSet({ roomDir: dataRoot, id: job.id, n, log });
+      if (!s.ok) return { ok: false, reason: 'style reference: ' + s.reason };
+    }
+    const signal = stopSignal ? AbortSignal.any([halt.signal, stopSignal]) : halt.signal;
+    const upscaler = engine.upscaler || esrganUpscaler({ pin: cfg.engine.upscale, workDir: path.join(jobDir(job.id), 'set-v' + n), signal });
+    let r;
+    try { r = await buildDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: cfg.products, upscaler, log }); }
+    catch (e) {
+      if (e.code === 'STOPPED' || signal.aborted) return { stopped: 'stopped during the set build: ' + e.message };
+      return { blocked: 'the set build failed (no retry through the Designer): ' + e.message };
+    }
+    if (r.ok) log.info('set build', { jobId: job.id, set: n, action: r.action, warnings: (r.record && r.record.warnings) || [] });
+    return r;
+  }
+
   // ---- mechanical steps (fail closed)
-  async function mechStep(job, step, def) {
+  async function mechStep(job, step, def, stopSignal = null) {
     const fn = MECH[def.fn]; if (!fn) return { blocked: 'no mechanical step "' + def.fn + '"' };
-    const r = await fn(job, def);
+    const r = await fn(job, def, stopSignal);
     log.info('mechanical step', { jobId: job.id, step, ok: !r.blocked, next: r.next || r.end || null, reason: r.blocked || r.note || undefined });
     return r;
   }
   const MECH = {
-    prep(job, def) {
+    async prep(job, def, stopSignal) {
       const n = latestSet(dataRoot, job.id);
       let reason = null;
       if (!n) reason = 'DESIGNER wrote no set-v<N> folder';
       else {
+        // a packaged product (zip + preview): the station builds files/ from raw/ first (clean-up, Real-ESRGAN, zip), no model (owner,
+        // 17/10/2026: the build runs in the engine; the upscaler is the pinned local binary, killed by the e-stop or the owner's Stop)
+        const { product } = productFor(dataRoot, job.id, cfg.products);
+        if (product && isPackaged(product)) {
+          const b = await buildStep(job, n, product, stopSignal);
+          if (b.stopped || b.blocked) return b;
+          if (!b.ok) reason = b.reason;
+        }
         const files = path.join(jobDir(job.id), 'set-v' + n, 'files');
-        if (!fs.existsSync(files) || !fs.readdirSync(files).length) reason = 'set-v' + n + '/files/ is empty: no deliverables';
+        if (reason) { /* the build refused the Designer's raw files */ }
+        else if (!fs.existsSync(files) || !fs.readdirSync(files).length) reason = 'set-v' + n + '/files/ is empty: no deliverables';
         else {
           const r = prepareDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: cfg.products, log });
           if (!r.ok) reason = r.reason;
@@ -256,8 +323,20 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     briefCheck(job) { return researchBriefCheck(job); }
   };
 
-  // ---- the package: what the owner uploads by hand (idempotent on the inputs' hash)
+  // ---- the package: what the owner uploads by hand. A ZIP product (deliverables.package zip) gets the ported digital package step
+  // (lib/package-digital.mjs: the ZIP byte for byte, every file and ZIP entry with sha256, the owner's approvals and overrides, no
+  // timestamps); other products keep the E3 package below (idempotent on the inputs' hash)
   function buildPackage(job) {
+    const { product } = productFor(dataRoot, job.id, cfg.products);
+    if (product && isPackaged(product)) {
+      const ap = store.getApproval(job.id);
+      const r = packageDigital({ id: job.id, roomDir: dataRoot, blocklist: cfg.blocklist, cost: costRecord(job.id), approvalStatus: ap && ap.status, apply: true, cfg: cfg.station, products: cfg.products, log });
+      if (!r.ok) return { blocked: 'package step: ' + r.reasons.join('; ') };
+      store.queueApproval(job.id);
+      const so = designSignOff({ id: job.id, roomDir: dataRoot, cfg: cfg.station });
+      trackerRow(job, { status: 'packaged', status_reason: so.source === 'owner-set-approval' ? 'design sign-off: owner set approval' : '', packaged_at: new Date().toISOString(), design_file: r.manifest.designFile, deliverables: String(r.manifest.zipEntries.length) + ' in ' + r.manifest.download, qa_design: so.source === 'owner-set-approval' ? 'owner-set-approval' : 'approved', qa_listing: r.manifest.gates.qaListing.ownerOverride ? 'owner-override' : r.manifest.gates.qaListing.verdict });
+      return { end: 'approval', note: 'packaged in jobs/' + job.id + '/package/ (' + r.action + ')' };
+    }
     const dir = jobDir(job.id), out = path.join(dir, 'package');
     const L = readJson(path.join(dir, 'outbox', 'listing.json')), qd = readJson(path.join(dir, 'outbox', 'qa-design.json')), ql = readJson(path.join(dir, 'outbox', 'qa-listing.json'));
     const n = Number(/set-v(\d+)/.exec(qd.designFile)[1]), setDir = path.join(dir, 'set-v' + n), manifest = readJson(path.join(setDir, 'deliverables.json'));
@@ -426,6 +505,74 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return { jobId: id, folder: a.folder };
   }
 
+  // ---- the owner's run modes on an existing set (legacy run-line --qa-only / --listing-only, port items 23 and 27) and the package step.
+  // Allowed on a job that has stopped (blocked, stopped, or rejected by QA's loop limit), never on legacy history, never under the e-stop.
+  const MODE_STATES = ['blocked', 'stopped', 'rejected'];
+  // the run's promise rides along without being sent to the page (tests await it)
+  const withRun = (out, promise) => Object.defineProperty(out, 'run', { value: promise, enumerable: false });
+  const forMode = (id, expectedVersion, what) => {
+    const j = ownJob(id); checkVersion(j, expectedVersion); notHalted(what);
+    if (isActive(id) || !MODE_STATES.includes(j.state)) throw new Error('job ' + id + ' is ' + effState(j) + ': ' + what + ' needs a blocked, stopped or rejected job');
+    if (j.kind !== 'line') throw new Error(what + ' is for line jobs');
+    return j;
+  };
+  const capOf = (maxUsd) => { const c = Number(maxUsd); if (!(c > 0)) throw new Error('the owner\'s spend cap is required (maxUsd > 0)'); if (c > cfg.engine.caps.perJobUsd) throw new Error('maxUsd ' + c + ' is over the per-job cap ' + cfg.engine.caps.perJobUsd + ' (caps are raised only by the owner, in config/engine.json)'); return c; };
+  // QA ONLY: one QA DESIGN pass on set N as it stands, with the owner's overrides (verbatim, tied to the file bytes) as context; the
+  // Designer is not run; stops after the verdict whatever it is
+  function qaOnly(id, { set, maxUsd, expectedVersion, by = 'owner' } = {}) {
+    const j = forMode(id, expectedVersion, 'a QA-only run'), cap = capOf(maxUsd), n = Number(set), dir = jobDir(id), sd = path.join(dir, 'set-v' + n), reasons = [];
+    if (!Number.isInteger(n) || n < 1 || !fs.existsSync(sd)) throw new Error('jobs/' + id + '/set-v' + set + ' does not exist');
+    // the package gate allows 3 design passes (legacy maxDesignPasses): a pass past it could never be packaged, so it is not paid for
+    const used = designPasses(dir).length;
+    if (used >= 3) throw new Error('QA-only run refused: ' + used + ' of 3 design passes are on disk; a further QA DESIGN pass could never be packaged (the owner\'s set approval stands in after the pass limit)');
+    const rv = readJsonSafe(path.join(dir, 'owner-review.json')), review = rv.ok ? rv.v : null;
+    const overrides = review && review.set === n && Array.isArray(review.files) ? review.files.filter((f) => f.overridesQa === true) : [];
+    for (const o of overrides) {
+      const f = path.join(sd, 'raw', o.name);
+      if (!fs.existsSync(f)) reasons.push('override file set-v' + n + '/raw/' + o.name + ' is missing');
+      else if (sha256(fs.readFileSync(f)) !== o.rawSha256) reasons.push(o.name + ' changed since the owner decided on it (raw sha256 differs): the override does not apply to these bytes');
+    }
+    if (reasons.length) throw new Error('QA-only run refused: ' + reasons.join('; '));
+    const pd = prepareDigitalSet({ roomDir: dataRoot, id, n, cfg: cfg.station, products: cfg.products, log });
+    if (!pd.ok) throw new Error('QA-only run refused: set preparation failed: ' + pd.reason);
+    const lines = ['[RUN MODE: QA ONLY — the owner asked for one QA DESIGN pass on this set as it stands. The Designer is not run.]'];
+    if (overrides.length) {
+      lines.push('OWNER DECISIONS (' + review.date + ', recorded in work/' + id + '/owner-review.json; they overrule an earlier QA DESIGN finding on the point named, nothing else):');
+      for (const o of overrides) lines.push('- ' + o.name + ': ' + String(o.decision).toUpperCase() + '. Earlier QA finding: "' + o.qaSaid + '". Owner: "' + o.reason + '". Do not fail this file on that point. Still check it for everything else (originality, transparency, consistency with the set, file specs); report any new problem as a finding, never as overridden.');
+    }
+    if (fs.existsSync(path.join(sd, 'edits.json'))) lines.push('STATION EDITS: work/' + id + '/set-v' + n + '/edits.json records the owner-authorised deterministic edits of raw files after the Designer finished (it says which files and why); design.md describes the Designer\'s originals.');
+    lines.push('', '```', 'LISTING_ID: ' + id, 'BRIEF: work/' + id + '/brief.md', 'DESIGN: work/' + id + '/set-v' + n + '/deliverables.json', 'STAGE_DONE: DESIGNER', '```');
+    store.updateJob(id, { state: 'queued', step: 'qa-design', reason: 'QA-only run started by the owner (cap USD ' + cap.toFixed(2) + ')', ended_at: null, data: { runMode: { kind: 'qa-only', set: n, maxUsd: cap, by, startText: lines.join('\n'), overrides: overrides.map((o) => o.name) }, runCapUsd: cap, visited: (j.data.visited || []).filter((x) => x !== 'qa-design'), autoStart: true, waitingFor: null, stopRequested: null } }, { expectedVersion });
+    bus.emit('job.stage', { jobId: id, data: { state: 'queued', step: 'qa-design', runMode: 'qa-only', by } });
+    log.info('QA-only run', { jobId: id, set: n, maxUsd: cap, overrides: overrides.map((o) => o.name), measured: { files: pd.manifest.count, limitProblems: pd.manifest.limitProblems, buildWarnings: pd.manifest.buildWarnings, originality: pd.originality.result } });
+    return withRun({ jobId: id, mode: 'qa-only', set: n, maxUsd: cap, overrides: overrides.map((o) => o.name) }, startJob(id));
+  }
+  // LISTING ONLY: LISTER -> price fill -> QA LISTING (one rework if its estimate fits) on the design sign-off; refused when listing files
+  // already exist (nothing is overwritten); the cap is checked before every hop; it never packages
+  function listingOnly(id, { maxUsd, expectedVersion, by = 'owner' } = {}) {
+    const j = forMode(id, expectedVersion, 'a listing-only run'), cap = capOf(maxUsd), dir = jobDir(id), reasons = [];
+    const so = designSignOff({ id, roomDir: dataRoot, cfg: cfg.station }); if (!so.ok) reasons.push(...so.reasons);
+    for (const f of ['outbox/listing.json', 'outbox/listing.md', 'outbox/qa-listing.json', 'qa-listing']) if (fs.existsSync(path.join(dir, f))) reasons.push('jobs/' + id + '/' + f + ' already exists: nothing is overwritten');
+    const one = agentEstimate('lister') + agentEstimate('qa-listing');
+    if (one > cap) reasons.push('one LISTER + QA LISTING pass is estimated at USD ' + one.toFixed(4) + ', over the owner cap USD ' + cap.toFixed(2));
+    if (reasons.length) throw new Error('listing-only run refused: ' + reasons.join('; '));
+    const owner = so.source === 'owner-set-approval';
+    const startText = ['[RUN MODE: LISTING ONLY — the Designer and QA DESIGN are not run. DESIGN SIGN-OFF: ' + so.file.replace(/^jobs\//, 'work/') + (owner ? ' (the owner\'s approval of the set after QA DESIGN\'s pass limit, checked against the files by the station just now; there is no qa-design.json)' : '') + ']', '',
+      '```', 'LISTING_ID: ' + id, 'BRIEF: work/' + id + '/brief.md', 'DESIGN: ' + so.designFile.replace(/^jobs\//, 'work/'), 'STAGE_DONE: ' + (owner ? 'OWNER SET APPROVAL' : 'QA DESIGN'), '```'].join('\n');
+    store.updateJob(id, { state: 'queued', step: 'lister', loops: { listing: 0 }, reason: 'listing-only run started by the owner (cap USD ' + cap.toFixed(2) + ')', ended_at: null, data: { runMode: { kind: 'listing-only', maxUsd: cap, by, signOff: so.source, signOffFile: so.file, designFile: so.designFile, spentAtStart: ledger.spent.job(id), estimateOnePassUsd: one, startText }, visited: (j.data.visited || []).filter((x) => !['lister', 'qa-listing'].includes(x)), escalation: null, gate: null, autoStart: true, waitingFor: null, stopRequested: null } }, { expectedVersion });
+    bus.emit('job.stage', { jobId: id, data: { state: 'queued', step: 'lister', runMode: 'listing-only', by } });
+    log.info('listing-only run', { jobId: id, maxUsd: cap, signOff: so.source, estimateOnePassUsd: one });
+    return withRun({ jobId: id, mode: 'listing-only', maxUsd: cap, signOff: so.source, estimateOnePassUsd: one }, startJob(id));
+  }
+  // the package step on the owner's word (after a listing-only run, an owner listing approval or a text fix): the package gate, then the
+  // package, then the approval queue. No model.
+  function packageJob(id, { expectedVersion, by = 'owner' } = {}) {
+    forMode(id, expectedVersion, 'the package step');
+    store.updateJob(id, { state: 'queued', step: 'package-gate', reason: 'package step started by the owner', ended_at: null, data: { runMode: null, autoStart: true, waitingFor: null, stopRequested: null } }, { expectedVersion });
+    bus.emit('job.stage', { jobId: id, data: { state: 'queued', step: 'package-gate', by } });
+    return withRun({ jobId: id, step: 'package-gate' }, startJob(id));
+  }
+
   // an agent back on duty: its waiting jobs start again (not while the e-stop is on)
   function wakeWaiting(agentKey) {
     if (halt.isHalted()) return [];
@@ -468,7 +615,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
 
   // ---- the owner's decisions in the approval queue (ENGINE-PLAN.md §5.3): only the approvals row and the tracker row
   // are written. Approve sends nothing anywhere; the package folder is what the owner uploads by hand.
-  function decide(jobId, { action, reason = '', etsyUrl = '', publishedOn = '', expectedVersion, by = 'owner' }) {
+  function decide(jobId, { action, reason = '', etsyUrl = '', publishedOn = '', finalTitle = '', finalPriceEur = null, sku = '', expectedVersion, by = 'owner' }) {
     const j = ownJob(jobId);
     const a = store.getApproval(jobId); if (!a) throw new Error('not in the approval queue: ' + jobId);
     if (expectedVersion == null || !Number.isInteger(expectedVersion)) throw new Error('expectedVersion is required');
@@ -487,8 +634,18 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(publishedOn || '')); const at = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 12) : NaN;
       if (!m || Number.isNaN(at) || new Date(at).toISOString().slice(0, 10) !== publishedOn) throw new Error('give the date it was published');
       if (publishedOn > dublinDay(now)) throw new Error('the published date is in the future');
-      store.decideApproval(jobId, { status: 'published', published_at: at, etsy_url: etsyUrl.trim() }, { expectedVersion });
-      trackerRow(j, { status: 'published', published_at: publishedOn, etsy_listing_url: etsyUrl.trim() });
+      // what the owner published, as the legacy approval record holds it (owner-package-approval.json "published"): the final title, the
+      // final price and the SKU as set on Etsy. The package itself is never rebuilt for them.
+      const title = String(finalTitle || '').trim(), sk = String(sku || '').trim(), pr = finalPriceEur === '' || finalPriceEur == null ? null : Number(finalPriceEur);
+      if (!title) throw new Error('give the final title as published on Etsy');
+      if (title.length > 140) throw new Error('the final title is over Etsy\'s 140 characters');
+      if (!(pr > 0) || Math.abs(Math.round(pr * 100) - pr * 100) > 1e-6) throw new Error('give the final price in EUR (e.g. 9.00)');
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(sk)) throw new Error('give the SKU (letters, digits, dot, dash or underscore; up to 32)');
+      const pkg = readJson(path.join(jobDir(jobId), 'package', 'MANIFEST.json'));
+      const published = { publishedOn, etsyUrl: etsyUrl.trim(), finalTitle: title, finalPriceEur: pr, currency: 'EUR', sku: sk, priceFinal: true, by,
+        packagedTitle: pkg ? ((readJson(path.join(jobDir(jobId), 'package', 'listing.json')) || {}).title || null) : null, packageProposalEur: pkg && pkg.price ? pkg.price.listingPriceEur : null };
+      store.decideApproval(jobId, { status: 'published', published_at: at, etsy_url: etsyUrl.trim(), published }, { expectedVersion });
+      trackerRow(j, { status: 'published', status_reason: 'published by the owner: SKU ' + sk + ', final price EUR ' + pr.toFixed(2) + ', final title "' + title + '"', published_at: publishedOn, etsy_listing_url: etsyUrl.trim() });
     } else throw new Error('unknown decision ' + action);
     const out = store.getApproval(jobId);
     bus.emit('job.decided', { jobId, data: { action, status: out.status, by } });
@@ -496,5 +653,5 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  return { createJob, startJob, runJob, createResearchJob, decide, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive };
+  return { createJob, startJob, runJob, createResearchJob, decide, qaOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive };
 }

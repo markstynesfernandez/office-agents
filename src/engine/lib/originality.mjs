@@ -1,4 +1,6 @@
-// PORTED from Virtual-workers/station/scripts/lib/originality.mjs (the owner's own code) at 16/10/2026 19:16 Irish time, source sha256 c2ca40934746c3354e87280ab9d80d488fb11a02e0a6822da6649766081967a7.
+// PORTED from Virtual-workers/station/scripts/lib/originality.mjs (the owner's own code) at 17/10/2026 12:34 Irish time (5th moment, re-ported: it changed after 16/10 19:16), source sha256 8801bf7781f83e129f75c35fa4a7bc0fcbc4164b51feac65e84adfd39fa83294.
+//   5th moment: the near-miss allow-list (config.sloganScreen.nearMissAllow, exact whole words) and the digital set screen (designDeliverableText,
+//               screenDigitalSet, screenDigitalSetOnDisk) came from the source unchanged; hitLine labels a hit without a field "text" (port item 13)
 //   change: SOFT_CATEGORIES is [] (owner Q5: the saturated list applies to all text; the source applied it to slogans only)
 //   change: file writes go through the engine's data jail (dataJail from ../store/active.mjs)
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
@@ -71,7 +73,10 @@ function compile(cfg, extra) {
   let base = cache.get(key);
   if (!base) {
     const lists = (cfg.sloganScreen && cfg.sloganScreen.lists) || {}, entries = [];
-    for (const [category, phrases] of Object.entries(lists)) for (const phrase of phrases) entries.push({ phrase, category });
+    // known false positives of the near-miss match (owner, 2026-10-17: "chunky" is not "Chucky"): listed phrase -> ordinary words it must not catch
+    const allowCfg = (cfg.sloganScreen && cfg.sloganScreen.nearMissAllow) || {}, allowOf = {};
+    for (const [phrase, words] of Object.entries(allowCfg)) if (Array.isArray(words)) allowOf[letters(strip(phrase)).join('')] = new Set(words.map((w) => letters(strip(w)).join(' ')));
+    for (const [category, phrases] of Object.entries(lists)) for (const phrase of phrases) { const a = allowOf[letters(strip(phrase)).join('')]; entries.push(a ? { phrase, category, nearMissAllow: a } : { phrase, category }); }
     base = entries; cache.set(key, base);
   }
   const all = [...base, ...(extra || []).map((t) => ({ phrase: t, category: 'blocklist.txt' }))];
@@ -90,10 +95,13 @@ function matchEntry(e, tokens, via) {
     for (let i = 0; i < n; i++) { let acc = ''; for (let m = 1; m <= k + 1 && i + m <= n; m++) { acc += tokens[i + m - 1]; if (acc === e.squashed || (acc.endsWith('s') && acc.slice(0, -1) === e.squashed)) { if (m !== k) return { via: via === 'exact' ? 'compound' : via, matched: tokens.slice(i, i + m).join(' ') }; } } }
   }
   if (!FUZZY_CATEGORIES.has(e.category)) return null;
+  // a known ordinary word, never a misspelling of this name: the exact whole word as listed (after case and punctuation), no plural
+  // stripping and no fuzzy match, so every form the owner allows is listed ("channel" and "channels"; owner, 2026-10-17)
+  const allowed = (w) => !!(e.nearMissAllow && e.nearMissAllow.has(w));
   if (k === 1 && e.squashed.length >= 6) {   // one typo in a single long name
-    for (const t of tokens) if (t.length >= 5 && t[0] === e.squashed[0] && t !== e.squashed && [...forms(t)].some((f) => f !== e.squashed && distance(f, e.squashed) <= 1)) return { via: 'near-miss-spelling', matched: t };
+    for (const t of tokens) if (t.length >= 5 && t[0] === e.squashed[0] && t !== e.squashed && !allowed(t) && [...forms(t)].some((f) => f !== e.squashed && distance(f, e.squashed) <= 1)) return { via: 'near-miss-spelling', matched: t };
   } else if (k > 1 && e.squashed.length >= 10) {
-    for (let i = 0; i < n; i++) { let acc = ''; for (let m = 1; m <= k + 1 && i + m <= n; m++) { acc += tokens[i + m - 1]; if (acc[0] === e.squashed[0] && acc !== e.squashed && distance(acc, e.squashed) <= 1) return { via: 'near-miss-spelling', matched: tokens.slice(i, i + m).join(' ') }; } }
+    for (let i = 0; i < n; i++) { let acc = ''; for (let m = 1; m <= k + 1 && i + m <= n; m++) { acc += tokens[i + m - 1]; if (acc[0] === e.squashed[0] && acc !== e.squashed && !allowed(tokens.slice(i, i + m).join(' ')) && distance(acc, e.squashed) <= 1) return { via: 'near-miss-spelling', matched: tokens.slice(i, i + m).join(' ') }; } }
   }
   return null;
 }
@@ -122,7 +130,8 @@ export function screenFields(fields, cfg = defaultConfig, { extra = [], ignoreBy
   }
   return { result: hits.length ? 'hit' : 'clear', hits, screened };
 }
-export const hitLine = (h) => h.field + ': "' + h.matched + '" matches ' + h.category + ' "' + h.phrase + '"' + (h.via !== 'exact' ? ' (' + h.via + ')' : '');
+// a hit without a field (screenText's) is labelled "text", never "undefined" (legacy bug, owner 2026-10-17, port item 13)
+export const hitLine = (h) => (h.field || 'text') + ': "' + h.matched + '" matches ' + h.category + ' "' + h.phrase + '"' + (h.via !== 'exact' ? ' (' + h.via + ')' : '');
 
 export { BLOCKLIST_FILE };   // the owner's listing-text blocklist (common.mjs)
 export const defaultExtra = () => loadExtraTerms(BLOCKLIST_FILE);
@@ -180,6 +189,41 @@ export function screenDesign({ roomDir, id, n, cfg = defaultConfig, workDir }) {
 export function screenListing({ listing, id, cfg = defaultConfig, extra = [] }) {
   const r = screenFields(listingFields(listing), cfg, { extra, ignore: SOFT_CATEGORIES });
   return { stage: 'listing-originality', listingId: id, result: r.hits.length ? 'hit' : 'clear', hits: r.hits, screened: r.screened, note: 'local deterministic screen: a clear result is not clearance' };
+}
+
+// a digital set's design.md without the Designer's SELF-CHECK section (OWNER exception to the station freeze, 2026-10-17: the screen failed
+// set-v3 on "copy of" in the Designer's own notes). The skip is narrow (owner, 2026-10-17): only a section whose heading says self-check, to the
+// next heading of the same or a higher level. Everything else in design.md (the design description, every image prompt, every per-file note)
+// is screened. Returns { text, skipped: { sections } }.
+export function designDeliverableText(md) {
+  const keep = [], skipped = { sections: [] };
+  let skipLevel = 0;
+  for (const l of String(md || '').replace(/\r\n/g, '\n').split('\n')) {
+    const h = /^(#{1,6})\s+(.*)$/.exec(l);
+    if (h && skipLevel && h[1].length <= skipLevel) skipLevel = 0;
+    if (h && !skipLevel && /self[- ]?check/i.test(h[2])) { skipLevel = h[1].length; skipped.sections.push(h[2].trim()); continue; }
+    if (skipLevel) continue;
+    keep.push(l);
+  }
+  return { text: keep.join('\n'), skipped };
+}
+// the originality screen of a DIGITAL set (digital-prep, run-line --first-file): everything except the Designer's self-check section —
+// design.md (description and prompts), the deliverables' file names, the whole brief, and the listing text when there is one (title, tags,
+// description, alt text; also screened against the owner's blocklist, as at the listing stage).
+export function screenDigitalSet({ designMd = '', fileNames = [], briefText = '', listing = null, cfg = defaultConfig, extra = [] }) {
+  const d = designDeliverableText(designMd);
+  const fields = { 'design.md': d.text, 'file names': fileNames.map((f) => String(f).replace(/\.[a-z0-9]+$/i, '')), 'brief.md': briefText };
+  const r = screenFields(fields, cfg, { ignore: SOFT_CATEGORIES });
+  const lf = Object.fromEntries(Object.entries(listingFields(listing)).map(([k, v]) => ['listing ' + k, v]));
+  const l = screenFields(lf, cfg, { extra, ignore: SOFT_CATEGORIES });
+  const hits = [...r.hits, ...l.hits];
+  return { result: hits.length ? 'hit' : 'clear', hits, screened: [...r.screened, ...l.screened], skipped: d.skipped };
+}
+// the same, read from disk: set-vN/design.md, jobs/<id>/brief.md, jobs/<id>/outbox/listing.json (when written)
+export function screenDigitalSetOnDisk({ roomDir, id, n, fileNames = [], cfg = defaultConfig, extra = defaultExtra() }) {
+  const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
+  const designMd = read(path.join(roomDir, 'jobs', id, 'set-v' + n, 'design.md'));
+  return { designMd, ...screenDigitalSet({ designMd, fileNames, briefText: read(path.join(roomDir, 'jobs', id, 'brief.md')), listing: readJson(path.join(roomDir, 'jobs', id, 'outbox', 'listing.json')), cfg, extra }) };
 }
 
 // idempotent record files under work/<id>/derived/ (same inputs -> same bytes -> nothing written)

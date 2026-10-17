@@ -61,6 +61,12 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
   const imgs = (list) => (list && list.length ? '<div class="design">' + list.slice(-2).map((im) => '<img src="' + esc(im.url) + '" alt="' + esc(im.file) + '" title="' + esc(im.file) + '">').join('') + '</div>' : '');
   const warnBox = (list) => (list && list.length ? '<div class="warnbox">' + list.map((w) => '<div>⚠ ' + esc(w) + '</div>').join('') + '</div>' : '');
   // a legacy job: where each part came from in the legacy station, imported as it was (read only)
+  // the owner's decisions on this job (src/engine/owner.mjs): each override of a QA verdict with its file, pass, date and reason
+  const ownerBox = (o) => (o && (o.overrides.length || o.setApproval || o.listingApproval || o.fixes.length) ? '<h4>Owner decisions</h4>'
+    + o.overrides.map((x) => '<div class="row"><span><span class="tag tag-warn">owner override</span> <span class="mono">' + esc(x.file) + '</span> · ' + esc(x.stage) + (x.qaPass != null ? ' pass ' + esc(x.qaPass) : '') + ' · ' + esc(x.date) + '<br><span class="muted" style="font-size:11px">QA: ' + esc(x.qaSaid) + '</span><br><span style="font-size:11px">Owner: ' + esc(x.ownerReason) + '</span></span></div>').join('')
+    + o.fixes.map((x) => '<div class="row"><span><span class="tag">deterministic fix</span> <span class="mono">' + esc(x.file) + '</span> · ' + esc(x.date) + '<br><span class="muted" style="font-size:11px">' + esc(x.fix) + '</span></span></div>').join('')
+    + (o.setApproval ? '<div class="srcnote">owner set approval of set-v' + esc(o.setApproval.set) + ' (' + esc(o.setApproval.date) + '): ' + esc(Object.entries(o.setApproval.counts || {}).map(([k, v]) => v + ' ' + k).join(', ')) + '</div>' : '')
+    + (o.listingApproval ? '<div class="srcnote">owner listing approval (' + esc(o.listingApproval.date) + '): ' + esc(o.listingApproval.reason) + '</div>' : '') : '');
   const legacyBox = (j, now) => (j.legacy ? '<div class="legbox"><b>Legacy record</b> · imported ' + esc(when(Date.parse(j.legacy.importedAt), now)) + ', read only' + Object.entries(j.legacy.sources || {}).map(([k, v]) => '<br><span class="m">' + esc(k) + '</span> ' + esc(v)).join('') + (j.legacy.trackerStatus ? '<br><span class="m">tracker</span> ' + esc(j.legacy.trackerStatus) : '') + '<br><span class="muted">' + j.legacy.runs + ' legacy run' + (j.legacy.runs === 1 ? '' : 's') + ' attributed · data/' + esc(j.folder) + '</span></div>' : '');
   const synthBox = (o) => (o && o.synthetic ? '<div class="synthbox"><b>synthetic test state</b> · ' + esc(o.syntheticWhat || '') + '<br><span class="muted">fixtures/synthetic/overlay.json, not real data</span></div>' : '');
 
@@ -115,6 +121,7 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
       + (j.queue ? '<dt>approval</dt><dd>' + esc(j.queue.status) + ' · ' + esc(j.queue.folder) + (j.queue.files != null ? ' · ' + j.queue.files + ' files' : '') + '</dd>' : '')
       + (j.tracker ? '<dt>tracker</dt><dd>' + esc(j.tracker.status) + (j.tracker.etsy_listing_url ? ' · ' + esc(j.tracker.etsy_listing_url) : '') + '</dd>' : '')
       + '</dl>'
+      + ownerBox(j.owner)
       + (j.images.length ? '<h4>Designs</h4>' + imgs(j.images) : '')
       + '<h4>Line hops</h4>' + hops
       + qa(j.qaDesign, 'QA design') + qa(j.qaListing, 'QA listing')
@@ -139,8 +146,8 @@ export async function runJobAction(ctl, j, k) {
   }
   if (k === 'publish') {
     const today = new Date(), iso = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-    const v = await ctl.dialog({ title: 'Mark published', intro: t + '<br><br>Records the date and the Etsy listing you published by hand. The station never publishes anything itself.', fields: [{ name: 'publishedOn', label: 'Published on', type: 'date', required: true, value: iso, max: iso }, { name: 'etsyUrl', label: 'Etsy listing URL', type: 'url', required: true, placeholder: 'paste the listing link: etsy.com/listing/…' }], confirm: 'Mark published' });
-    return !!(v && await ctl.act('/api/approvals/decide', { jobId: j.id, action: 'published', publishedOn: v.publishedOn, etsyUrl: v.etsyUrl.trim(), expectedVersion: qv }, { ok: 'Marked published: ' + j.title }));
+    const v = await ctl.dialog({ title: 'Mark published', intro: t + '<br><br>Records the date and the Etsy listing you published by hand. The station never publishes anything itself.', fields: [{ name: 'publishedOn', label: 'Published on', type: 'date', required: true, value: iso, max: iso }, { name: 'etsyUrl', label: 'Etsy listing URL', type: 'url', required: true, placeholder: 'paste the listing link: etsy.com/listing/…' }, { name: 'finalTitle', label: 'Final title (as on Etsy)', type: 'text', required: true, value: (j.listing && j.listing.title) || '', hint: 'the package is not rebuilt if you changed it on Etsy' }, { name: 'finalPriceEur', label: 'Final price (EUR)', type: 'number', required: true, min: 0.2, step: 0.01, value: (j.listing && j.listing.priceEur) ?? '' }, { name: 'sku', label: 'SKU', type: 'text', required: true, placeholder: 'e.g. DESK-PROPS-01' }], confirm: 'Mark published' });
+    return !!(v && await ctl.act('/api/approvals/decide', { jobId: j.id, action: 'published', publishedOn: v.publishedOn, etsyUrl: v.etsyUrl.trim(), finalTitle: v.finalTitle.trim(), finalPriceEur: Number(v.finalPriceEur), sku: v.sku.trim(), expectedVersion: qv }, { ok: 'Marked published: ' + j.title }));
   }
   if (k === 'stop') {
     const v = await ctl.dialog({ title: 'Stop this job?', intro: t + '<br><br>Aborts this job\'s model or image call in flight and stops it at its current step. Other jobs and routines carry on. Restart it later from the same step.', confirm: 'Stop job', danger: true });

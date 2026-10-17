@@ -105,6 +105,8 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     out.folder = j.kind === 'research' ? 'research/' : 'jobs/' + j.id + '/';
     // the buttons this job offers on the page (each action checks again on the server)
     out.controls = engine.orchestrator ? engine.orchestrator.controlsFor(j) : {};
+    // the owner's decisions (overrides of QA verdicts per file with date and reason, set and listing approvals): shown on the job
+    if (!j.legacy && j.kind === 'line' && engine.owner) { try { out.owner = engine.owner.summary(j.id); } catch (_) { out.owner = null; } }
     if (j.state === 'archived') out.statusReason = j.reason;
     if (j.state === 'queued' && j.data && j.data.waitingFor) out.waitingFor = j.data.waitingFor;
     return out;

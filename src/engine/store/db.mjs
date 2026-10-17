@@ -47,6 +47,8 @@ export function openStore({ J, file = 'station.db', log }) {
   const db = new DatabaseSync(J.dataJail(f));
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
   db.exec(SCHEMA);
+  // port batch 17/10/2026: what the owner published (final title, final price, SKU), as the legacy approval record holds it
+  if (!db.prepare('PRAGMA table_info(approvals)').all().some((c) => c.name === 'published')) db.exec('ALTER TABLE approvals ADD COLUMN published TEXT');
   const q = (sql) => db.prepare(sql);
   let depth = 0;
   // one transaction; nested calls join the outer one
@@ -58,6 +60,7 @@ export function openStore({ J, file = 'station.db', log }) {
     finally { depth--; }
   }
   const now = () => Date.now();
+  const apOut = (r) => (r ? { ...r, published: parse(r.published, null) } : r);
 
   const store = {
     file: f, backend: BACKEND, db, tx,
@@ -101,14 +104,14 @@ export function openStore({ J, file = 'station.db', log }) {
     // ---- approvals (the only human gate)
     // a row superseded by a listing re-run (E5) goes back to pending when the re-run is packaged; a decided row is kept
     queueApproval: (jobId) => q("INSERT INTO approvals (job_id, status, queued_at) VALUES (?, 'pending', ?) ON CONFLICT(job_id) DO UPDATE SET status = 'pending', queued_at = excluded.queued_at, decided_at = NULL, reason = NULL, version = approvals.version + 1 WHERE approvals.status = 'superseded'").run(jobId, now()),
-    getApproval: (jobId) => q('SELECT * FROM approvals WHERE job_id = ?').get(jobId),
-    listApprovals: () => q('SELECT * FROM approvals ORDER BY queued_at DESC').all(),
+    getApproval: (jobId) => apOut(q('SELECT * FROM approvals WHERE job_id = ?').get(jobId)),
+    listApprovals: () => q('SELECT * FROM approvals ORDER BY queued_at DESC').all().map(apOut),
     decideApproval(jobId, patch, { expectedVersion } = {}) {
       return tx(() => {
         const cur = store.getApproval(jobId); if (!cur) throw new Error('not in the approval queue: ' + jobId);
         if (expectedVersion != null && cur.version !== expectedVersion) throw new VersionConflict('approval ' + jobId, cur.version, expectedVersion);
         const n = { ...cur, ...patch };
-        q('UPDATE approvals SET status=?, decided_at=?, reason=?, published_at=?, etsy_url=?, version=version+1 WHERE job_id=?').run(n.status, n.decided_at ?? null, n.reason ?? null, n.published_at ?? null, n.etsy_url ?? null, jobId);
+        q('UPDATE approvals SET status=?, decided_at=?, reason=?, published_at=?, etsy_url=?, published=?, version=version+1 WHERE job_id=?').run(n.status, n.decided_at ?? null, n.reason ?? null, n.published_at ?? null, n.etsy_url ?? null, n.published == null ? null : (typeof n.published === 'string' ? n.published : JSON.stringify(n.published)), jobId);
         return store.getApproval(jobId);
       });
     },

@@ -1,10 +1,13 @@
-// PORTED from Virtual-workers/station/scripts/lib/digital-prices.mjs (the owner's own code) at 16/10/2026 19:42 Irish time (re-ported: it changed after 19:16), source sha256 ba393738f3bd2a4707fe30db6b840fe7cc84f02c25d5233e1920db7a4e6e7a36.
+// PORTED from Virtual-workers/station/scripts/lib/digital-prices.mjs (the owner's own code) at 17/10/2026 12:34 Irish time (5th moment, re-ported: it changed after 16/10 19:42), source sha256 797d30b7fba8a38cd3fe0910204d20731aec2e7fb4af12f28879ce1bd4489700.
+//   5th moment: the fill works from the design sign-off (QA DESIGN's approval or a valid owner set approval, owner-approval.mjs designSignOff), as in the source
 //   change: file writes go through the engine's data jail (dataJail from ../store/active.mjs)
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
-//   change: fillDigitalPrices takes the blocklist terms (`extra`) from the engine instead of reading the station's file
+//   change: fillDigitalPrices takes the blocklist terms (extra) from the engine instead of reading the station's file
+//   the engine's price-fill step calls it with the job's own id, never "the most recently changed listing" (legacy price-hook bug, port item 31)
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // digital-prices.mjs (lib) — the digital counterpart of fill-prices.mjs (productType "digital"). Before QA LISTING reviews a listing (price hook,
-// every run) a station script, not an agent, fills the listing's FACT fields from the QA-approved deliverable set and the fee model:
+// every run) a station script, not an agent, fills the listing's FACT fields from the approved deliverable set (QA DESIGN's approval, or a valid
+// owner set approval after the pass limit: owner-approval.mjs designSignOff) and the fee model:
 //   deliverables      [{ name, format, widthPx, heightPx }] from the approved set-vN/deliverables.json (the listing must state exactly these files)
 //   delivery          config.digital.delivery ("automatic download")
 //   priceSuggestion   the owner price range when the brief has one, else the brief's sourced USD range in EUR (null where there is none)
@@ -23,6 +26,7 @@ import { ownerPrice } from './demand-evidence.mjs';
 import { publicView } from './digital-files.mjs';
 import { noticeFor } from './digital-build.mjs';
 import { recordListingOriginality } from './originality.mjs';
+import { designSignOff } from './owner-approval.mjs';
 import { dataJail } from '../store/active.mjs';
 
 export const TODO_PRICE = 'confirm price';
@@ -69,12 +73,12 @@ export function digitalPriceFields({ L, product, briefText, manifest, cfg = defa
 }
 
 export function fillDigitalPrices({ id, roomDir, cfg = defaultConfig, products = null, dry = false, extra = null, log = { info() {}, warn() {}, error() {} } }) {
-  const lf = path.join(roomDir, 'jobs', id, 'outbox', 'listing.json'), bf = path.join(roomDir, 'jobs', id, 'brief.md'), qf = path.join(roomDir, 'jobs', id, 'outbox', 'qa-design.json');
+  const lf = path.join(roomDir, 'jobs', id, 'outbox', 'listing.json'), bf = path.join(roomDir, 'jobs', id, 'brief.md');
   const rd = (f, what) => { try { return { v: JSON.parse(fs.readFileSync(f, 'utf8')) }; } catch (e) { return { err: what + (fs.existsSync(f) ? ' is not valid JSON' : ' is missing') }; } };
   const l = rd(lf, 'jobs/' + id + '/outbox/listing.json'); if (l.err) return { ok: false, reason: l.err };
-  const q = rd(qf, 'jobs/' + id + '/outbox/qa-design.json'); if (q.err) return { ok: false, reason: q.err + ': no QA-approved deliverable set to list' };
-  if (q.v.verdict !== 'approved') return { ok: false, reason: 'qa-design.json verdict is "' + q.v.verdict + '"' };
-  const m = rd(path.join(roomDir, String(q.v.designFile || 'missing')), String(q.v.designFile)); if (m.err) return { ok: false, reason: m.err };
+  // QA DESIGN's approval, or a valid owner set approval after the pass limit (owner exception 2026-10-17; the package gate's own check)
+  const so = designSignOff({ id, roomDir, cfg }); if (!so.ok) return { ok: false, reason: 'no approved deliverable set to list: ' + so.reasons.join('; ') };
+  const m = rd(path.join(roomDir, String(so.designFile || 'missing')), String(so.designFile)); if (m.err) return { ok: false, reason: m.err };
   const list = products || JSON.parse(fs.readFileSync(productsFile('digital'), 'utf8')).products, product = list.find((x) => x.key === l.v.productKey);
   if (!product || product.digital !== true) return { ok: false, reason: 'productKey "' + l.v.productKey + '" is not a digital product in products.json' };
   const next = digitalPriceFields({ L: l.v, product, briefText: fs.existsSync(bf) ? fs.readFileSync(bf, 'utf8') : '', manifest: m.v, cfg });

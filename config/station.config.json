@@ -418,6 +418,12 @@
   },
   "sloganScreen": {
     "$comment": "LOCAL BLOCKLIST ONLY, owner-maintained (2026-10-15): brands, sports teams and leagues, famous catchphrases, characters. A hit blocks QA approval and packaging. A clear result is NOT trademark clearance: every text-led listing carries the owner to-do 'check slogan on USPTO trademark search before publishing'. Matching is on whole words after lower-casing and removing punctuation. Add to the lists as you find more; never remove without the owner. The 'saturated' list is a SEED of stock tee slogans and templates (owner: reject common existing slogans as unoriginal and flag possible trademark risk); it is local, non-exhaustive and not trademark clearance. QA DESIGN also judges saturation from its own knowledge. EXTENDED 2026-10-16 (originality gate): lists people, franchises, lyrics-and-quotes, artists, derivative. These are SEEDS of well-known protected names and phrases, local and non-exhaustive: a clear result is never clearance, and QA DESIGN / QA LISTING still judge anything the lists cannot know. Matching also catches case, punctuation, accents, plurals and possessives, spaced-out letters (n i k e), compounds (spiderman), digit/symbol swaps (n1ke) and single-letter misspellings of long names (addidas). Every category except saturated hard-fails QA DESIGN, QA LISTING and the package gate; saturated applies to slogans only.",
+    "nearMissAllow": {
+      "$comment": "OWNER exception to the station freeze (2026-10-17): ordinary words that must NOT count as a one-letter misspelling of the listed name. Applies only to the near-miss-spelling match; the name itself (and its plural, compound or symbol-swap forms) still hits. Keys are listed phrases, values are the ordinary words. Exact whole words only (after case and punctuation): no plural stripping, no fuzzy match, so list every form (owner, 2026-10-17). Add only with the owner.",
+      "chucky": ["chunky"],
+      "chanel": ["channel", "channels"],
+      "bowser": ["browser", "browsers"]
+    },
     "lists": {
       "brands": [
         "nike",
@@ -1464,7 +1470,9 @@
         "speckMaxPx": 48,
         "enclosed": { "minLum": 240, "maxChroma": 24, "minRegionPx": 400, "minWidthPx": 12, "ringPx": 4, "outlineMaxLum": 110, "minOutlineShare": 0.5, "fringePx": 3, "fringeMaxDist": 40 },
         "enclosedNote": "owner exception 2026-10-16 (the mug's handle hole was opaque off-white): first, an ENCLOSED region of opaque (alpha >= 128), light (luminance >= minLum) and nearly grey (max - min channel <= maxChroma) pixels, solid (>= minRegionPx, average width >= minWidthPx) with no clear pixel or image edge within ringPx, whose ring is at least minOutlineShare outline-dark (luminance <= outlineMaxLum), is made transparent; its anti-aliased edge within fringePx is unmixed into the outline colour. Calibrated on the mug: hole RGB 254,249,237 (luminance 249, chroma 17), body 255,237,193 (237, 62), steam fill 255,242,210 (chroma 45). The finished file is re-checked with the same colour and size thresholds at any outline share; the package gate refuses a file with one left. A genuinely white, outlined part (paper, eye whites) would also be cleared: the review images show it.",
-        "note": "at the generator's size: alpha below alphaFloor -> fully clear (faint haze and fringe); alpha at or above alphaSolid -> fully solid; separate opaque specks of speckMaxPx pixels or fewer removed; colour under fully clear pixels zeroed; then trimmed to the artwork. alphaFloor is applied again after the upscale (resampling leaves faint ringing)."
+        "palette": { "products": ["pngtuber-prop-pack"], "maxChroma": 24, "backgroundMinLum": 240, "nearWhiteMinLum": 200, "minRegionPx": 400, "minWidthPx": 12 },
+        "paletteNote": "owner rule 2026-10-17 for the products listed: no pure-white or grey-white fills; paper, book pages, sticky notes and eye highlights use cream or pale palette tints, each fill's colour channels differing by more than maxChroma (the clean-up's 24). The build records, per file: (1) every pixel opaque in the generated file that the enclosed step made fully clear, and how many of them were NOT background-coloured there (background-coloured = luminance >= backgroundMinLum and channels within maxChroma; the generated file stores no background colour of its own, its clear pixels are black, so the removed pixels' own colour is the test); (2) near-white fills of the cleaned artwork: solid regions (>= minRegionPx, average width >= minWidthPx, at the generator's size) of opaque pixels with luminance >= nearWhiteMinLum and channels within maxChroma. The package gate fails (1) for every packaged product and (2) for the products listed. nearWhiteMinLum 200 is Claude's choice for 'grey-white', not an owner figure. Limit: a pure-white outlined fill drawn against the rule is cleared like a hole and passes (1); the review images and QA DESIGN (the brief's Quality bar) catch it.",
+        "note":"at the generator's size: alpha below alphaFloor -> fully clear (faint haze and fringe); alpha at or above alphaSolid -> fully solid; separate opaque specks of speckMaxPx pixels or fewer removed; colour under fully clear pixels zeroed; then trimmed to the artwork. alphaFloor is applied again after the upscale (resampling leaves faint ringing)."
       },
       "paddingPct": 6,
       "paddingNote": "every prop is centred on its square canvas with its longer side filling 100 - 2 x paddingPct per cent (6 = 120 px each side at 2000 px), so all files in a pack sit the same way",
@@ -1477,7 +1485,14 @@
         "quality": 90,
         "note": "a grid of every file in the zip on a plain light background, no text. A LISTING PHOTO ONLY (owner, 2026-10-16): written to set-vN/<dir>/, never to files/; the download is exactly the one zip."
       },
-      "maxUpscaleWarn": 4
+      "maxUpscaleWarn": 4,
+      "optimise": {
+        "$comment": "OWNER exception to the station freeze (2026-10-17): the 12-file prop pack zipped at 28.1-28.3 MB, over Etsy's 20 MB per file. Every finished PNG is first re-encoded LOSSLESSLY (zlib level 9 with adaptive row filtering: the same pixels, checked). If the zip is then still over paletteIfZipOverBytes, every file is palette-reduced with libimagequant (the engine pngquant uses, built into sharp) at quality 100 with Floyd-Steinberg dithering, and the zip re-checked. sharp has no pngquant-style minimum quality, so a file whose palette version is below minPsnrDb (premultiplied RGBA PSNR against the lossless file) keeps the lossless version and a warning is recorded. Pixel size is never changed (2000x2000). The gate measures the real zip on disk.",
+        "lossless": true,
+        "paletteIfZipOverBytes": 19000000,
+        "palette": { "quality": 100, "colours": 256, "dither": 1.0, "effort": 10 },
+        "minPsnrDb": 40
+      }
     },
     "styleReference": {
       "$comment": "Owner go 2026-10-16: for a product with styleReference.ownerOk (products.json), run-line --first-file draws file 1 alone and stops; the station builds it as delivered and flattens it onto these backgrounds for the owner (work/<id>/set-vN/review/, not deliverables). scripts/style-ref.mjs records the owner's decision; run-line --after-style-ok sends the approved file to the image model as reference_image (local StarNet patch) for the other files. scripts/lib/style-ref.mjs.",

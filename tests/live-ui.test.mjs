@@ -188,8 +188,13 @@ test('approve, reject and mark published write only the approvals and tracker ro
   const tomorrow = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
   assert.equal((await post('/api/approvals/decide', { jobId: JOB_A, action: 'published', etsyUrl: 'https://www.etsy.com/listing/123', publishedOn: tomorrow, expectedVersion: a.version })).status, 400);
   assert.equal((await post('/api/approvals/decide', { jobId: JOB_A, action: 'published', etsyUrl: 'https://example.com/listing/123', publishedOn: dublinDay(), expectedVersion: a.version })).status, 400);
-  const p = await decideOnly({ action: 'published', etsyUrl: 'https://www.etsy.com/listing/1234567890/mushroom-stickers', publishedOn: dublinDay() });
+  // Mark published records the final title, final price and SKU as set on Etsy (port batch 17/10/2026); each is required
+  const pub = { action: 'published', etsyUrl: 'https://www.etsy.com/listing/1234567890/mushroom-stickers', publishedOn: dublinDay(), finalTitle: 'Mushroom Sticker Sheet, FIXTURE', finalPriceEur: 4.5, sku: 'FIX-01' };
+  for (const bad of [{ finalTitle: '' }, { finalPriceEur: 0 }, { finalPriceEur: 4.555 }, { sku: '' }, { sku: 'has space' }]) assert.equal((await post('/api/approvals/decide', { jobId: JOB_A, ...pub, ...bad, expectedVersion: a.version })).status, 400, JSON.stringify(bad));
+  const p = await decideOnly(pub);
   assert.equal(p.status, 'published'); assert.equal(engine.store.getTracker(JOB_A).etsy_listing_url, 'https://www.etsy.com/listing/1234567890/mushroom-stickers');
+  assert.deepEqual([p.published.finalTitle, p.published.finalPriceEur, p.published.sku, p.published.priceFinal], ['Mushroom Sticker Sheet, FIXTURE', 4.5, 'FIX-01', true]);
+  assert.match(engine.store.getTracker(JOB_A).status_reason, /SKU FIX-01, final price EUR 4\.50, final title "Mushroom Sticker Sheet, FIXTURE"/);
   // reject: the same queue row put back to pending (test set-up, as a listing re-run would)
   engine.store.decideApproval(JOB_A, { status: 'superseded' }); engine.store.queueApproval(JOB_A);
   const rj = await decideOnly({ action: 'reject', reason: 'colours too close to a known brand' });
@@ -234,7 +239,7 @@ test('every control works end to end on the mock provider, and no write lands ou
   assert.ok(fs.existsSync(path.join(r.dataRoot, 'jobs', JOB_A, 'package', 'MANIFEST.json')), 'a new package');
   // approve and mark published
   let a = await post('/api/approvals/decide', { jobId: JOB_A, action: 'approve', expectedVersion: engine.store.getApproval(JOB_A).version }); assert.equal(a.status, 200);
-  a = await post('/api/approvals/decide', { jobId: JOB_A, action: 'published', etsyUrl: 'https://www.etsy.com/listing/42', publishedOn: dublinDay(), expectedVersion: a.json.result.version }); assert.equal(a.status, 200);
+  a = await post('/api/approvals/decide', { jobId: JOB_A, action: 'published', etsyUrl: 'https://www.etsy.com/listing/42', publishedOn: dublinDay(), finalTitle: 'FIXTURE title', finalPriceEur: 3, sku: 'FIX-02', expectedVersion: a.json.result.version }); assert.equal(a.status, 200);
   s = await snap(); assert.equal(s.jobs.find((j) => j.id === JOB_A).status, 'done');
 
   // job B: blocked by originality -> archive (files moved to rerun-archive-*, never deleted)
