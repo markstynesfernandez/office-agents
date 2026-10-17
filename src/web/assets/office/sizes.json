@@ -1,0 +1,72 @@
+{
+  "files": [
+    {
+      "file": "lightmap-day.webp",
+      "bytes": 920872,
+      "gzip": 919487,
+      "brotli": 920877
+    },
+    {
+      "file": "lightmap-evening.webp",
+      "bytes": 496944,
+      "gzip": 495142,
+      "brotli": 496949
+    },
+    {
+      "file": "manifest.json",
+      "bytes": 9082,
+      "gzip": 1643,
+      "brotli": 1410
+    },
+    {
+      "file": "office.bin",
+      "bytes": 1059752,
+      "gzip": 272935,
+      "brotli": 175830
+    },
+    {
+      "file": "office.gltf",
+      "bytes": 37658,
+      "gzip": 4127,
+      "brotli": 3270
+    },
+    {
+      "file": "textures/fabric.jpg",
+      "bytes": 32104,
+      "gzip": 31139,
+      "brotli": 30999
+    },
+    {
+      "file": "textures/floor.jpg",
+      "bytes": 45490,
+      "gzip": 45054,
+      "brotli": 44562
+    },
+    {
+      "file": "textures/oak.jpg",
+      "bytes": 39364,
+      "gzip": 38733,
+      "brotli": 38131
+    },
+    {
+      "file": "textures/rug.jpg",
+      "bytes": 95383,
+      "gzip": 95232,
+      "brotli": 95388
+    },
+    {
+      "file": "textures/walnut.jpg",
+      "bytes": 25989,
+      "gzip": 25335,
+      "brotli": 24951
+    }
+  ],
+  "total": {
+    "bytes": 2762638,
+    "gzip": 1928827,
+    "brotli": 1832367
+  },
+  "budgetBytes": 10000000,
+  "budgetNote": "10 MB (10,000,000 bytes) for the whole baked office, compressed (owner, R3a); checked against bytes as served",
+  "note": "bytes = as served (JPEG textures, WebP lightmaps: already compressed; the glTF JSON and geometry are not); gzip/brotli = what HTTP compression would give"
+}

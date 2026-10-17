@@ -14,6 +14,7 @@
 *.exr binary
 *.ktx2 binary
 *.glb binary
+*.bin binary
 *.webm binary
 *.mp4 binary
 *.mov binary

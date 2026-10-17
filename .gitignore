@@ -20,3 +20,4 @@ fixtures/*
 
 # owner's mood references (other people's renders): never committed
 design-refs/
+__pycache__/

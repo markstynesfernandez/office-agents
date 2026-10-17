@@ -2,7 +2,7 @@
 // procedural geometry with flat vertex colours, merged into a few meshes so the whole static office costs a handful of
 // draw calls:
 //   statics   one vertex-coloured mesh per room (and one each for the atrium, the lounge and the closet)
-//   wood      the room and lounge floors (planks texture, planar UVs)       tile   the atrium slab (tiles texture)
+//   wood      the room and lounge floors (the shared oak texture, planar UVs; R3a)       tile   the atrium slab (tiles texture)
 //   decals    framed pictures, the mood board and the whiteboard (one atlas texture)
 //   emissive  LED strips, lamp bulbs, closet LEDs (unlit, so they read as light in dark mode)
 //   glow      additive soft quads: LED washes on walls and floors, lamp pools (dark mode only)
@@ -12,6 +12,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { FLOOR, WALL_H, WALL_T, CORE_R, SOFA, ARMCHAIR } from './layout.js';
 import { rng, ATLAS, atlasUV, GLOW_UV } from './textures.js';
+import { FLOOR_OAK } from './bakedlook.js';
 
 const BOOKS = ['#7b2d26', '#2f4858', '#3d5a40', '#8c6d46', '#5b5f97', '#b5533c', '#d9b26f', '#e8e1d4', '#3b3b3b', '#6b4e71', '#9a8f7a', '#2e5e6e', '#a3473a', '#c9c1b1'];
 const BINDERS = ['#1f3b5c', '#3a3a3c', '#8c2f2f', '#4a6a8a', '#e3ddd2', '#2f5d50'];
@@ -44,11 +45,12 @@ const onWall = (axis, at, u, y, v) => (axis === 'z' ? mat4(u, y, at + WALL_T + v
 // placement in a furniture item's own frame (it faces local -z; yaw as in layout.js)
 const local = (o, lx, ly, lz, extra = 0, rx = 0, rz = 0) => { const c = Math.cos(o.yaw || 0), s = Math.sin(o.yaw || 0); return mat4(o.x + lx * c + lz * s, ly, o.z - lx * s + lz * c, (o.yaw || 0) + extra, rx, rz); };
 
-// opts.skipRoom (R3 spike): a department key whose room is drawn elsewhere (the baked Design room): its walls, floor,
-// furniture, decals and the props inside it are left out; its open-front floor LED and wash stay (real-time glow).
+// opts.skipRooms (R3a): department keys whose rooms are drawn elsewhere (the baked rooms): their walls, floors,
+// furniture, decals and the props inside them are left out; their open-edge floor LEDs and washes stay (real-time glow).
+// Floors: one oak texture for the whole office at the baked rooms' scale (bakedlook.js FLOOR_OAK).
 export function buildRooms(L, p, accents, opts = {}) {
-  const skip = opts.skipRoom ? L.rooms.find((r) => r.key === opts.skipRoom) : null;
-  const inSkip = (q) => !!skip && q.x > skip.x0 && q.x < skip.x1 && q.z > skip.z0 && q.z < skip.z1;
+  const skips = L.rooms.filter((r) => (opts.skipRooms || []).includes(r.key));
+  const inSkip = (q) => skips.some((s) => q.x > s.x0 && q.x < s.x1 && q.z > s.z0 && q.z < s.z1);
   const out = { statics: [], wood: null, tile: null, decals: null, emissive: null, glow: null };
   const wood = bucket({ uv: true }), tile = bucket({ uv: true }), decals = bucket({ uv: true }), em = bucket({ color: true }), glow = bucket({ uv: true, color: true });
   const ledC = p.led, glowC = col(p.ledGlowColour).multiplyScalar(p.ledGlow);
@@ -285,10 +287,10 @@ export function buildRooms(L, p, accents, opts = {}) {
     // LED along the room's open floor edges inside the slab (the slab's own edge has its LED)
     if (r.z1 < b.z1 - 0.01) edgeLED('+z', r.z1, r.x0, r.x1, FLOOR + 0.01, FLOOR + 0.004, 0.7, 0.5);
     if (r.x1 < b.x1 - 0.01) edgeLED('+x', r.x1, r.z0, r.z1, FLOOR + 0.01, FLOOR + 0.004, 0.7, 0.5);
-    if (r === skip) continue;
+    if (skips.includes(r)) continue;
     const S = bucket({ color: true }), accent = accents[r.key] || accents.default;
     const wallC = mix(p.wall, accent, p.wallTint);
-    wood.add(planarUV(box(r.w, 0.02, r.d).translate(r.cx, FLOOR + 0.01, r.cz), 3.6));
+    wood.add(planarUV(box(r.w, 0.02, r.d).translate(r.cx, FLOOR + 0.01, r.cz), FLOOR_OAK.tile));
     for (const w of L.walls) if (w.owner === r.key) wallRun(S, w, wallC);
     for (const c of r.clusters) rug(S, c.x0, c.x1, c.z0, c.z1, p.rug, p.rugBorder);
     const zA = r.z0, xA = r.x0;                     // wall 'z' at zA (back right on screen), wall 'x' at xA (back left)
@@ -332,7 +334,7 @@ export function buildRooms(L, p, accents, opts = {}) {
   // ---- lounge: wood floor, rug, two sofas, two armchairs, coffee table, arc lamp
   {
     const S = bucket({ color: true }), lg = L.lounge, f = lg.furniture;
-    wood.add(planarUV(box(lg.w, 0.02, lg.d).translate(lg.cx, FLOOR + 0.01, lg.cz), 3.6));
+    wood.add(planarUV(box(lg.w, 0.02, lg.d).translate(lg.cx, FLOOR + 0.01, lg.cz), FLOOR_OAK.tile));
     rug(S, f.rug.x0, f.rug.x1, f.rug.z0, f.rug.z1, p.loungeRug, p.loungeRugBorder);
     sofa(S, f.sofaA, f.sofaA.len, p.sofa); sofa(S, f.sofaB, f.sofaB.len, p.sofa);
     armchair(S, f.chair1, p.leather); armchair(S, f.chair2, p.leather);

@@ -20,8 +20,8 @@
     "demo": "node scripts/demo.mjs",
     "demo:record": "node scripts/demo-record.mjs",
     "import-legacy": "node scripts/import-legacy.mjs",
-    "build-design-room": "node scripts/build-design-room.mjs",
-    "screenshots-r3": "node scripts/screenshots-r3.mjs"
+    "build-office": "node scripts/build-office.mjs",
+    "screenshots-r3a": "node scripts/screenshots-r3a.mjs"
   },
   "dependencies": {
     "croner": "10.0.1",

@@ -25,7 +25,7 @@ import { computeLayout, pointAt, pathLength, bakedRoomSpec, FLOOR, WALL_H, CORE_
 import { buildRooms } from './rooms.js';
 import { woodTexture, tileTexture, glowTexture, atlasTexture, GLOW_UV } from './textures.js';
 import { SKIN, HAIR, TROUSERS, hash, shirtColours } from './looks.js';   // people's looks (R2; shirts off the skin range, E5)
-import { loadBakedRoom } from './baked.js';   // R3 spike: the baked Design room (?scene=baked)
+import { loadBakedOffice, loadFloorTexture } from './baked.js';   // R3a: the baked rooms (default; ?scene=procedural turns them off)
 
 const DEG = Math.PI / 180;
 const PITCH = 35 * DEG, YAW = 45 * DEG;
@@ -184,6 +184,10 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     coreRing: new THREE.MeshBasicMaterial({ color: new THREE.Color('#8fc0f2'), toneMapped: false }),
     select: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false })
   };
+  // R3a: one oak floor across the office. The procedural rooms and the lounge use the baked rooms' floor texture at
+  // the same scale (bakedlook.js FLOOR_OAK); the canvas planks only show until it has loaded (or if it cannot load)
+  loadFloorTexture().then((t) => { M.wood.map = t; M.wood.needsUpdate = true; TX.wood.dispose(); TX.wood = t; invalidate(2); })
+    .catch((e) => console.warn('office: the oak floor texture did not load; keeping the canvas planks:', e && e.message));
   const poolGeo = (() => { const g = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2); const [u0, v0, u1, v1] = GLOW_UV.pool, uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0)); return g; })();
 
   // ---- people (R2): simple stylised low-poly figures, one instanced mesh per body part. Each part's origin is its
@@ -245,21 +249,25 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const dummy = new THREE.Object3D();
   // R3 spike: the baked Design room. Loaded only behind ?scene=baked; used only while its spec matches the live layout
   // (layout.js bakedRoomSpec), otherwise the procedural room stays. Everything else in the office is unchanged.
-  const baked = { want: options.scene === 'baked', room: null, active: false, failed: null, warned: false };
-  const BAKED_KEY = 'design';
+  const baked = { want: options.scene !== 'procedural', office: null, active: new Set(), failed: null, warned: new Set() };
   // when it arrives after the first snapshot, the normal data path rebuilds the office with it (statuses, screens, lines)
-  if (baked.want) loadBakedRoom().then((room) => { baked.room = room; if (data) { structureKey = null; setData(data); } invalidate(2); })
-    .catch((e) => { baked.failed = String(e && e.message || e); console.warn('office: the baked Design room did not load; drawing the procedural room:', baked.failed); invalidate(1); });
+  if (baked.want) loadBakedOffice({ decalMap: TX.atlas }).then((o) => { baked.office = o; if (data) { structureKey = null; setData(data); } invalidate(2); })
+    .catch((e) => { baked.failed = String(e && e.message || e); console.warn('office: the baked rooms did not load; drawing the procedural rooms:', baked.failed); invalidate(1); });
+  // R3a: each baked room is used only while its spec matches the live layout (layout.js bakedRoomSpec); a stale room
+  // falls back to the procedural one, with a console warning, and the other rooms stay baked
   function updateBaked() {
-    if (!baked.room || !L) { baked.active = false; return; }
-    const r = L.rooms.find((x) => x.key === BAKED_KEY);
-    baked.active = !!r && JSON.stringify(baked.room.manifest.spec) === JSON.stringify(bakedRoomSpec(L, BAKED_KEY));
-    if (!baked.active && !baked.warned) { baked.warned = true; console.warn('office: the baked Design room does not match the live layout; drawing the procedural room'); }
-    const g = baked.room.group;
-    if (baked.active) { g.position.set(r.x0, 0, r.z0); if (!g.parent) world.add(g); baked.room.setTheme(theme); g.updateMatrixWorld(true); }
-    else if (g.parent) world.remove(g);
+    baked.active = new Set();
+    if (!baked.office || !L) return;
+    for (const [key, br] of Object.entries(baked.office.rooms)) {
+      const r = L.rooms.find((x) => x.key === key), ok = !!r && JSON.stringify(br.spec) === JSON.stringify(bakedRoomSpec(L, key));
+      if (!ok && !baked.warned.has(key)) { baked.warned.add(key); console.warn('office: the baked ' + key + ' room does not match the live layout; drawing the procedural room'); }
+      const g = br.group;
+      if (ok) { baked.active.add(key); g.position.set(r.x0, 0, r.z0); if (!g.parent) world.add(g); g.updateMatrixWorld(true); }
+      else if (g.parent) world.remove(g);
+    }
+    if (baked.active.size) baked.office.setTheme(theme);
   }
-  const skippedRoom = () => (baked.active ? L.rooms.find((x) => x.key === BAKED_KEY) : null);
+  const bakedRooms = () => (baked.office ? [...baked.active].map((k) => baked.office.rooms[k]) : []);
 
   // ---- the memory core: crystal on its pedestal, accent ring, soft glow sprite that pulses on a new ledger row
   const hub = new THREE.Group(); world.add(hub);
@@ -278,7 +286,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (gtao) gtao.aoDirty = true;   // the cached AO (R2) follows the static scene
     for (const s of statics) { world.remove(s); s.geometry.dispose(); }
     statics = []; glowMesh = null;
-    const R = buildRooms(L, P(), PALETTE.departments, { skipRoom: baked.active ? BAKED_KEY : null });
+    const R = buildRooms(L, P(), PALETTE.departments, { skipRooms: [...baked.active] });
     const add = (geo, mat, { cast = true, receive = true, order = 0, name } = {}) => { if (!geo) return null; const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = receive; m.renderOrder = order; m.name = name || ''; world.add(m); statics.push(m); return m; };
     for (const s of R.statics) add(s.geo, M.static, { name: 'room:' + s.key });
     add(R.tile, M.tile, { cast: false, name: 'tile' });
@@ -325,11 +333,11 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     let li = 0;
     const deskY = PT + 0.73, onTop = deskY + 0.03;
     const shirts = shirtColours(desks.map((d) => ({ id: d.agentId, color: d.a.color })));
-    const skip = skippedRoom();
+    const skipRooms = L.rooms.filter((r) => baked.active.has(r.key));
     desks.forEach(({ a, x, z, lshape, chair: ch, agentId, room }, i) => {
-      // in the baked room (R3 spike) the desk, its drawers, lamp and chair are in the glb: their instances get scale 0;
+      // in a baked room (R3a) the desk, its drawers, lamp and chair are in the glTF: their instances get scale 0;
       // the monitor, keyboard, screen glow, status light and the person stay real-time
-      const s = room === skip ? 0 : 1;
+      const s = skipRooms.includes(room) ? 0 : 1;
       setInst(top, i, x, deskY, z, 0, 0, s); setInst(frame, i, x, PT, z, 0, 0, s);
       if (lshape) { setInst(ret, li, x + 0.75, deskY, z + 0.95, 0, 0, s); setInst(retFrame, li, x + 0.75, PT, z + 1.3, 0, 0, s); li++; }
       setInst(mon, i, x, onTop, z - 0.24, MON_YAW); setInst(kb, i, x - 0.05, onTop + 0.012, z + 0.14);
@@ -361,7 +369,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const wp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.9)); pickRoot.add(wp); pickables.push({ object: wp, kind: 'agent', id: agentId }); workers[workers.length - 1].pick = wp;
     });
     // plants
-    const inSkip = (p) => !!skip && p.x > skip.x0 && p.x < skip.x1 && p.z > skip.z0 && p.z < skip.z1;   // the baked room has its own plants
+    const inSkip = (p) => skipRooms.some((r) => p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1);   // baked rooms have their own plants
     const tall = L.plants.filter((p) => p.kind === 'tall' && !inSkip(p)), small = L.plants.filter((p) => p.kind !== 'tall' && !inSkip(p));
     const potT = makeInst('potTall', G.potTall, M.potTall, tall.length), leafT = makeInst('leafTall', G.leavesTall, M.leafTall, tall.length);
     const potS = makeInst('potSmall', G.potSmall, M.potSmall, small.length), leafS = makeInst('leafSmall', G.leavesSmall, M.leafSmall, small.length);
@@ -557,8 +565,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (inst.screenPool) inst.screenPool.visible = lit;
     if (inst.bulb) { for (let i = 0; i < inst.bulb.count; i++) inst.bulb.setColorAt(i, new THREE.Color(p.bulb)); if (inst.bulb.instanceColor) inst.bulb.instanceColor.needsUpdate = true; }
     if (gtao) gtao.blendIntensity = p.aoBlend;
-    if (baked.room && baked.active) baked.room.setTheme(theme);
-    if (glowPass) glowPass.enabled = baked.active && theme === 'dark';
+    if (baked.office && baked.active.size) baked.office.setTheme(theme);
+    if (glowPass) glowPass.enabled = baked.active.size > 0 && theme === 'dark';
     colourServices(); updateScreens(); paintBackdrop(); setHubGlow(0);
     for (const s of screens) if (s.textured) { const a = data && data.agents.find((x) => x.id === s.agentId); if (a) s.tex.draw(a, theme); }
     if (gtao) gtao.aoDirty = true;
@@ -597,7 +605,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
         gtao.blendIntensity = P().aoBlend;
         // left out of the AO pre-pass: overlays (they would make halos) and small details that gain nothing from AO
         // R2: the people are left out too (small, they move, and they have blob shadows): 15 fewer draws in the pre-pass
-        gtao.hideDuringAO = () => [...PEOPLE_PARTS.map((n) => inst[n]), ...(baked.room ? baked.room.ledMeshes : []), ...(baked.room && options.bakedAO === false ? [baked.room.group] : []), crystal, coreRing, glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
+        gtao.hideDuringAO = () => [...PEOPLE_PARTS.map((n) => inst[n]), ...bakedRooms().flatMap((r) => r.ledMeshes), ...(options.bakedAO === false ? bakedRooms().map((r) => r.group) : []), crystal, coreRing, glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
         composer.addPass(gtao);
       } catch (e) { console.warn('GTAO unavailable, continuing without AO', e); gtao = null; }
     }
@@ -709,8 +717,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     return { rendered: true, cameraChanged };
   }
   const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
-  function bakedState() { return { want: baked.want, loaded: !!baked.room, active: baked.active, failed: baked.failed, glow: !!(glowPass && glowPass.enabled) }; }
-  function getStats() { return { baked: baked.want ? (baked.active ? 'design' : baked.failed ? 'failed' : baked.room ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
+  function bakedState() { return { want: baked.want, loaded: !!baked.office, active: baked.active.size > 0, rooms: [...baked.active], failed: baked.failed, glow: !!(glowPass && glowPass.enabled) }; }
+  function getStats() { return { baked: baked.want ? (baked.active.size ? [...baked.active].join('+') : baked.failed ? 'failed' : baked.office ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
   // continuous rendering for `ms` (as if the camera were moving every frame): average fps and frame times
   // (the page's own loop keeps calling tick(); while benchUntil is in the future every tick renders)
   // move: true orbits the target a little every frame (the real camera-motion path: AO off while moving)
