@@ -9,6 +9,7 @@ import { cronWords } from './model.mjs';
 import { latestSet } from '../engine/lib/digital-prep.mjs';
 import { loadLegacy, legacyJobView, legacyMemory } from './legacy-view.mjs';
 import { roleLabel } from '../web/ui/role.js';
+import { evidenceLevelOf } from '../engine/lib/scout-brief.mjs';
 
 const PROGRESS = { brief: 0.08, design: 0.25, 'qa-design': 0.42, listing: 0.6, 'qa-listing': 0.75, 'approval-queue': 0.9, done: 1 };
 const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
@@ -58,6 +59,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     const brief = j.kind === 'research' ? '' : (() => { try { return fs.readFileSync(path.join(dir, 'brief.md'), 'utf8'); } catch (_) { return ''; } })();
     out.niche = (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || null;
     out.briefStatus = (/^status:\s*(\S+)/m.exec(brief) || [])[1] || null;
+    out.evidenceLevel = evidenceLevelOf(brief);   // owner decision 2 (17/10/2026): shown on the approval card ("indicative": genre briefs)
     if (j.state === 'running') out.status = 'in_progress';
     else if (j.state === 'queued') { out.status = 'backlog'; out.stage = j.step === 'intake' || !def.column ? 'brief' : def.column; }
     else if (j.state === 'approval') {

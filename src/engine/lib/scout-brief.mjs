@@ -151,3 +151,7 @@ export function checkScoutBrief(text, { products = [], cfg, returned = null, tod
 // back and checks the citations again against that job's transcript
 export const STATION_CITATIONS_RE = /^- citations: (\d+), all returned by web calls in job (\S+) \(transcript\)$/m;
 export const stationCitationLine = (n, jobId) => '- citations: ' + n + ', all returned by web calls in job ' + jobId + ' (transcript)';
+
+// the evidence level a brief declares in its Demand evidence ("indicative" for genre briefs until the Etsy Open API), or
+// null; the office page shows it on the approval card (owner decision 2, 17/10/2026)
+export const evidenceLevelOf = (text) => { const v = line(section(norm(text), '## Demand evidence'), 'evidence level'); return v ? v.toLowerCase() : null; };

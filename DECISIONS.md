@@ -1052,3 +1052,41 @@ none (69 files). `npm run dry-run:scout`: 4 verified, 1 blocked and refused at i
 13th refused, USD 0.00, as before (the bad brief's intake refusal now also names the missing citation record).
 `npm run parity`: 22/22 (baseline 22/22); `npm run parity -- --rebuild`: 26/26, 73 differences, 0 unexplained, as
 recorded.
+
+## E6 step b2: owner decisions, part 2 (owner-approved, 17/10/2026)
+
+The owner's answers to the six points under "E6 step b2a build record", recorded as given and built the same day (mock
+only, $0). Commit "E6 b2: partial blocked, short-name log, transcript retention".
+
+1. **Diagnosis correction noted;** D1 already covers it. No change.
+2. **No per-brief go-ahead for c.** The only human gate stays the approval queue before Etsy publish. The approval card
+   must show the brief's evidence level ("indicative") prominently.
+   *Built:* the job model carries `evidenceLevel` (from the brief's Demand evidence, `lib/scout-brief.mjs`
+   `evidenceLevelOf`); the job panel's approval box shows a banner under its heading, above the decision buttons:
+   "Evidence: INDICATIVE — demand from web search results only (titles, prices and keywords as the results showed
+   them); competitor count not measured; no Etsy page was opened" (`src/web/ui/evidence.js`, orange border).
+3. **report_blocked after a partial set:** if at least 1 valid draft was written, report_blocked records the shortfall
+   and its reason, and the line continues with the drafts that exist (as decided in b1). Only report_blocked with 0
+   valid drafts ends the job "incomplete".
+   *Built:* in the runtime, report_blocked with a partial-allowed contract and at least 1 output (drafts are
+   schema-checked on write, so each is valid) ends the run with a shortfall carrying `reason`; the step note reads
+   "TREND-SCOUT shortfall: n of 4 outputs (reported blocked: <reason>)". With 0 outputs, or on a contract without
+   partials (EVIDENCE-CHECKER's verdicts), it ends incomplete, exit 1.
+4. **Keep the under-3-character rule.** Refused short names go to an owner-review list (internal only); never
+   auto-added.
+   *Built:* `research/scouting/short-names-review.json` (inside scouting/, so only TREND-SCOUT's folder rules apply:
+   no other agent can read it), one entry per kind and name with the day and job, no duplicates, logged. Placeholders
+   are not short names and are not listed. The owner adds a real name to `blocklist.json` by hand.
+5. **Transcript retention follows the brief:** never delete a scout transcript while any brief citing it is open; once
+   all its briefs are closed (published, rejected or archived), it may be cleaned up after 90 days. No cleanup existed,
+   so the rule is recorded here and in code: `src/engine/lib/transcript-retention.mjs` `cleanupTranscripts()` is the
+   only way a transcript may be deleted. It finds the citing briefs from the station citation record (job briefs: open
+   unless the job is published, rejected, rejected by the owner or archived; verified briefs not yet taken in: open;
+   rejected briefs: closed). It keeps a transcript while any is open or until 90 days after the last one closed (and after
+   its own job ended), and throws `RetentionRefusal` when asked to delete one an open brief cites. Nothing calls it on a
+   schedule yet.
+
+Tests: new `tests/scout-b2-owner.test.mjs` 4/4 (partial + report_blocked continues with the shortfall and reason; short
+names on the review list only; retention refuses while a brief is open, keeps for 90 days after the last closes, then
+allows; the approval card's banner). `tests/scout-b2.test.mjs`: the report_blocked test now says "with 0 drafts"; the
+blocklist test counts the review-list log line.

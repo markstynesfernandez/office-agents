@@ -8,8 +8,9 @@
 // or git). An output contract (the line step's `outputs`, built by the orchestrator) is checked when the agent ends its
 // turn: missing outputs get a follow-up message naming the tool, with tool_choice requiring a call, at most
 // MAX_NUDGES times; still missing -> status `incomplete` (or `done` with a shortfall when the contract allows partial).
-// E6 b2 (owner D2): report_blocked(reason) is the "cannot produce" outcome: it satisfies the contract and ends the run
-// `incomplete` with that reason at once (no nudge); a nudge offers exactly fs_write or report_blocked.
+// E6 b2 (owner D2): report_blocked(reason) is the "cannot produce" outcome: it satisfies the contract and ends the run at
+// once (no nudge): `incomplete` with that reason when nothing was written, a recorded shortfall when a partial set exists
+// and the contract allows partials (owner decision 3); a nudge offers exactly fs_write or report_blocked.
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { buildAgentPrompt, engineWrapper } from './prompts.mjs';
@@ -177,7 +178,17 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
       messages.push({ role: 'user', content: results });
       // report_blocked (owner D2): the agent says it cannot produce its outputs; that satisfies the contract and ends the
       // run (no nudge, no further call): status incomplete with the agent's reason, so the job ends incomplete
-      if (blockedReason) { status = 'incomplete'; endReason = 'reported blocked: ' + blockedReason; log.warn('agent reported blocked', { runId, agent: agentKey, jobId: job && job.id, reason: blockedReason }); break; }
+      // Owner decision 3 (17/10/2026, after b2a): with a partial-allowed contract and at least 1 output already written
+      // (drafts are schema-checked on write, so each one is valid), report_blocked records the shortfall and its reason
+      // and the line continues with what exists; only report_blocked with 0 outputs (or a contract without partials)
+      // ends the run incomplete
+      if (blockedReason) {
+        const c = contract ? contract.check() : null;
+        if (c && contract.partialOk && c.have >= 1) { shortfall = { have: c.have, want: c.want, missing: c.missing, reason: blockedReason }; endReason = 'shortfall: ' + c.have + ' of ' + c.want + ', reported blocked: ' + blockedReason; }
+        else { status = 'incomplete'; endReason = 'reported blocked: ' + blockedReason; }
+        log.warn('agent reported blocked', { runId, agent: agentKey, jobId: job && job.id, reason: blockedReason, have: c ? c.have : null, continues: status !== 'incomplete' });
+        break;
+      }
     }
   } catch (e) {
     if (e instanceof CapError) { status = 'cap'; endReason = e.message; }

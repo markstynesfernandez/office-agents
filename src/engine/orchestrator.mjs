@@ -279,7 +279,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const sf = { step, agent: def.agent, ...run.shortfall };
       store.updateJob(job.id, { data: { shortfalls: [...(store.getJob(job.id).data.shortfalls || []), sf] } });
       log.warn('agent produced fewer outputs than required; the line continues with what it has', { jobId: job.id, ...sf });
-      return { next: def.next, note: def.agent.toUpperCase() + ' shortfall: ' + run.shortfall.have + ' of ' + run.shortfall.want + ' outputs' };
+      // owner decision 3: a shortfall after report_blocked carries the agent's reason (sf.reason) and the line continues
+      return { next: def.next, note: def.agent.toUpperCase() + ' shortfall: ' + run.shortfall.have + ' of ' + run.shortfall.want + ' outputs' + (run.shortfall.reason ? ' (reported blocked: ' + run.shortfall.reason + ')' : '') };
     }
     if (def.verdict) return routeVerdict(store.getJob(job.id), step, def, pass, run);
     if (step === 'rejects-desk') {

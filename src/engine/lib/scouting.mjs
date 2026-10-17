@@ -108,8 +108,22 @@ export function addToBlocklist(J, researchDir, terms, { day, jobId, log = null }
     if (have.has(term.toLowerCase())) continue; have.add(term.toLowerCase()); added.push({ term, kind: t.kind, ...(t.commonWord ? { commonWord: clean(t.commonWord) } : {}), day, jobId });
   }
   if (added.length) writeBlocklist(J, researchDir, [...cur.terms, ...added].sort((a, b) => a.term.localeCompare(b.term)));
+  // owner decision 4 (17/10/2026): a refused SHORT name (under 3 characters, perhaps a real title) goes to the owner's
+  // review list, never onto the blocklist; the owner adds it by hand if it is a real name
+  const short = refused.filter((r) => r.reason === SHORT_REASON);
+  if (short.length) {
+    const cur2 = readShortNames(researchDir), have2 = new Set(cur2.entries.map((x) => x.kind + '|' + x.term));
+    const fresh = short.filter((r) => !have2.has(r.kind + '|' + r.term)).map((r) => ({ term: r.term, kind: r.kind, day, jobId }));
+    if (fresh.length) { J.put(shortNamesFile(researchDir), JSON.stringify({ $comment: SHORT_COMMENT, entries: [...cur2.entries, ...fresh] }, null, 1) + '\n'); if (log) log.warn('scouting blocklist: short name(s) put on the owner review list, not the blocklist', { jobId, count: fresh.length }); }
+  }
   added.refused = refused;
   return added;
+}
+const SHORT_REASON = 'under 3 characters';
+const SHORT_COMMENT = 'Owner review list (owner decision 4, 17/10/2026): names under 3 characters that TREND-SCOUT recorded. They are never added to the scouting blocklist automatically; add one to blocklist.json by hand if it is a real game, studio or related name. Internal: inside scouting/, never shown to any agent but TREND-SCOUT.';
+export const shortNamesFile = (researchDir) => path.join(researchDir, SCOUT_DIR, 'short-names-review.json');
+export function readShortNames(researchDir) {
+  try { const b = JSON.parse(fs.readFileSync(shortNamesFile(researchDir), 'utf8')); return Array.isArray(b.entries) ? b : { entries: [] }; } catch (_) { return { entries: [] }; }
 }
 // the owner's one-off hygiene (D4, scripts/blocklist-hygiene.mjs): the entries that are not name-like, removed only with
 // apply (the engine itself never removes a name). Idempotent: a second run finds nothing.

@@ -112,7 +112,7 @@ function scripted({ atDrafts = null, onNudge = null } = {}) {
   return { script, calls, toolChoices, inputs };
 }
 
-test('D2: report_blocked ends the job incomplete with the reason: non-zero exit, no downstream calls, no nudge', async (t) => {
+test('D2: report_blocked with 0 drafts ends the job incomplete with the reason: non-zero exit, no downstream calls, no nudge', async (t) => {
   const reason = 'the searches returned no desk-props results with prices for any of the four genres';
   const s = scripted({ atDrafts: (p, k) => (k === 0 ? { content: [tool('rb', 'report_blocked', { reason })] } : { content: [{ type: 'text', text: 'should never be called' }] }) });
   const { e } = boot(t, s.script);
@@ -246,7 +246,8 @@ test('D4: placeholders and non-names are refused and logged, never added; real n
   assert.deepEqual(added.map((a) => a.term), ['Gravemoor Interactive', 'Vex Ardent']);
   assert.equal(added.refused.length, 11);
   assert.deepEqual(readBlocklist(rdir).terms.map((x) => x.term), ['Gravemoor Interactive', 'Vex Ardent']);
-  assert.equal(warned.length, 11); assert.ok(warned.every((w) => /refused a term that is not a name/.test(w.m)));
+  assert.equal(warned.filter((w) => /refused a term that is not a name/.test(w.m)).length, 11);
+  assert.equal(warned.filter((w) => /short name\(s\) put on the owner review list/.test(w.m)).length, 1, 'owner decision 4: "ab" goes to the review list');
   for (const x of ['UNKNOWN — needs owner check', 'TBD', 'N/A', '', 'ab']) assert.ok(notNameReason(x), x);
   for (const x of ['Ib Studio', 'Cinderpine', 'Lantern: Moss and Mile', '2091']) assert.equal(notNameReason(x), null, x);
   // in a scout run: a placeholder studio in the notes is refused (kind and reason on the job), the drafts still pass
