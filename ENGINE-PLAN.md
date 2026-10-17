@@ -169,7 +169,7 @@ One file per agent, `config/agents/<key>.json`:
   - `cheap` = `claude-haiku-5-5`
   - `strong` = `claude-sonnet-5-5`
 
-  Each tier carries its price per million tokens, with the date and source. These are the ids in your `station.config.json`. The prices there (Haiku 0.1 in / 0.5 out, Sonnet 2 / 10 USD per million tokens) must be confirmed against Anthropic's price page before E6, because the spend guard depends on them.
+  Each tier carries its price per million tokens, with the date and source. These are the ids in your `station.config.json`. The prices there (Haiku 0.1 in / 0.5 out, Sonnet 2 / 10 USD per million tokens) must be confirmed against Anthropic's price page before E6, because the spend guard depends on them. **Confirmed by the owner 17/10/2026** against the pricing page, with the cache prices and Haiku's long-prompt tier (over 100,000 prompt tokens: 0.5 / 2.5): `config/engine.json`, DECISIONS.md "E6 readiness: owner decisions".
 - **Departments** are a field on the agent. The scene keeps placing desks by department, exactly as now.
 - **Reasoning effort:**
   - The roster has `low` for all eight; no source file sets it.
@@ -246,7 +246,7 @@ interface ImageProvider {
 - **Today's implementation:** `openrouter`, using `fetch` and `OPENROUTER_API_KEY`. Your OpenRouter key's $2/day guardrail stays as an outer limit.
 - **Cost:**
   - The ledger takes the cost the provider returns where it reports one.
-  - Otherwise it takes the per-image price from `config/engine.json`, marked `estimated: true`. StarNet's own note was about USD 0.043 per GPT-5 Image Mini render (USAGE.md).
+  - Otherwise it takes the per-image price from `config/engine.json`, marked `estimated: true`. StarNet's own note was about USD 0.043 per GPT-5 Image Mini render (USAGE.md). **Owner, 17/10/2026:** the model is priced by tokens, so the guard reserves USD 0.08 an image and settles to the cost OpenRouter reports.
   - Image cost now goes into the ledger; under StarNet it was only on the OpenRouter dashboard.
 - **A second provider** is a new file implementing the same interface, plus an owner-approved entry in `imagePolicy`.
 
@@ -656,10 +656,20 @@ Approved by the owner 17/10/2026, with the decisions in DECISIONS.md "Scouting d
 wording, one-letter misspelling match, common-word titles warn on the bare word, 90-day retention, own drafts folder).
 **Next lounge re-bake: add a ninth lounge seat** (9 agents, 8 seats; REJECTS-DESK stays at its desk until then).
 
-#### Genre scout: sources for real runs (for the owner to check before E6; none approved yet)
+#### Genre scout: sources for real runs
 
-Owner, 17/10/2026: prefer official public APIs over page scraping. Links checked 17/10/2026; the terms themselves are
-for the owner to read. Every source is public, aggregate data about games: no person's name, handle or channel is
+**Owner decision, 17/10/2026 (DECISIONS.md "E6 readiness: owner decisions"):**
+- **v1 (E6 and until the owner changes it):** Anthropic's server-side web search over public articles and chart
+  write-ups only. No page scraping. No Twitch, Steam or itch.io APIs yet. Every search is one of TREND-SCOUT's 12 web
+  calls, priced USD 0.01 a search plus tokens. *Reading, for the owner to confirm:* web fetch stays allowed for a public
+  article or chart write-up that a search found; fetching a store chart, browse or streaming page itself (Steam,
+  itch.io, Twitch, YouTube) counts as scraping and is out.
+- **Later phase:** the official Twitch and YouTube APIs below, after the owner has checked their terms. The engine keeps
+  derived conclusions only (genre, date, source name), never raw API data.
+- Steam and itch.io: no official chart API found (below), and page scraping is out, so no store-chart source is planned.
+
+The table below is the reference for that later phase. Links checked 17/10/2026; the terms themselves are for the owner
+to read. Every source is public, aggregate data about games: no person's name, handle or channel is
 recorded (data-hygiene rule). GDPR: the notes are now kept 90 days; each API's own data rules are part of its terms check.
 
 | Signal | Source | Access | Terms to check |
@@ -669,12 +679,15 @@ recorded (data-hygiene rule). GDPR: the notes are now kept 90 days; each API's o
 | Store charts (top played / top sellers) | Steam | **No documented chart method** found in the Steamworks Web API reference (checked 17/10/2026). Third parties call an undocumented `ISteamChartsService` endpoint: not an official API, so not preferred. The alternative is fetching the public charts page (scraping). | [Steam Web API Terms of Use](https://steamcommunity.com/dev/apiterms) (page says last updated July 2010) for any API use; the store pages' own terms for a page fetch (not yet located). |
 | Indie popularity | itch.io | **No public popularity API**: the official API covers your own account and OAuth apps only ([overview](https://itch.io/docs/api/overview)). Only a page fetch of the public browse pages. | [itch.io Terms of Service](https://itch.io/about/terms) (updated 15/04/2023 per the page; no clause on automated access found; section 3 bars "harvesting or collecting information about others") |
 
-Open for E6:
-- An engine tool for these APIs (keys in environment variables, never in the agent's hands or the browser; each call
-  counted in the 12 and priced in the ledger). TREND-SCOUT has only web search and fetch today.
-- A store-chart signal from an official API: none found for Steam; owner to decide between a page fetch and no store
-  chart. The same for itch.io.
-- Each source's terms read and approved by the owner (and whether caching for up to 90 days is allowed).
+Open for the later phase (not E6):
+- An engine tool for the Twitch and YouTube APIs (keys in environment variables, never in the agent's hands or the
+  browser; each call counted in the 12 and priced in the ledger), writing derived conclusions only (genre, date, source
+  name) and dropping the raw response.
+- Each API's terms read and approved by the owner (including how long derived conclusions may be kept: the notes are
+  kept 90 days).
+
+Open for E6 (v1): TREND-SCOUT's prompt still says it reads "store best-seller and top-played charts"; it should say
+web search over public articles and chart write-ups (proposed in PROGRESS.md, "Exact next step", step b).
 
 ### First real end-to-end job: cost estimate
 

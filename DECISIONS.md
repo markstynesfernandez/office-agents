@@ -158,8 +158,8 @@ only: zero model spend, and no real API keys are loaded.
 
 | # | Question | Decision |
 |---|----------|----------|
-| Q1 | Billing on Stellar's Anthropic Console credits | Being confirmed with finance. **Blocks E6 only.** |
-| Q2 | Caps for digital jobs | Open. **Blocks E6 only.** No cap is changed. |
+| Q1 | Billing on Stellar's Anthropic Console credits | **Verbal approval from finance (Lorena), 17/10/2026**, for the engine to run on the station workspace's Console credits; written confirmation to follow. See "E6 readiness: owner decisions". |
+| Q2 | Caps for digital jobs | **Set by the owner 17/10/2026:** USD 5.00 per job (images included), 10.00 per day, 10.00 per line per day, 0.50 per scout run. See "E6 readiness: owner decisions". |
 | Q3 | Products and the other §4.3 items (licence wording, image terms, market/spelling, AI disclosure, pricing) | **Partly decided (17/10/2026, port batch):** the `pngtuber-prop-pack` spec (12 files, one ZIP), its licence and notice wording, US English, the AI-disclosure wording and the price approach are owner decisions, ported (see "Port batch before E6: owner decisions"). Still open: the image model's terms in the engine, other products. |
 | Q4 | Listing loop exhausted | **Yes:** it goes to REJECTS-DESK, so every stopped job gets a `REJECTED.md`. |
 | Q5 | `saturated` originality list | Keep it, for all text. |
@@ -722,3 +722,87 @@ the flags above. Built on the mock only (no keys, $0); commit "Scouting decision
 Tests: `npm test` 273/273 (`genre-scout` 15/15: 5 new, 3 changed for the decisions). `npm run dry-run:scout`: same
 result as before (4 verified, 1 blocked and refused at intake, 13 names, 12 web calls, USD 0.00), now with the
 retention step first and the drafts in `scout-drafts/`.
+
+## E6 readiness: owner decisions (17/10/2026)
+
+The owner approved the scouting decisions build (`fd10911`) and settled the E6 readiness items below. Recorded and
+built on the mock only: no model was called, and no key value was read, printed, logged or copied. Commit "E6 readiness".
+
+1. **Scouting decisions approved.** `fd10911` is approved by the owner. The two readings flagged there stand as built
+   unless the owner says otherwise.
+   **Scout sources for v1:** Anthropic web search over public articles and chart write-ups only. No page scraping, and
+   no Twitch, Steam or itch.io APIs yet. **Later phase:** the official Twitch and YouTube APIs, keeping derived
+   conclusions only (genre, date, source name) and never raw API data; their terms need the owner's check first.
+   ENGINE-PLAN.md "Genre scout: sources for real runs" now says so.
+   *Reading flagged:* web fetch is read as still allowed for a public article or chart write-up that a search found.
+   Fetching a store chart, browse or streaming page itself (Steam, itch.io, Twitch, YouTube) counts as scraping and is
+   out. TREND-SCOUT's prompt still says it reads "store best-seller and top-played charts". A one-line prompt change
+   (and, if wanted, an engine refusal of those sites in `web_fetch`) is proposed before the first scout run (PROGRESS.md
+   "Exact next step", step b). Nothing is changed yet.
+2. **Q1 billing:** verbal approval from Lorena (finance) on 17/10/2026 for the engine to run on the station
+   workspace's Anthropic Console credits. Written confirmation is to follow; record its date here when it arrives.
+   `config/station.config.json` ("Console credits approved by Finance", ported) now agrees with the verbal approval; it
+   is not edited.
+3. **Q2 caps** (`config/engine.json` caps): USD 5.00 per job (images included), USD 10.00 per day, USD 10.00 per line
+   per day, USD 0.50 per scout run. The owner sets the outer limits outside the engine: the Anthropic Console monthly
+   workspace limit, and the OpenRouter key limit of USD 2 a day.
+   *Build:* `perJobUsd` 5 (was 1). New key `perJobUsdByLine: { "genre-scout": 0.5 }`: a scout run is one research
+   job, so the guard checks it against the lower of the two caps, named `perJob[genre-scout]` in the refusal. The other
+   lines keep 5.00. `perDayUsd` and `perLineDayUsd` were already 10. `perRunUsd` (one agent run) stays at USD 1.00:
+   the answer did not mention it (open question below). The page's snapshot carries the line caps (`perJobByLine`).
+   *Note:* OpenRouter's USD 2 a day is lower than the engine's USD 10 a day. A day of images stops at OpenRouter's
+   limit first (25 images at the USD 0.08 reservation, more at the real cost), and that comes back as a provider
+   error, not a cap.
+4. **Prices**, verified by the owner 17/10/2026 against https://platform.claude.com/docs/en/about-claude/pricing.
+   They are in `config/engine.json`, each with its source and date (`verified`); the old `confirmBeforeE6` flags are gone.
+   - `claude-haiku-5-5`: USD 0.10 in / 0.50 out per million tokens for prompts up to 100,000 tokens, and 0.50 / 2.50
+     above that. Cache hits 0.01 / 0.05; 5-minute cache writes 0.125 / 0.625. A request over 100,000 prompt tokens
+     (cache reads and writes included) pays the higher prices for the whole request.
+   - `claude-sonnet-5-5`: 2 in / 10 out; cache hits 0.10; 5-minute cache writes 2.50. No prompt-size tier was given.
+   - Web search: USD 0.01 a search, plus tokens. Web fetch: tokens only.
+   - Images (`openai/gpt-5-image-mini` on OpenRouter, priced by tokens): the guard reserves USD 0.08 an image, then
+     settles to the cost OpenRouter reports for the call, marked estimated if none is reported.
+   *Build (`src/engine/guard.mjs`):* `priceTier` picks the tier from the prompt (input + cache writes + cache reads;
+   over `longPrompt.overTokens` means the long-prompt prices for input, output and both cache prices). `textCost`
+   prices a response that way, and the ledger row carries `priceTier` for a tiered model. `textMax` (the reservation)
+   takes the tier from the runtime's estimate (about 3 characters a token, which is above the real count for text) and
+   reserves every input token at that tier's dearest input price (the cache write) plus the full output allowance. If
+   a call ever costs more than its reservation, `settle` logs a warning. The two models' cache prices now come from
+   config, not from the 1.25x / 0.1x fallback. Web search reserves USD 0.01 and web fetch USD 0 a call. Their tokens
+   are priced on the Anthropic call that carries the results, which the live web backend must add (not built: step
+   b). `image_generate` already settled to the provider's reported cost and marked it estimated otherwise; the
+   reservation is now 0.08 (was an estimated 0.043).
+   *Tests:* `tests/e6-prices.test.mjs`, 8 tests: the config values; Haiku at 99,999, 100,000 and 100,001 tokens with
+   no cache; with cache just under (99,999) and just over (100,001, where the uncached input alone is 10,000); cache
+   reads alone pushing a request over; Sonnet at any size; reservations at 100,000 and 100,001; ledger rows with
+   `priceTier`; the web fees; the image reservation settled to a reported cost and to the estimate; the scout run cap
+   in the guard and on the whole scout line on a priced mock.
+5. **Image models:** only `openai/gpt-5-image-mini` is allowed (`image.allowedModels`). The opaque model stays
+   disabled by the owner's decision (`opaqueModelApproved: false`, so opaque images are refused, as tested). E6
+   checklist row 5 is closed. The earlier listing to-do "skim OpenRouter's terms" has no recorded outcome; the owner
+   closed the item, so it is noted here only.
+6. **Keys** (checked 17/10/2026, names and yes/no only): `office-agents/.env` holds `ANTHROPIC_API_KEY` and
+   `OPENROUTER_API_KEY` (both non-empty), `STATION_PROVIDER=mock` and `STATION_PORT`. `.env` is ignored (`.gitignore`
+   line 6) and not tracked. No commit on any branch has ever held a `.env` file: every tree in `git rev-list --all` was
+   listed by file name, and only `.env.example` appears. Demo mode still refuses keys: run with `.env`'s variables in
+   its environment, `node scripts/demo.mjs` exited 2 with "demo did not start: real API keys are present in the
+   environment (ANTHROPIC_API_KEY, OPENROUTER_API_KEY)", and its output held no key value. The demo never reads
+   `.env`, so `npm run demo` in a clean shell never sees the keys. `npm start` does load `.env`; on the mock no key is
+   read, and the logger redacts both values. The check ran from a script in the session's scratch folder (not in the
+   repository) that printed names and yes/no only. Whether these are the separate station-engine keys (§7.2 step 4)
+   cannot be checked from here; that is the owner's word.
+
+### For the owner (open; nothing decided here)
+
+- **Per-run cap.** `perRunUsd` is still USD 1.00 (StarNet era). The legacy PNGTuber job's DESIGNER spent USD 2.746
+  over three passes, about USD 0.92 a pass, so one DESIGNER run can reach USD 1.00 and stop. Keep it, or set it (for
+  example, equal to the per-job cap)?
+- **Image token estimate.** The runtime estimates a prompt as its JSON length ÷ 3, and `image_analyze` sends the image
+  as base64 text, so its reservation is far above the real cost. A 1 MB PNG estimates at about 445,000 tokens, which
+  reserves about USD 1.1 on Sonnet (over the USD 1.00 per-run cap), and on Haiku it now falls in the long-prompt
+  tier. Proposed before step c: count each image at the figure Anthropic documents for image tokens, read from the
+  docs at the time (not built).
+- **Style reference.** `pngtuber-prop-pack` has `styleReference.ownerOk`, so a NEW job of it fails closed at the
+  package gate until the first-file run mode and the reference image in `image_generate` are built (E6 checklist row
+  13). Step c would spend money and then stop at the gate, so the first-file mode needs building first.
+- **Web fetch reading** (item 1) and the TREND-SCOUT prompt line.

@@ -1,5 +1,5 @@
 {
-  "$comment": "Engine settings (ENGINE-PLAN.md §1.2). Caps and prices live here only (DECISIONS.md Q7): never raise a cap without the owner. Prices marked confirmBeforeE6 must be checked against the provider's price page before any real call.",
+  "$comment": "Engine settings (ENGINE-PLAN.md §1.2). Caps and prices live here only (DECISIONS.md Q7): never raise a cap without the owner. Prices verified by the owner 17/10/2026 (DECISIONS.md 'E6 readiness: owner decisions'); each entry names its source and date.",
   "timezone": "Europe/Dublin",
   "provider": "mock",
   "tiers": {
@@ -8,6 +8,7 @@
   },
   "effortLevels": ["low", "medium", "high"],
   "image": {
+    "$comment": "Only openai/gpt-5-image-mini may run (owner 17/10/2026). The opaque model stays disabled by the owner's decision (opaqueModelApproved false), so opaque images are refused.",
     "provider": "openrouter",
     "allowedModels": ["openai/gpt-5-image-mini"],
     "opaqueModelApproved": false,
@@ -26,18 +27,22 @@
   },
   "pricing": {
     "anthropic": {
+      "$comment": "USD per million tokens. cacheWritePerM is the 5-minute cache write. longPrompt: a request whose prompt (input + cache writes + cache reads) is over overTokens pays those prices for the whole request, output included (guard.mjs priceTier).",
       "models": {
-        "claude-haiku-5-5": { "inPerM": 0.1, "outPerM": 0.5, "source": "station.config.json models (owner 14/10/2026)", "confirmBeforeE6": true },
-        "claude-sonnet-5-5": { "inPerM": 2, "outPerM": 10, "source": "station.config.json models (owner 14/10/2026)", "confirmBeforeE6": true }
+        "claude-haiku-5-5": { "inPerM": 0.1, "outPerM": 0.5, "cacheReadPerM": 0.01, "cacheWritePerM": 0.125, "longPrompt": { "overTokens": 100000, "inPerM": 0.5, "outPerM": 2.5, "cacheReadPerM": 0.05, "cacheWritePerM": 0.625 }, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "verified": "owner, 17/10/2026" },
+        "claude-sonnet-5-5": { "inPerM": 2, "outPerM": 10, "cacheReadPerM": 0.1, "cacheWritePerM": 2.5, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "verified": "owner, 17/10/2026" }
       }
     },
     "anthropic-web": {
-      "$comment": "Anthropic server-side web search and fetch (Q6). Price per call not set: web calls are refused until it is confirmed at E6.",
-      "models": {}
+      "$comment": "Anthropic server-side web tools (Q6): web search USD 0.01 per search plus tokens, web fetch tokens only. perCall is the per-call fee; the tokens are priced at the text model's rates on the Anthropic call that carries the results.",
+      "models": {
+        "web_search": { "perCall": 0.01, "plusTokens": true, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "verified": "owner, 17/10/2026" },
+        "web_fetch": { "perCall": 0, "plusTokens": true, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "verified": "owner, 17/10/2026" }
+      }
     },
     "openrouter": {
       "models": {
-        "openai/gpt-5-image-mini": { "perImage": 0.043, "estimated": true, "source": "Virtual-workers/USAGE.md note (StarNet era); the provider's reported cost is used when it gives one", "confirmBeforeE6": true }
+        "openai/gpt-5-image-mini": { "perImage": 0.08, "estimated": true, "source": "owner, 17/10/2026: token-priced on OpenRouter, so perImage is the guard's reservation; each call settles to the cost OpenRouter reports for it, marked estimated if none is reported (tools/index.mjs image_generate)", "verified": "owner, 17/10/2026" }
       }
     },
     "mock": {
@@ -45,9 +50,10 @@
     }
   },
   "caps": {
-    "$comment": "Carried over unchanged from the StarNet era (station.config.json caps, owner-set): $1 per run and per job (was per run and per message), $10 per day, $10 per line per day, per-agent 0 = off, 12 hops. imagesPerDay 0 = no count cap (image spend still counts in every USD cap); a count is the owner's call (Q2).",
+    "$comment": "Owner, 17/10/2026 (Q2): USD 5.00 per job (images included), USD 10.00 per day, USD 10.00 per line per day, USD 0.50 per scout run (a genre-scout run is one research job: perJobUsdByLine). perRunUsd (one agent run) is carried over unchanged from the StarNet era. Outer limits the owner sets outside the engine: the Anthropic Console monthly workspace limit and the OpenRouter key limit of USD 2 a day. per-agent 0 = off, 12 hops. imagesPerDay 0 = no count cap (image spend still counts in every USD cap).",
     "perRunUsd": 1,
-    "perJobUsd": 1,
+    "perJobUsd": 5,
+    "perJobUsdByLine": { "genre-scout": 0.5 },
     "perDayUsd": 10,
     "perLineDayUsd": { "default": 10 },
     "perAgentDayUsd": { "default": 0 },

@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (scouting decisions built; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -21,13 +21,37 @@ Last updated: 17/10/2026 (scouting decisions built; genre-trend scouting line ap
 | **R3 spike** Baked lighting, Design room only | Done (17/10/2026). **Owner's decision:** roll the baked look out in two phases (R3a now, phase 2 later). Was behind `?scene=baked`. 71+ fps full quality on the Intel iGPU in every measured view, walking included (headed Chromium; see below), 1.41 MiB of assets, 41 s rebuild. Screenshots in `screenshots/r3-spike/`. See below. |
 | **R3a** Baked look, phase 1 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026). Shared Blender library; the Design room fixed (readable in dark mode, mood board and pictures back, warm-white walls by day); the Office room baked; one oak floor everywhere; baked rooms are the default (`?scene=procedural` turns them off). 66+ fps full quality on the Intel iGPU in every measured view, walking included; 2.76 MB of the 10 MB office budget; full rebuild 104–127 s. Screenshots in `screenshots/r3a/`. See below. |
 | **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026), with the importer label fix (`db18e5a`). The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
-| **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions"). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
-| E6 First real job | Not started. Blocked: see the E6 readiness checklist below. |
+| **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions") and **approved by the owner** (17/10/2026). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
+| E6 readiness | Done (17/10/2026). The owner's decisions on Q1 (verbal), Q2 caps, prices, image models, keys and scout sources recorded; the guard prices Haiku's long-prompt tier and cache reads and writes; the scout run cap. Mock only, $0. See below. |
+| E6 First real job | Not started. The owner's decisions are in; the live providers are not built yet. The plan, step by step, is under "Exact next step". |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
 
-### Scouting decisions (17/10/2026)
+### E6 readiness: owner decisions (17/10/2026)
+
+DECISIONS.md, "E6 readiness: owner decisions". Mock only; no key value was read, printed, logged or copied.
+
+- **Scouting decisions** (`fd10911`) approved by the owner. **Scout sources for v1:** Anthropic web search over public
+  articles and chart write-ups only: no page scraping, and no Twitch, Steam or itch.io APIs yet. The official Twitch
+  and YouTube APIs come in a later phase, after the owner checks their terms, keeping derived conclusions only (genre,
+  date, source name). ENGINE-PLAN.md updated. One reading is flagged (web fetch of an article that a search found
+  stays allowed).
+- **Q1:** verbal approval from finance (Lorena), 17/10/2026; written confirmation to follow.
+- **Q2 caps:** USD 5.00 per job (images included), 10.00 per day, 10.00 per line per day, 0.50 per scout run (new key
+  `perJobUsdByLine`). The outer limits are the Console monthly workspace limit and the OpenRouter key's USD 2 a day.
+  `perRunUsd` is unchanged at 1.00 (open question).
+- **Prices** verified by the owner against the Anthropic pricing page, in `config/engine.json` with source and date.
+  The guard now prices Haiku's long-prompt tier (over 100,000 prompt tokens, cache reads and writes included: the
+  higher prices for the whole request) and both models' own cache prices. Web search costs USD 0.01 a search and web
+  fetch USD 0, plus tokens. Images reserve USD 0.08 and settle to OpenRouter's reported cost (estimated if none).
+- **Image models:** only `openai/gpt-5-image-mini`; the opaque model stays disabled (owner). Row 5 closed.
+- **Keys:** both names are in `.env` (non-empty), `STATION_PROVIDER=mock`; `.env` is ignored and has never been in
+  any commit (file names checked across `git rev-list --all`); the demo refused to start with the keys in its
+  environment (exit 2, names only in the message).
+- `npm test` 281/281 (new: `e6-prices` 8/8). `npm run dry-run` and `npm run dry-run:scout`: same results as before.
+
+### Scouting decisions (17/10/2026) — approved by the owner (17/10/2026)
 
 The owner approved the genre-trend scouting line (`cc9a5cc`) with 7 decisions (DECISIONS.md, "Scouting decisions").
 Built on the mock only:
@@ -301,24 +325,24 @@ DECISIONS.md ("Port batch before E6").
   spelling) and the ported `digital-build`, `owner-approval`, `prop-edit`, `listing-photos`, `style-ref` tests (replacing
   `listing-notice`); `originality` re-ported. `npm run dry-run`: job A to `approval`, job B blocked on "garfield", as before.
 
-### E6 readiness checklist (17/10/2026; updated after the port batch)
+### E6 readiness checklist (17/10/2026; updated after the owner's E6 readiness decisions)
 
-Every item still blocking E6. **First product and parity reference:** the PNGTuber job `2026-10-16--pngtuber-cosy-desk-props-r2`
+The items that blocked E6, with their state. **First product and parity reference:** the PNGTuber job `2026-10-16--pngtuber-cosy-desk-props-r2`
 (the `pngtuber-prop-pack` product), live on Etsy since 2026-10-17. The engine's first real job is judged against it; the parity
 replay above passes.
 
 | # | Item | Status | Where it stands |
 |---|---|---|---|
-| 1 | Q1 billing confirmation (Anthropic Console credits; finance and the founder) | **open** | DECISIONS.md Q1. `config/station.config.json` still says "approved by Finance", which conflicts with Q1 being open. |
-| 2 | Q2 caps for digital jobs | **open** | Per-job cap $1.00 including images. The live product's legacy job cost USD 4.205638 (Designer 2.746, QA DESIGN 1.224, Lister 0.014, QA LISTING 0.222), with three design passes and owner caps raised for single runs. No cap changed. |
+| 1 | Q1 billing confirmation (Anthropic Console credits; finance and the founder) | **closed for E6** (verbal, 17/10/2026); written confirmation **open** | Verbal approval from finance (Lorena) on 17/10/2026 for the station workspace's Console credits; written confirmation to follow (record its date in DECISIONS.md). `station.config.json`'s "approved by Finance" now agrees with it. |
+| 2 | Q2 caps for digital jobs | **closed** (17/10/2026) | USD 5.00 per job (images included), 10.00 per day, 10.00 per line per day, 0.50 per scout run (`perJobUsdByLine`), in `config/engine.json`. Outer limits: the Console monthly workspace limit and the OpenRouter key's USD 2 a day. For scale: the live product's legacy job cost USD 4.205638 over three design passes. `perRunUsd` 1.00 unchanged: row 19. |
 | 3 | Q3 product spec | **closed** (17/10/2026) | `pngtuber-prop-pack` (12 transparent 2000x2000 PNGs, one ZIP download, the preview a listing photo only) ported as owner-approved per the legacy record, and live. Any other product is a new owner decision. |
 | 4 | Licence and download-notice wording | **closed** for this product | `commercial-content` licence and the prop pack's notice, owner-approved 2026-10-16, ported word for word with the dates; the gate requires them word for word. `personal-use` and `commercial-standard` stay DRAFT and fail closed. |
-| 5 | Image model commercial terms | **partly closed** | `openai/gpt-5-image-mini` (transparent images): owner-confirmed 2026-10-16 (OpenAI Business Terms) in the asset register. Open: the opaque model (`opaqueModelApproved: false`), and the listing's owner to-do "skim OpenRouter's terms" has no recorded outcome. |
+| 5 | Image model commercial terms | **closed** (17/10/2026) | `openai/gpt-5-image-mini` (transparent images): owner-confirmed 2026-10-16 (OpenAI Business Terms) in the asset register; the only model allowed. The opaque model stays disabled (owner decision 17/10/2026; opaque images are refused). The earlier to-do "skim OpenRouter's terms" has no recorded outcome; noted only. |
 | 6 | Market and spelling | **closed** (17/10/2026) | US English for listings (owner decision for this product), enforced by the gate's spelling check, which now includes the owner's fix list ("colourway"). |
 | 7 | AI-disclosure wording in listings | **closed** | The owner's wording (2026-10-16, `config.digital.aiDisclosure`), required word for word by the gate; on the live listing. |
 | 8 | Price approach | **closed** (17/10/2026) | The owner's price point in the brief, else the low end of the owner's range, never the top-5 high; the package carries it as a proposal (`final: false`); the owner sets the final price on Etsy, recorded by Mark published (EUR 9.00 on the live listing). A brief without an owner price line still falls back to the brief high: the owner may want such briefs refused. |
-| 9 | Provider price verification | **open** | The `anthropic-web` price is unset (a live web call would be refused); image prices are estimates until read from the provider's response; text model prices to be checked against the providers' current lists. |
-| 10 | Separate API keys (a station-engine key in the Anthropic Console workspace and a new OpenRouter key) | **open** | ENGINE-PLAN.md §7.2 step 4. None created or read. |
+| 9 | Provider price verification | **closed** (17/10/2026) | Verified by the owner against the Anthropic pricing page; in `config/engine.json` with source and date. Haiku's long-prompt tier and both models' cache prices are priced by the guard (tested). Web search USD 0.01 a search plus tokens, web fetch tokens only. Images: USD 0.08 reserved, settled to OpenRouter's reported cost. |
+| 10 | Separate API keys (a station-engine key in the Anthropic Console workspace and a new OpenRouter key) | **closed** (17/10/2026) | The owner put `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` in `.env` with `STATION_PROVIDER=mock`. Checked by name only: both present; `.env` ignored and never committed; the demo still refuses keys. That they are the separate station-engine keys is the owner's word. |
 
 Also needed before a real job on the product (added here; not in the owner's list):
 
@@ -326,11 +350,14 @@ Also needed before a real job on the product (added here; not in the owner's lis
 |---|---|---|---|
 | 11 | Port batch from the PNGTuber job | **done** (17/10/2026) | 5th moment, above. |
 | 12 | Packaged-product build in the engine | **done** (17/10/2026) | The ported build with the pinned Real-ESRGAN (owner decision); the parity rebuild is byte for byte. |
-| 13 | Style-reference workflow | **partly done** | The library, the owner's decisions and the cleaned version are ported. Open: the first-file run mode and a reference image in `image_generate`, so a NEW style-reference job still fails closed at the package gate. |
+| 13 | Style-reference workflow | **partly done**; **blocks step c** | The library, the owner's decisions and the cleaned version are ported. Open: the first-file run mode and a reference image in `image_generate`, so a NEW style-reference job still fails closed at the package gate. `pngtuber-prop-pack` uses a style reference, so a genre brief for it cannot pass the gate until this is built. |
 | 14 | Parity check against the legacy job (§7.2 step 3) | **done** (17/10/2026) | 26/26, 0 unexplained differences. |
 | 15 | Designer token use (legacy item 12: a compact brief extract, under 30k tokens per image) | **open** | Not built; proposal in DECISIONS.md. Measurable only on a real run. |
 | 16 | Buttons on the page for the owner's actions | **open** (not blocking) | The routes exist; `npm run owner` works today with the server stopped. |
-| 17 | Genre-scout sources: terms checked, an API tool with keys from the environment | **open** (before the first real scout run) | ENGINE-PLAN.md "Genre scout: sources for real runs": Twitch and YouTube have official APIs; no official chart API found for Steam or itch.io. The routine stays disabled. |
+| 17 | Genre-scout sources | **decided** (17/10/2026); one prompt line **open** (before step b) | v1: Anthropic web search over public articles and chart write-ups only; no scraping; no Twitch, Steam or itch.io APIs. Twitch and YouTube official APIs in a later phase, after the owner's terms check, keeping derived conclusions only. TREND-SCOUT's prompt still mentions reading store charts: change proposed in step b. The routine stays disabled. |
+| 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **open**: not built | `providers/index.mjs` refuses every mode but the mock (`ProviderLocked`). No SDK or HTTP client is installed or written. Built in three slices, a0, b0 and c0 under "Exact next step", each tested against a stub with no network. |
+| 19 | Per-run cap | **open** (owner; before step c) | `perRunUsd` is USD 1.00 (StarNet era) and was not part of the Q2 answer. One legacy DESIGNER pass cost about USD 0.92. |
+| 20 | Image token estimate in reservations | **open** (before step c) | `image_analyze` sends base64, and the runtime counts it as text (length ÷ 3). A 1 MB PNG reserves about USD 1.1 on Sonnet, over the per-run cap. Fix proposed in DECISIONS.md. |
 
 ### E5 Live UI (17/10/2026)
 
@@ -533,7 +560,8 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `db18e5a`: Importer: digital legacy jobs labelled with their digital room; approved by the owner 17/10/2026 (with R3b)
 - `b75cfac`: Genre-scout milestone (TREND-SCOUT, scouting blocklist, re-bake, tests green)
 - `cc9a5cc`: Genre-trend scouting line (docs); approved by the owner 17/10/2026
-- The next commit: "Scouting decisions" (the owner's 7 decisions, tests, docs)
+- `fd10911`: Scouting decisions (the owner's 7 decisions, tests, docs); approved by the owner 17/10/2026
+- The next commit: "E6 readiness" (the owner's E6 decisions, prices and caps in the guard, tests, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -546,7 +574,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - **Routines** run `line:research`, `line:genre-scout` and `line:room1-digital` (E5; genre scout 17/10/2026). "Weekly genre scout" is seeded disabled from `config/routines.json`. With the mock replies the research line ends "no drafts" (the fixture script has no researcher replies), so no test runs a research batch that verifies a brief; the demo's script does.
 - **The package folder** cannot be opened from the page (the server starts no process); the page shows its path with a copy button.
 - **Live providers** are locked (`ProviderLocked`). The Anthropic SDK is not installed and the effort mapping is not written (E6).
-- **Web search and fetch** return canned text in the mock, and the `anthropic-web` price is unset, so a live web call would be refused (E6).
+- **Web search and fetch** return canned text in the mock. Their prices are set (17/10/2026), but the live web backend is not built, and its reservation does not yet include the tokens of the Anthropic call that carries the results (E6 step b0).
 - **Legacy archive** (Q10): the transcripts and task briefs are imported to `data/legacy/archive/`, but no page shows them yet (E5, if wanted).
 - **Parity check** (§7.2 step 3): done for the live product (`npm run parity`, 17/10/2026). Other legacy jobs are POD (archived) and are not replayed.
 - **Owner actions on the page:** shown on the job panel; no buttons yet (`npm run owner` with the server stopped).
@@ -554,7 +582,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **273 passed, 0 failed**, after the scouting decisions (17/10/2026; `genre-scout` 15/15: 5 new (derivative wording, misspellings, common-word titles, retention, own drafts folder), 3 changed for the new wording and drafts folder). Before that: **268 passed, 0 failed**, after the genre-trend scouting line (17/10/2026; new: `genre-scout` 10/10; changed: `baked-room` (the legacy fixtures view differs in the Research row only)). Before that: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **281 passed, 0 failed**, after E6 readiness (17/10/2026; new: `e6-prices` 8/8: the owner's prices and caps in config, Haiku just under and just over 100,000 prompt tokens with and without cache, Sonnet's cache prices, reservations by tier, the web fees, the image reservation settled to OpenRouter's reported cost or marked estimated, the scout run cap in the guard and on the whole scout line). Before that: **273 passed, 0 failed**, after the scouting decisions (17/10/2026; `genre-scout` 15/15: 5 new (derivative wording, misspellings, common-word titles, retention, own drafts folder), 3 changed for the new wording and drafts folder). Before that: **268 passed, 0 failed**, after the genre-trend scouting line (17/10/2026; new: `genre-scout` 10/10; changed: `baked-room` (the legacy fixtures view differs in the Research row only)). Before that: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -603,12 +631,91 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-0. **Scouting decisions review.** The owner reviews the build of the 7 decisions (DECISIONS.md, "Scouting decisions",
-   two readings flagged there) and checks the source terms listed in ENGINE-PLAN.md before E6. The routine stays
-   disabled; real runs come after E6. Next lounge re-bake: a ninth seat.
-1. Done: R3a, R3b, the importer label fix, the port batch before E6 and the genre-trend scouting line are approved by
-   the owner (17/10/2026).
-2. **E6** starts when every open row of the E6 readiness checklist above is done: Q1 billing, Q2 caps, the opaque image model and OpenRouter terms, provider prices, the separate API keys; and, before a new style-reference job, the first-file run mode (row 13).
+0. **E6 readiness review.** The owner reviews this phase (DECISIONS.md "E6 readiness: owner decisions") and answers
+   its open questions: the web fetch reading, the per-run cap (row 19) and the image token estimate (row 20). Written
+   Q1 confirmation to be recorded when it arrives. Next lounge re-bake: a ninth seat.
+1. Done and approved by the owner (17/10/2026): R3a, R3b, the importer label fix, the port batch before E6, the
+   genre-trend scouting line and the scouting decisions.
+
+### E6 plan: the first real run (each step stops for the owner's go-ahead)
+
+Rules for every step:
+- `.env` keeps `STATION_PROVIDER=mock`. Live is set only in the environment of the one command that makes the calls,
+  and `loadEnv` never overrides a shell variable. In PowerShell:
+  `$env:STATION_PROVIDER='live'; <command>; Remove-Item Env:STATION_PROVIDER`.
+  The server and every other process stay on the mock.
+- The Station server is stopped during a live command (one engine per data root). The E-STOP (`npm run estop`) works
+  throughout. Real rows go to `data/ledger/ledger.jsonl` like any other spend.
+- Before each step: `npm run port-drift` and `npm test`. After each step: the results go in PROGRESS.md and
+  DECISIONS.md, then a commit; then stop.
+- Keys are read from the environment by the provider only. They never reach a log, the ledger, an event, the page or
+  the repository.
+
+**a0. Build: live text provider (no spend; go-ahead needed).**
+- `providers/index.mjs`: `live` mode gets an Anthropic text provider, with the key read from `ANTHROPIC_API_KEY` when
+  it is created. Web and images stay locked: they refuse with "not built". `usage` is settled through the guard
+  (tiers and cache prices as tested), and the agents' effort maps to the request.
+- Client: the official Anthropic SDK (ENGINE-PLAN §2.3), pinned, its licence in ASSETS.md. This is a new dependency,
+  so it needs the owner's OK; the alternative is plain `fetch` with no dependency.
+- `scripts/smoke-live.mjs` (`npm run smoke:live`) makes ONE call:
+  - `claude-haiku-5-5`, a fixed one-line prompt, `max_tokens` 16;
+  - reserved and settled through the guard, with a run cap of USD 0.01;
+  - it refuses to run unless its own environment says live, and refuses on the e-stop;
+  - it prints the model, the usage, the USD and the ledger entry id.
+- Tests against a stubbed client (no network): the key appears in no log, ledger row or event; usage is priced; a
+  missing key is refused before any reservation.
+
+**a. One smoke call (go-ahead 1).**
+- Run `$env:STATION_PROVIDER='live'; npm run smoke:live; Remove-Item Env:STATION_PROVIDER`.
+- Expected cost: about 40 input and at most 16 output tokens on Haiku, about USD 0.00001; the reservation is below
+  USD 0.001.
+- Check:
+  - one ledger row, matching the call shown in the Console for the station workspace;
+  - `.env` still says mock;
+  - no key in `logs/`.
+- Stop and report.
+
+**b0. Build: live web backend and the v1 source rule (no spend; go-ahead needed).**
+- `providers.web`: each `web_search` or `web_fetch` becomes one Anthropic call (Haiku) with the server-side tool,
+  limited to one search a call. The results come back to TREND-SCOUT as data.
+- Ledger: USD 0.01 for each search the response reports, plus that call's tokens at Haiku's prices. The web
+  reservation also covers that call's maximum tokens (the 12-call limit is unchanged).
+- The v1 source rule. TREND-SCOUT's prompt line becomes "public articles and chart write-ups found by web search;
+  never fetch a store chart, browse or streaming page itself (Steam, itch.io, Twitch, YouTube)". If the owner wants it,
+  the engine also refuses `web_fetch` to those sites.
+- Tests against a stub.
+
+**b. One scout run (go-ahead 2; cap USD 0.50).**
+- One `genre-scout` job, started by hand by a one-shot command that runs a single job and exits; the routine stays
+  disabled.
+- Caps: `perJob[genre-scout]` USD 0.50 and 12 web calls (at most USD 0.12 in search fees) are enforced by the engine.
+  No cost estimate is given (no real scout has run).
+- For review:
+  - the internal notes (game names stay in `scouting/`) and the blocklist additions;
+  - the genre briefs, verified or rejected;
+  - a check that no scouted name appears outside `scouting/`;
+  - the ledger rows against the Console.
+- Stop and report.
+
+**c0. Build: images and the style-reference run (no spend; go-ahead needed).**
+- OpenRouter image client: `OPENROUTER_API_KEY` from the environment, the one allowed model, and the reported cost
+  from the response (marked estimated otherwise).
+- The first-file run mode and the reference image in `image_generate` (row 13), mock-tested. These are needed because
+  `pngtuber-prop-pack` uses a style reference: without them a new job fails at the package gate after spending.
+- Also needed: the image token estimate (row 20) and the owner's answer on the per-run cap (row 19).
+
+**c. One genre brief through the full line (go-ahead 3; cap USD 5.00 for the job).** The owner picks one verified
+genre brief from step b.
+- **c1:** the first-file run. DESIGNER draws file 1 alone, then the run stops for the owner's decision on file 1
+  (`npm run owner`, style reference).
+- **c2:** after the owner approves file 1:
+  - files 2–12, QA-DESIGN, LISTER, QA-LISTING, the package gate and the package step;
+  - the job ends in the approval queue;
+  - the whole job (c1 and c2) is held to USD 5.00, and OpenRouter's own USD 2 a day applies.
+- For review: the package, `cost.json` with workings, the ledger rows against the Console and OpenRouter's activity
+  page, and screenshots.
+- Nothing is published. The listing and the final price are the owner's, on Etsy.
+- Stop and report.
 
 Re-run `npm run import-legacy` at any time to pick up legacy deltas; it backs up first and changes nothing when there is nothing new.
 

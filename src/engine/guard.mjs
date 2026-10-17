@@ -31,16 +31,27 @@ export function priceOf(pricing, provider, model) {
   return p[model] || p['*'] || null;
 }
 
+// The prompt-size tier (config/engine.json `longPrompt`, owner-verified 17/10/2026): a request whose prompt (input +
+// cache writes + cache reads) is over `overTokens` pays the long-prompt prices for the WHOLE request, output included.
+export const promptTokens = (usage = {}) => (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+export function priceTier(price, tokens) {
+  const lp = price.longPrompt;
+  return lp && tokens > lp.overTokens ? { ...price, ...lp, tier: 'long-prompt' } : { ...price, tier: 'standard' };
+}
 // USD for a text response's usage (Anthropic usage shape), from a price entry in USD per million tokens.
-// Cache writes and reads default to Anthropic's multipliers of the input price (1.25x and 0.1x; confirm at E6).
+// Cache writes and reads use the entry's own prices; an entry without them falls back to 1.25x and 0.1x the input price.
 export function textCost(price, usage = {}) {
-  const inP = price.inPerM, outP = price.outPerM, cw = price.cacheWritePerM ?? inP * 1.25, cr = price.cacheReadPerM ?? inP * 0.1;
+  const p = priceTier(price, promptTokens(usage));
+  const inP = p.inPerM, outP = p.outPerM, cw = p.cacheWritePerM ?? inP * 1.25, cr = p.cacheReadPerM ?? inP * 0.1;
   return r6(((usage.input_tokens || 0) * inP + (usage.output_tokens || 0) * outP + (usage.cache_creation_input_tokens || 0) * cw + (usage.cache_read_input_tokens || 0) * cr) / 1e6);
 }
-// the most a text call can cost: every input token at the dearest input rate, plus the full output allowance
+// the most a text call can cost: every input token at the dearest input rate of the tier its estimated prompt falls
+// in, plus the full output allowance. The runtime's estimate (~3 characters a token) is above the real count for
+// text, so an estimate at or under the threshold means the real prompt is too; settle() logs any call that cost more.
 export function textMax(price, inputTokens, maxOutputTokens) {
-  const inMax = Math.max(price.inPerM, price.cacheWritePerM ?? price.inPerM * 1.25);
-  return r6((inputTokens * inMax + maxOutputTokens * price.outPerM) / 1e6);
+  const p = priceTier(price, inputTokens);
+  const inMax = Math.max(p.inPerM, p.cacheWritePerM ?? p.inPerM * 1.25);
+  return r6((inputTokens * inMax + maxOutputTokens * p.outPerM) / 1e6);
 }
 
 export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = Date.now }) {
@@ -64,6 +75,8 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
 
   const agentCap = (k) => { const a = caps.perAgentDayUsd || {}; return a[k] ?? a.default ?? 0; };
   const lineCap = (l) => { const a = caps.perLineDayUsd || {}; return a[l] ?? a.default ?? 0; };
+  // a line may set a lower per-job cap (owner 17/10/2026: a genre-scout run, one research job, USD 0.50)
+  const jobCap = (l) => { const c = l && caps.perJobUsdByLine ? caps.perJobUsdByLine[l] : null; return c > 0 && c < caps.perJobUsd ? { cap: 'perJob[' + l + ']', limit: c } : { cap: 'perJob', limit: caps.perJobUsd }; };
   const reservedWhere = (pred, field = 'maxUsd') => [...reserved.values()].filter(pred).reduce((s, r) => s + (r[field] || 0), 0);
 
   // the caps a call is checked against, with what is spent and reserved against each
@@ -71,7 +84,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     const S = ledger.spent, out = [];
     const runCap = call.runCapUsd != null ? Math.min(caps.perRunUsd, call.runCapUsd) : caps.perRunUsd;
     out.push({ cap: 'perRun', limit: runCap, used: S.run(call.runId) + reservedWhere((r) => r.runId === call.runId), required: true });
-    if (call.jobId) out.push({ cap: 'perJob', limit: caps.perJobUsd, used: S.job(call.jobId) + reservedWhere((r) => r.jobId === call.jobId), required: true });
+    if (call.jobId) out.push({ ...jobCap(call.line), used: S.job(call.jobId) + reservedWhere((r) => r.jobId === call.jobId), required: true });
     if (call.agentKey && agentCap(call.agentKey) > 0) out.push({ cap: 'perAgentDay[' + call.agentKey + ']', limit: agentCap(call.agentKey), used: S.agentDay(call.agentKey, day) + reservedWhere((r) => r.agentKey === call.agentKey) });
     if (call.line && lineCap(call.line) > 0) out.push({ cap: 'perLineDay[' + call.line + ']', limit: lineCap(call.line), used: S.lineDay(call.line, day) + reservedWhere((r) => r.line === call.line) });
     out.push({ cap: 'perDay', limit: caps.perDayUsd, used: S.day(day) + reservedWhere(() => true), required: true });
@@ -116,9 +129,11 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
   function settle(res, { usd, usage, priceSource, estimated = false, note } = {}) {
     if (!reserved.has(res.id)) throw new Error('unknown or already settled reservation ' + res.id);
     const cost = usd != null ? r6(usd) : textCost(res.price, usage || {});
+    const tier = usd == null && res.price.longPrompt ? priceTier(res.price, promptTokens(usage || {})).tier : null;
     const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, provider: res.provider, model: res.model, kind: res.kind, count: res.count,
       tokens: usage ? { in: usage.input_tokens || 0, out: usage.output_tokens || 0, cacheRead: usage.cache_read_input_tokens || 0, cacheWrite: usage.cache_creation_input_tokens || 0 } : null,
-      usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), estimated: !!estimated, reservedUsd: res.maxUsd, ...(note ? { note } : {}) });
+      usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(note ? { note } : {}) });
+    if (cost > res.maxUsd + EPS) log && log.warn('a call cost more than its reservation', { id: res.id, model: res.model, kind: res.kind, usd: cost, reservedUsd: res.maxUsd, jobId: res.jobId });
     drop(res);
     bus && bus.emit('spend.row', { jobId: res.jobId, agentKey: res.agentKey, data: { entryId: row.entryId, usd: row.usd, kind: row.kind, model: row.model, provider: row.provider } });
     warnNear(res);

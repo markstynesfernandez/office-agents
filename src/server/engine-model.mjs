@@ -162,7 +162,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   const spend = {
     today: { date: day, label: 'calendar day ' + dmyOfDay(day) + ' (Europe/Dublin)', usd: r6(g.spentToday), runs: new Set(todayRows.map((r) => r.runId)).size, rows: todayRows.length, byAgent: Object.fromEntries(agents.map((a) => [a.name, a.spendToday.usd])), source: ledger.label, mock: providers.mode === 'mock' },
     trailing24h: null, lineToday: [{ lineId: 'room1-digital', usd: r6(ledger.spent.lineDay('room1-digital', day)), day, label: 'line room1-digital, Dublin day' }],
-    caps: { perDay: caps.perDayUsd, perJob: caps.perJobUsd, perRun: caps.perRunUsd, perLineDay: caps.perLineDayUsd, imagesPerDay: caps.imagesPerDay, source: 'config/engine.json' }, lineLimits: { maxHops: caps.maxHops },
+    caps: { perDay: caps.perDayUsd, perJob: caps.perJobUsd, perJobByLine: caps.perJobUsdByLine || {}, perRun: caps.perRunUsd, perLineDay: caps.perLineDayUsd, imagesPerDay: caps.imagesPerDay, source: 'config/engine.json' }, lineLimits: { maxHops: caps.maxHops },
     reservedNow: g.reservedNow, ledgerOk: g.ledgerOk, ledgerError: g.ledgerError,
     // live spend against each cap that applies today; warn from 80% (config/engine.json; caps are edited there only)
     capStatus: [{ cap: 'perDay', label: 'station day', used: r6(g.spentToday), limit: caps.perDayUsd }, ...Object.keys(cfg.lines).map((l) => ({ cap: 'perLineDay[' + l + ']', label: 'line ' + l + ' day', used: r6(ledger.spent.lineDay(l, day)), limit: (caps.perLineDayUsd || {})[l] ?? (caps.perLineDayUsd || {}).default ?? 0 }))].filter((c) => c.limit > 0).map((c) => ({ ...c, pct: Math.round(1000 * c.used / c.limit) / 10, level: c.used >= c.limit ? 'hit' : c.used >= 0.8 * c.limit ? 'warn' : 'ok' })),
