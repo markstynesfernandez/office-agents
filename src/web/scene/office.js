@@ -41,6 +41,11 @@ const clean = (g) => { const n = g.index ? g.toNonIndexed() : g; for (const k of
 const merge = (list) => mergeGeometries(list.map(clean));
 function roundedRectShape(w, h, r) { const s = new THREE.Shape(), x = -w / 2, y = -h / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s; }
 function ringGeo(w, h, r, t) { const s = roundedRectShape(w, h, r); s.holes.push(roundedRectShape(w - 2 * t, h - 2 * t, Math.max(0.01, r - t))); const g = new THREE.ShapeGeometry(s, 6); g.rotateX(-Math.PI / 2); return g; }
+// people's looks (R2): skin tones, hair colours and trousers, picked per agent from its id; the shirt is the agent's colour
+const SKIN = ['#f3d5bf', '#e8bf9c', '#d29e78', '#b07a55', '#8c5a3c', '#6a432d'];
+const HAIR = ['#2a2420', '#4b3426', '#6e4a2f', '#a57a4c', '#d3b07c', '#1d1d21', '#8f8a84', '#7c3b22'];
+const TROUSERS = ['#3a3f4b', '#4c4f57', '#2e3440', '#5a5248', '#3f4a42', '#6b6f78'];
+const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const angLerp = (a, b, k) => { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * k; };
 
 // The scene is rendered into its own 4x MSAA target and resolved once into the composer's (non-multisampled) buffer, so
@@ -134,7 +139,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     glowInst: new THREE.MeshBasicMaterial({ map: TX.glow, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     deskTop: std('#ddb', { roughness: 0.6 }), deskMetal: std('#222', { roughness: 0.5, metalness: 0.3 }), chair: std('#444', { roughness: 0.7 }), monitorFrame: std('#333', { roughness: 0.45 }), keyboard: std('#ddd', { roughness: 0.6 }),
     potTall: std('#c9b8a3'), potSmall: std('#c9b8a3'), leafTall: std('#9fc49a', { roughness: 0.9, flatShading: true }), leafSmall: std('#9fc49a', { roughness: 0.9, flatShading: true }),
-    body: std('#fff', { roughness: 0.85 }), head: std('#e8d8c8', { roughness: 0.9 }), trousers: std('#444', { roughness: 0.85 }),
+    shirt: std('#fff', { roughness: 0.85 }), skin: std('#fff', { roughness: 0.8 }), hair: std('#fff', { roughness: 0.75 }), trousers: std('#fff', { roughness: 0.85 }), shoe: std('#2a2a2e', { roughness: 0.6 }),
     light: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     terminal: std('#eee', { roughness: 0.5, metalness: 0.15 }), termScreen: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     crystal: new THREE.MeshStandardMaterial({ color: new THREE.Color('#bcd9fa'), emissive: new THREE.Color('#5f9fe6'), emissiveIntensity: 0.6, roughness: 0.2, metalness: 0.05, flatShading: true }),
@@ -143,6 +148,33 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   };
   const poolGeo = (() => { const g = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2); const [u0, v0, u1, v1] = GLOW_UV.pool, uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0)); return g; })();
 
+  // ---- people (R2): simple stylised low-poly figures, one instanced mesh per body part. Each part's origin is its
+  // upper joint (hip, knee, shoulder, elbow, wrist, ankle; the waist for the torso, the neck for the head and hair), so a
+  // pose is a set of joint angles (see poseWorkers). The figure faces local -z. Shirt, skin, hair and trousers colours
+  // are per instance.
+  const PERSON = (() => {
+    const sph = (r, ws, hs, ...a) => new THREE.SphereGeometry(r, ws, hs, ...a);
+    const head = merge([new THREE.CylinderGeometry(0.052, 0.06, 0.12, 8).translate(0, 0.05, 0), sph(0.148, 12, 9).scale(0.95, 1.1, 1).translate(0, 0.24, 0), rbox(0.04, 0.055, 0.04, 0.015).translate(0, 0.22, -0.145), sph(0.03, 6, 4).scale(0.6, 1, 1).translate(-0.142, 0.235, 0), sph(0.03, 6, 4).scale(0.6, 1, 1).translate(0.142, 0.235, 0)]);
+    const cap = (k = 1) => sph(0.162 * k, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(0.97, 1.08, 1.02).rotateX(-0.28).translate(0, 0.25, 0.02);
+    const FRONT = Math.PI * 1.5, CUT = 0.95;   // the face (local -z) is left open in the longer styles
+    const hair = [
+      merge([cap()]),                                                                                             // short crop
+      merge([cap(1.04), sph(0.17, 12, 8, FRONT + CUT, Math.PI * 2 - 2 * CUT, Math.PI * 0.32, Math.PI * 0.42).scale(0.98, 1.12, 1.03).translate(0, 0.25, 0.01)]),   // bob
+      merge([cap(), sph(0.075, 8, 6).translate(0, 0.36, 0.12)]),                                                  // bun
+      merge([cap(0.98), ...Array.from({ length: 9 }, (_, i) => new THREE.IcosahedronGeometry(0.055, 0).translate(Math.cos(i * 2.4) * 0.1, 0.36 + (i % 3) * 0.015, Math.sin(i * 2.4) * 0.1 + 0.02))])   // curls
+    ];
+    return {
+      pelvis: rbox(0.34, 0.17, 0.22, 0.07),
+      torso: merge([rbox(0.34, 0.3, 0.21, 0.08).translate(0, 0.15, 0), rbox(0.42, 0.24, 0.24, 0.1).translate(0, 0.37, 0)]),
+      head, hair,
+      upperArm: rbox(0.105, 0.31, 0.105, 0.045).translate(0, -0.14, 0),
+      forearm: rbox(0.085, 0.27, 0.085, 0.038).translate(0, -0.13, 0),
+      hand: rbox(0.075, 0.1, 0.055, 0.025).translate(0, -0.05, 0),
+      thigh: rbox(0.15, 0.44, 0.16, 0.06).translate(0, -0.2, 0),
+      shin: rbox(0.12, 0.43, 0.12, 0.05).translate(0, -0.21, 0),
+      shoe: rbox(0.12, 0.08, 0.25, 0.035).translate(0, -0.04, -0.06)
+    };
+  })();
   // ---- shared geometries (merged per object, then instanced)
   const leg = (x, z) => rbox(0.05, 0.72, 0.05, 0.015).translate(x, 0.36, z);
   const G = {
@@ -156,7 +188,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     lamp: merge([new THREE.CylinderGeometry(0.09, 0.1, 0.025, 14).translate(0, 0.012, 0), new THREE.CylinderGeometry(0.012, 0.012, 0.42, 6).rotateX(0.35).translate(0, 0.21, 0.07), new THREE.CylinderGeometry(0.012, 0.012, 0.32, 6).rotateX(-1.0).translate(0, 0.46, 0.0), new THREE.ConeGeometry(0.085, 0.14, 14, 1, true).rotateX(0.5).translate(0, 0.5, -0.17)]),
     bulb: new THREE.SphereGeometry(0.035, 8, 6),
     chair: merge([...[0, 1, 2, 3, 4].map((i) => new THREE.BoxGeometry(0.05, 0.035, 0.3).translate(0, 0.04, 0.15).rotateY((i * Math.PI * 2) / 5)), new THREE.CylinderGeometry(0.035, 0.035, 0.36, 8).translate(0, 0.24, 0), rbox(0.52, 0.08, 0.5, 0.035).translate(0, 0.45, 0), rbox(0.5, 0.62, 0.07, 0.035).translate(0, 0.86, 0.25), rbox(0.05, 0.05, 0.3, 0.02).translate(-0.27, 0.64, 0.02), rbox(0.05, 0.05, 0.3, 0.02).translate(0.27, 0.64, 0.02), new THREE.BoxGeometry(0.04, 0.17, 0.04).translate(-0.27, 0.55, 0.06), new THREE.BoxGeometry(0.04, 0.17, 0.04).translate(0.27, 0.55, 0.06)]),
-    body: new THREE.CapsuleGeometry(0.22, 0.42, 4, 10), head: new THREE.SphereGeometry(0.19, 14, 12), arm: rbox(0.1, 0.1, 0.42, 0.04), limb: rbox(0.13, 0.42, 0.13, 0.05),
+    ...PERSON,
     light: new THREE.SphereGeometry(0.075, 10, 8),
     potTall: new THREE.CylinderGeometry(0.27, 0.21, 0.5, 14), potSmall: new THREE.CylinderGeometry(0.19, 0.15, 0.32, 12),
     leavesTall: merge([new THREE.CylinderGeometry(0.025, 0.03, 1.0, 6).translate(0, 0.75, 0), ...[0, 1, 2, 3, 4, 5, 6].map((i) => { const g = new THREE.IcosahedronGeometry(0.26 + (i % 3) * 0.04, 0); g.scale(1, 0.7, 1.25); g.rotateY(i * 1.9); const a = i * 2.4, rr = 0.18 + (i % 2) * 0.12; return g.translate(Math.cos(a) * rr, 0.75 + i * 0.13, Math.sin(a) * rr); })]),
@@ -222,7 +254,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     const ret = makeInst('deskReturn', G.deskReturn, M.deskTop, lsh.length, { receive: true }), retFrame = makeInst('returnFrame', G.returnFrame, M.deskMetal, lsh.length);
     const mon = makeInst('monitor', G.monitor, M.monitorFrame, n), kb = makeInst('keyboard', G.keyboard, M.keyboard, n), lamp = makeInst('lamp', G.lamp, M.deskMetal, n), bulb = makeInst('bulb', G.bulb, M.light, n, { shadow: false });
     const chair = makeInst('chair', G.chair, M.chair, n), light = makeInst('light', G.light, M.light, n, { shadow: false });
-    const body = makeInst('body', G.body, M.body, n, { shadow: false }), head = makeInst('head', G.head, M.head, n, { shadow: false }), arms = makeInst('arms', G.arm, M.body, n * 2, { shadow: false }), limbs = makeInst('limbs', G.limb, M.trousers, n * 4, { shadow: false });
+    // people: one mesh per part (two per person for arms and legs); hair: one mesh per style
+    const person = (name, geo, mat, per = 1) => makeInst(name, geo, mat, n * per, { shadow: false });
+    const parts = { pelvis: person('pelvis', G.pelvis, M.trousers), torso: person('torso', G.torso, M.shirt), head: person('head', G.head, M.skin), upperArm: person('upperArm', G.upperArm, M.shirt, 2), forearm: person('forearm', G.forearm, M.skin, 2), hand: person('hand', G.hand, M.skin, 2), thigh: person('thigh', G.thigh, M.trousers, 2), shin: person('shin', G.shin, M.trousers, 2), shoe: person('shoe', G.shoe, M.shoe, 2) };
+    const styleOf = (id) => hash(id + ':hair') % G.hair.length, styleCount = G.hair.map((_, s) => desks.filter((d) => styleOf(d.agentId) === s).length);
+    parts.hair = G.hair.map((g, s) => makeInst('hair' + s, g, M.hair, styleCount[s], { shadow: false }));
+    const styleIx = G.hair.map(() => 0);
     const blobs = makeInst('blobs', G.blob, blobMat, n, { shadow: false }); blobs.renderOrder = 1;
     const screenPool = makeInst('screenPool', poolGeo, M.glowInst, n, { shadow: false }), lampPool = makeInst('lampPool', poolGeo, M.glowInst, n, { shadow: false });
     screenPool.renderOrder = lampPool.renderOrder = 2;
@@ -237,11 +274,15 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       setInst(lamp, i, x - 0.82, onTop, z - 0.12, -0.5); setInst(bulb, i, x - 0.82 + 0.17 * Math.sin(-0.5) * -1, onTop + 0.46, z - 0.12 - 0.17 * Math.cos(-0.5));
       setInst(lampPool, i, x - 0.72, onTop + 0.004, z - 0.02, 0, 0, 1.0); setInst(screenPool, i, x + 0.12, onTop + 0.006, z + 0.12, MON_YAW, 0, 1.2);
       setInst(chair, i, ch.x, PT, ch.z);
-      const tint = new THREE.Color(a.color || '#d8cfc4').lerp(new THREE.Color('#ffffff'), 0.3);
-      body.setColorAt(i, tint); arms.setColorAt(i * 2, tint); arms.setColorAt(i * 2 + 1, tint);
+      // looks: the shirt takes the agent's colour; skin, hair, hair style and trousers are picked from the agent id
+      const shirt = new THREE.Color(a.color || '#8fa3b8').lerp(new THREE.Color('#ffffff'), 0.12), skin = new THREE.Color(SKIN[hash(agentId + ':skin') % SKIN.length]);
+      const hairC = new THREE.Color(HAIR[hash(agentId + ':hc') % HAIR.length]), legs = new THREE.Color(TROUSERS[hash(agentId + ':tr') % TROUSERS.length]);
+      const style = styleOf(agentId), hairI = styleIx[style]++;
+      parts.torso.setColorAt(i, shirt); parts.head.setColorAt(i, skin); parts.pelvis.setColorAt(i, legs); parts.hair[style].setColorAt(hairI, hairC);
+      for (const j of [0, 1]) { parts.upperArm.setColorAt(i * 2 + j, shirt); parts.forearm.setColorAt(i * 2 + j, skin); parts.hand.setColorAt(i * 2 + j, skin); parts.thigh.setColorAt(i * 2 + j, legs); parts.shin.setColorAt(i * 2 + j, legs); }
       setInst(light, i, x + 0.9, onTop + 0.05, z + 0.34);
       const path = L.paths[agentId] || { seat: null, toLounge: null };
-      workers.push({ agentId, i, x, z, chair: ch, seat: path.seat != null ? L.lounge.seats[path.seat] : null, path: path.toLounge, len: path.toLounge ? pathLength(path.toLounge) : 0, phase: (i * 1.7) % (Math.PI * 2), status: a.status, place: 'desk', walk: null, yaw: 0, pick: null });
+      workers.push({ agentId, i, x, z, chair: ch, seat: path.seat != null ? L.lounge.seats[path.seat] : null, path: path.toLounge, len: path.toLounge ? pathLength(path.toLounge) : 0, phase: (i * 1.7) % (Math.PI * 2), status: a.status, place: 'desk', walk: null, yaw: 0, pick: null, style, hairI });
       // the screen: its own mesh (own texture), glow material at overview, canvas text when zoomed in or selected
       const tex = makeMonitorTexture();
       const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
@@ -308,42 +349,68 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       if ((w.walk.dir > 0 && w.walk.s >= w.len) || (w.walk.dir < 0 && w.walk.s <= 0)) { w.place = w.walk.to; w.walk = null; }
     }
   }
-  // one person's pose; local offsets (lx, lz) are turned by the facing yaw (0 faces -z)
+  // ---- poses (R2). A limb part hangs along -y from its joint; angle a swings it forward (towards the person's front,
+  // local -z) and d turns that swing sideways, so it points along (-sin a sin d, -cos a, -sin a cos d). Seated people
+  // sit with their hips on the chair seat or the sofa cushion; the shin angle is solved so the feet rest on the floor.
+  // Poses: typing at the desk (small forearm and hand motion while working), relaxed in the lounge (leaning back, hands
+  // on the lap), walking (legs and arms swing, the hips ride on the supporting leg).
+  const SEG = { thigh: 0.42, shin: 0.42, upper: 0.3, fore: 0.26, ankle: 0.08, waist: 0.06, shoulderY: 0.45, shoulderX: 0.24, hipX: 0.09, neckY: 0.48 };
+  const CHAIR_TOP = PT + 0.49;                              // the desk chair's seat
+  const PARTS = ['pelvis', 'torso', 'head', 'upperArm', 'forearm', 'hand', 'thigh', 'shin', 'shoe', 'blobs', 'hair0', 'hair1', 'hair2', 'hair3'];
+  const dirOf = (a, d = 0) => [-Math.sin(a) * Math.sin(d), -Math.cos(a), -Math.sin(a) * Math.cos(d)];
+  const add = (p, d, l) => [p[0] + d[0] * l, p[1] + d[1] * l, p[2] + d[2] * l];
   function poseWorkers(t) {
-    const body = inst.body, head = inst.head, arms = inst.arms, limbs = inst.limbs, blobs = inst.blobs; if (!body) return;
+    const q = inst; if (!q.torso) return;
     for (const w of workers) {
-      let x, z, yaw, mode, hs = PT + 0.47;
-      if (w.walk) { const q = pointAt(w.path, w.walk.s); x = q.x; z = q.z; const want = w.walk.dir > 0 ? q.yaw : q.yaw + Math.PI; w.yaw = angLerp(w.yaw, want, 0.35); yaw = w.yaw; mode = 'walk'; }
-      else if (w.place === 'lounge') { x = w.seat.x; z = w.seat.z; yaw = w.yaw = w.seat.yaw; mode = 'sofa'; hs = PT + 0.43; }
-      else { x = w.x; z = w.chair.z - 0.13; yaw = w.yaw = 0; mode = 'desk'; }
+      let x, z, yaw, mode;
+      if (w.walk) { const p = pointAt(w.path, w.walk.s); x = p.x; z = p.z; const want = w.walk.dir > 0 ? p.yaw : p.yaw + Math.PI; w.yaw = angLerp(w.yaw, want, 0.35); yaw = w.yaw; mode = 'walk'; }
+      else if (w.place === 'lounge') { x = w.seat.x; z = w.seat.z; yaw = w.yaw = w.seat.yaw; mode = 'sofa'; }
+      else { x = w.x; z = w.chair.z - 0.15; yaw = w.yaw = 0; mode = 'desk'; }
       const c = Math.cos(yaw), s = Math.sin(yaw);
-      const at = (lx, y, lz) => [x + lx * c + lz * s, y, z - lx * s + lz * c];
-      const k = w.i, working = w.status === 'working' && mode === 'desk';
-      const bob = animate && mode !== 'walk' ? Math.sin(t * 1.6 + w.phase) * 0.012 : 0;
+      const wx = (p) => [x + p[0] * c + p[2] * s, p[1], z - p[0] * s + p[2] * c];   // person-local -> world
+      const k = w.i, typing = animate && w.status === 'working' && mode === 'desk';
+      const breathe = animate && mode !== 'walk' ? Math.sin(t * 1.6 + w.phase) * 0.006 : 0;
+      let hipY, lean, legs, arms, turn = 0, nod = 0;
       if (mode === 'walk') {
-        const ph = w.walk.s * 4.2, sw = Math.sin(ph) * 0.5, hip = PT + 0.84 + Math.abs(Math.cos(ph)) * 0.035;
-        setInst(body, k, ...at(0, hip + 0.42, 0), yaw);
-        setInst(head, k, ...at(0, hip + 0.98, -0.02), yaw);
-        for (const [j, side] of [[0, -1], [1, 1]]) {
-          const a = side * sw, dy = -Math.cos(a), dz = -Math.sin(a);
-          setInst(limbs, k * 4 + j * 2, ...at(side * 0.11, hip + 0.21 * dy, 0.21 * dz), yaw, a);
-          setInst(limbs, k * 4 + j * 2 + 1, ...at(side * 0.11, hip + 0.63 * dy, 0.63 * dz), yaw, a);
-          setInst(arms, k * 2 + j, ...at(side * 0.27, hip + 0.62 - 0.19, -side * sw * 0.18), yaw, Math.PI / 2 - side * sw * 0.8);
-        }
+        const ph = w.walk.s * 3.6;
+        legs = [0, 1].map((j) => { const a1 = Math.sin(ph + j * Math.PI) * 0.42; return [a1, a1 < 0 ? a1 * 1.9 : a1 * 0.45]; });
+        hipY = PT + SEG.ankle + Math.max(...legs.map(([a1, a2]) => SEG.thigh * Math.cos(a1) + SEG.shin * Math.cos(a2)));
+        lean = 0.05;
+        arms = [0, 1].map((j) => { const a1 = -Math.sin(ph + j * Math.PI) * 0.38; return [a1, 0, a1 + 0.35, 0]; });
       } else {
-        setInst(body, k, ...at(0, hs + 0.42 + bob, 0.04), yaw);
-        setInst(head, k, ...at(0, hs + 0.98 + bob, 0.02), yaw + (animate ? Math.sin(t * 0.5 + w.phase) * 0.12 : 0), animate ? Math.sin(t * 0.9 + w.phase) * 0.05 + (working ? Math.sin(t * 6 + w.phase) * 0.03 : 0) : 0);
-        for (const [j, side] of [[0, -1], [1, 1]]) {
-          setInst(limbs, k * 4 + j * 2, ...at(side * 0.11, hs + 0.04, -0.19), yaw, Math.PI / 2);        // thigh, forward
-          setInst(limbs, k * 4 + j * 2 + 1, ...at(side * 0.11, hs - 0.2, -0.38), yaw, 0.08);            // shin, down
-          if (mode === 'desk') { const lift = animate && working ? Math.abs(side < 0 ? Math.sin(t * 7 + w.phase) : Math.cos(t * 7 + w.phase)) * 0.05 : 0; setInst(arms, k * 2 + j, ...at(side * 0.2, hs + 0.56 + lift + bob, -0.15), yaw, -0.25); }
-          else setInst(arms, k * 2 + j, ...at(side * 0.26, hs + 0.36 + bob, -0.08), yaw, Math.PI / 2 - 0.3);   // resting by the sides
+        hipY = (mode === 'desk' ? CHAIR_TOP : w.seat.cushion.top) + 0.075;
+        const a1 = Math.PI / 2 - (mode === 'desk' ? 0.06 : 0.1);
+        const knee = hipY - SEG.thigh * Math.cos(a1), drop = Math.min(SEG.shin, Math.max(0.05, knee - PT - SEG.ankle));
+        const a2 = Math.acos(drop / SEG.shin);                  // the feet reach the floor, a little forward of the knees
+        legs = [[a1, a2], [a1, a2]];
+        if (mode === 'desk') {                                  // hands on the keyboard; fingers tap while working
+          lean = 0.2;
+          arms = [0, 1].map((j) => { const sd = j ? 1 : -1, tap = typing ? Math.sin(t * 9 + w.phase + j * 2.3) * 0.06 : 0; return [0.75, sd * 0.08, 1.42 + tap, sd * 0.3]; });
+          nod = 0.06 + (typing ? Math.sin(t * 4 + w.phase) * 0.015 : 0);
+          if (animate && !typing) turn = Math.sin(t * 0.5 + w.phase) * 0.15;
+        } else {                                                // leaning back, hands on the lap
+          lean = -0.22;
+          arms = [0, 1].map((j) => { const sd = j ? 1 : -1; return [0.28, sd * 0.05, 1.3, sd * 0.38]; });
+          turn = animate ? Math.sin(t * 0.4 + w.phase) * 0.25 : 0; nod = -0.04;
         }
       }
-      setInst(blobs, k, x, PT + 0.012, z, 0, 0, mode === 'walk' ? 0.85 : 1.1);
+      const waist = [0, hipY + SEG.waist + breathe, 0], up = [0, Math.cos(lean), -Math.sin(lean)], neck = add(waist, up, SEG.neckY);
+      setInst(q.pelvis, k, ...wx([0, hipY, 0]), yaw);
+      setInst(q.torso, k, ...wx(waist), yaw, -lean);
+      setInst(q.head, k, ...wx(neck), yaw + turn, -(lean * 0.4 + nod));
+      setInst(q['hair' + w.style], w.hairI, ...wx(neck), yaw + turn, -(lean * 0.4 + nod));
+      for (const j of [0, 1]) {
+        const side = j ? 1 : -1, ix = k * 2 + j;
+        const [t1, t2] = legs[j], hip = [side * SEG.hipX, hipY, 0], kneeP = add(hip, dirOf(t1), SEG.thigh), ankle = add(kneeP, dirOf(t2), SEG.shin);
+        setInst(q.thigh, ix, ...wx(hip), yaw, t1); setInst(q.shin, ix, ...wx(kneeP), yaw, t2); setInst(q.shoe, ix, ...wx(ankle), yaw);
+        const [u1, ud, f1, fd] = arms[j], sh = add(add(waist, up, SEG.shoulderY), [side * SEG.shoulderX, 0, 0], 1);
+        const elbow = add(sh, dirOf(u1, ud), SEG.upper), wrist = add(elbow, dirOf(f1, fd), SEG.fore);
+        setInst(q.upperArm, ix, ...wx(sh), yaw + ud, u1); setInst(q.forearm, ix, ...wx(elbow), yaw + fd, f1); setInst(q.hand, ix, ...wx(wrist), yaw + fd, f1);
+      }
+      setInst(q.blobs, k, x, PT + 0.012, z, 0, 0, mode === 'walk' ? 0.85 : 1.1);
       if (w.pick) { w.pick.visible = false; w.pick.position.set(x, PT + 0.85, z); w.pick.scale.setScalar(mode === 'desk' ? 0.001 : 1); w.pick.updateMatrixWorld(true); }
     }
-    body.instanceMatrix.needsUpdate = head.instanceMatrix.needsUpdate = arms.instanceMatrix.needsUpdate = limbs.instanceMatrix.needsUpdate = blobs.instanceMatrix.needsUpdate = true;
+    for (const n of PARTS) if (q[n]) q[n].instanceMatrix.needsUpdate = true;
   }
 
   // activity lines: dashed arcs from a working desk to the services it is using in the server closet
@@ -412,7 +479,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     M.wood.color.set(p.wood); M.tile.color.set(p.tile);
     M.deskTop.color.set(p.deskTop); M.deskMetal.color.set(p.deskMetal); M.chair.color.set(p.chair); M.monitorFrame.color.set(p.monitorFrame); M.keyboard.color.set(p.keyboard);
     M.potTall.color.set(p.plantPotTall); M.potSmall.color.set(p.plantPot); M.leafTall.color.set(p.plantLeafTall); M.leafSmall.color.set(p.plantLeaf);
-    M.head.color.set(p.worker); M.trousers.color.set(p.trousers); M.terminal.color.set(p.terminal);
+    M.terminal.color.set(p.terminal);
     M.crystal.emissive.set(p.hubCore); M.coreRing.color.set(p.hubCore); glow.material.color.set(p.hubCore);
     dropMat.opacity = p.shadowOpacity * 2; blobMat.opacity = p.blobOpacity;
     hemi.color.set(p.hemiSky); hemi.groundColor.set(p.hemiGround); hemi.intensity = p.hemiIntensity; sun.intensity = p.sunIntensity; sun.color.set(p.sunColour);
