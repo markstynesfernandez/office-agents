@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (E6 steps b0 and b: live web search with the owner's source rule, and the first live scout run (no briefs); E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -23,11 +23,39 @@ Last updated: 17/10/2026 (E6 steps a0 and a: the live Anthropic text provider an
 | **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026), with the importer label fix (`db18e5a`). The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
 | **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions") and **approved by the owner** (17/10/2026). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
 | E6 readiness | Done (17/10/2026). The owner's decisions on Q1 (verbal), Q2 caps, prices, image models, keys and scout sources recorded; the guard prices Haiku's long-prompt tier and cache reads and writes; the scout run cap. Mock only, $0. See below. |
-| E6 First real job | In progress. **a0** (live Anthropic text provider) and **a** (one Haiku smoke call, USD 0.000005) done 17/10/2026; **b0** next, on the owner's go-ahead. Web and images not built yet. The plan, step by step, is under "Exact next step". |
+| E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **c0** next (build, no spend); step **c** needs a verified genre brief, which b did not produce. Images not built yet. The plan is under "Exact next step". |
 | E7 Routines and cut-over | Not started |
 
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
+
+### E6 steps b0 and b: live web search, the first live scout run (17/10/2026)
+
+**b0** (`80b034c`, `1b912a7`; DECISIONS.md "E6 step b0 build record" and "E6 step b0: owner decisions"): each
+web_search / web_fetch is one Haiku request with one server tool (`web_search_20250305` / `web_fetch_20250910`,
+direct, max_uses 1), reserved and settled through the guard (searches x USD 0.01 + tokens), one ledger row per request.
+The owner's source rule: `steampowered.com`, `itch.io`, `twitch.tv`, `youtube.com` as `blocked_domains` on both
+tools for every agent with web tools, and the engine refuses a fetch to them before it is sent; TREND-SCOUT reads trend
+articles, editorial roundups and community discussion. 312/312 tests; parity dry run unchanged.
+
+**b, one live run** (`npm run scout:live`, job `2026-10-17--genre-scout-1`, 0.74 minutes, exit 0; not rerun):
+- Pre-run line: Haiku 5.5 effort low for TREND-SCOUT, EVIDENCE-CHECKER and the web relay; web-call caps 12 / 15;
+  max_uses 1; 4 blocked domains on both tools; run cap USD 0.50; retries 2; web search supported (Models API).
+- **Result: no genre brief.** TREND-SCOUT made 3 web calls (2 searches, 1 fetch), wrote valid internal notes (2 AAA,
+  2 indie; 4 games and 4 studios added to the internal blocklist), then ended its turn without writing any of the 4
+  genre drafts. scout-notes: "no genre drafts"; EVIDENCE-CHECKER found nothing to check (no web calls); the job ended
+  research-done, "no drafts for 2026-10-17". No cap was hit, no tool was refused, nothing failed. The engine keeps no
+  model reply text, so why it stopped is not known from the record.
+- Cost USD 0.033242: Haiku agent tokens 0.007126, web relay tokens 0.006116, search fees 0.02 (2 searches). 10 ledger
+  rows, all with request ids, none estimated. Ledger today USD 0.033247 (15 rows, the smoke call included).
+- Customer-facing check: no file was written outside `scouting/`, so no brief, title or other customer-facing field
+  exists to carry a name.
+- Points for the owner (DECISIONS.md not changed): one AAA title was tagged `common-word` by the scout although it is
+  not an ordinary word, so its bare title only warns (full-title hard fail does not apply when the title is the bare
+  word); no entry has `alsoBlock` names; the evidence came from streaming-statistics and gaming-news sites (none on the
+  blocked list).
+- `.env` unchanged (metadata only), STATION_PROVIDER removed after the command, config still `mock`, no key in
+  `logs/`.
 
 ### E6 steps a0 and a: live Anthropic text provider, one Haiku smoke call (17/10/2026)
 
@@ -379,8 +407,8 @@ Also needed before a real job on the product (added here; not in the owner's lis
 | 14 | Parity check against the legacy job (§7.2 step 3) | **done** (17/10/2026) | 26/26, 0 unexplained differences. |
 | 15 | Designer token use (legacy item 12: a compact brief extract, under 30k tokens per image) | **open** | Not built; proposal in DECISIONS.md. Measurable only on a real run. |
 | 16 | Buttons on the page for the owner's actions | **open** (not blocking) | The routes exist; `npm run owner` works today with the server stopped. |
-| 17 | Genre-scout sources | **decided** (17/10/2026); one prompt line **open** (before step b) | v1: Anthropic web search over public articles and chart write-ups only; no scraping; no Twitch, Steam or itch.io APIs. Twitch and YouTube official APIs in a later phase, after the owner's terms check, keeping derived conclusions only. TREND-SCOUT's prompt still mentions reading store charts: change proposed in step b. The routine stays disabled. |
-| 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **partly done**: Anthropic text built and smoke-tested (17/10/2026); web (b0) and images (c0) **open** | `@anthropic-ai/sdk` 0.131.0; `providers/anthropic.mjs` (step a0, `cbb2388`); one Haiku smoke call, USD 0.000005 (step a). On the live provider, web and images refuse with "not built". |
+| 17 | Genre-scout sources | **closed** (17/10/2026) | v1: trend articles, editorial roundups and community discussion by Anthropic web search; Steam, itch.io, Twitch and YouTube blocked on both web tools and refused by the engine for fetch (`1b912a7`); TREND-SCOUT's prompt changed. Twitch and YouTube data later through their official APIs only. |
+| 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **partly done**: Anthropic text (a0/a) and the live web backend (b0, first live run in b) done 17/10/2026; images (c0) **open** | `@anthropic-ai/sdk` 0.131.0; `providers/anthropic.mjs`, `providers/anthropic-web.mjs`. |
 | 19 | Per-run cap | **open** (owner; before step c) | `perRunUsd` is USD 1.00 (StarNet era) and was not part of the Q2 answer. One legacy DESIGNER pass cost about USD 0.92. |
 | 20 | Image token estimate in reservations | **open** (before step c) | `image_analyze` sends base64, and the runtime counts it as text (length ÷ 3). A 1 MB PNG reserves about USD 1.1 on Sonnet, over the per-run cap. Fix proposed in DECISIONS.md. |
 
@@ -661,8 +689,10 @@ The post-E3 re-port changed:
    Q1 confirmation to be recorded when it arrives. Next lounge re-bake: a ninth seat.
 1. Done and approved by the owner (17/10/2026): R3a, R3b, the importer label fix, the port batch before E6, the
    genre-trend scouting line and the scouting decisions.
-2. **E6 a0 and a done (17/10/2026). Next: b0** (live web backend and the v1 source rule; no spend), only on the
-   owner's go-ahead. Owner to-do: match request `req_011Cg7xU6wxApdmaNh1rw2VC` in the Console.
+2. **E6 a0, a and b0 done; b ran once (17/10/2026) with no genre brief.** Next, on the owner's go-ahead: **c0**
+   (images and the style-reference run; no spend). Step **c** needs a verified genre brief, so the owner decides how
+   to get one (another scout run, or a brief from elsewhere) before c. Owner to-do: match the b run's request ids in
+   the Console (DECISIONS/PROGRESS "E6 steps b0 and b"). Owner to-do: match request `req_011Cg7xU6wxApdmaNh1rw2VC` in the Console.
 
 ### E6 plan: the first real run (each step stops for the owner's go-ahead)
 
@@ -703,7 +733,7 @@ and a" above). As built: max_tokens 32 and thinking disabled (owner), not 16.
   - no key in `logs/`.
 - Stop and report.
 
-**b0. Build: live web backend and the v1 source rule (no spend; go-ahead needed).** **Next.**
+**b0. Build: live web backend and the v1 source rule (no spend; go-ahead needed).** **Done 17/10/2026 (`80b034c`, source rule `1b912a7`).**
 - `providers.web`: each `web_search` or `web_fetch` becomes one Anthropic call (Haiku) with the server-side tool,
   limited to one search a call. The results come back to TREND-SCOUT as data.
 - Ledger: USD 0.01 for each search the response reports, plus that call's tokens at Haiku's prices. The web
@@ -713,7 +743,7 @@ and a" above). As built: max_tokens 32 and thinking disabled (owner), not 16.
   the engine also refuses `web_fetch` to those sites.
 - Tests against a stub.
 
-**b. One scout run (go-ahead 2; cap USD 0.50).**
+**b. One scout run (go-ahead 2; cap USD 0.50).** **Ran 17/10/2026: USD 0.033242, no genre brief (see "E6 steps b0 and b" above); not rerun.**
 - One `genre-scout` job, started by hand by a one-shot command that runs a single job and exits; the routine stays
   disabled.
 - Caps: `perJob[genre-scout]` USD 0.50 and 12 web calls (at most USD 0.12 in search fees) are enforced by the engine.
