@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (E6 steps b0 and b: live web search with the owner's source rule, and the first live scout run (no briefs); E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (E6 step b2: scout fixes D1–D4 and the owner's part-2 decisions, then one live rerun (incomplete: TREND-SCOUT reported blocked on the product key); E6 steps b0 and b: live web search with the owner's source rule, and the first live scout run (no briefs); E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -23,11 +23,43 @@ Last updated: 17/10/2026 (E6 steps b0 and b: live web search with the owner's so
 | **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026), with the importer label fix (`db18e5a`). The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
 | **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions") and **approved by the owner** (17/10/2026). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
 | E6 readiness | Done (17/10/2026). The owner's decisions on Q1 (verbal), Q2 caps, prices, image models, keys and scout sources recorded; the guard prices Haiku's long-prompt tier and cache reads and writes; the scout run cap. Mock only, $0. See below. |
-| E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **b1** (output contract + job transcripts, `795adcb`) done; the **b1 rerun** (17/10/2026, USD 0.053095) completed research-done but **0 verified** briefs: the scout's Etsy demand fetch is refused (`url_not_allowed`), so no brief can carry demand evidence; see "E6 step b1". Owner decisions needed before c0; step **c** needs a verified genre brief. Images not built yet. The plan is under "Exact next step". |
+| E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **b1** (output contract + job transcripts, `795adcb`) done; the **b1 rerun** (17/10/2026, USD 0.053095) completed research-done but **0 verified** briefs: the scout's Etsy demand fetch is refused (`url_not_allowed`), so no brief can carry demand evidence; see "E6 step b1". **b2** (D1–D4 `0ab5b1d`; owner's part 2 `308c91a`) done; the **b2 rerun** (17/10/2026, USD 0.002051) ended **incomplete**: TREND-SCOUT reported blocked at step 1 (it did not recognise `pngtuber-prop-pack` as "the desk-props pack key"), no web call; see "E6 step b2". Step **c** needs a verified genre brief. Images not built yet. The plan is under "Exact next step". |
 | E7 Routines and cut-over | Not started |
 
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
+
+### E6 step b2: scout fixes, one live rerun (17/10/2026)
+
+**b2a** (`0ab5b1d`, DECISIONS.md "E6 step b2: owner decisions" and "E6 step b2a build record"): D1 etsy.com fetches refused
+by the engine before reserve (not sent as blocked_domains; etsy.com search results still come back); a fetch must name
+a URL a search in the job returned; genre briefs carry "indicative" evidence (search results, competitor count "not
+measured"), citations checked against the job transcript at brief-check and intake. D2 `report_blocked(reason)`; the
+nudge offers exactly fs_write or report_blocked (`tool_choice` any on Haiku, the engine refuses other tools). D3 one
+genre brief schema (`lib/scout-brief.mjs`), checked on write, at the screen, at brief-check and intake; naming
+`YYYY-MM-DD--<slug>` (the intake convention). D4 only name-like blocklist terms; the b1 placeholder removed with
+`scripts/blocklist-hygiene.mjs --apply` (11 → 10 entries; b1's customer-facing check now clean).
+**Owner's part 2** (`308c91a`, DECISIONS.md "E6 step b2: owner decisions, part 2"): the approval card shows the evidence
+level ("INDICATIVE" banner); report_blocked after >= 1 valid draft records the shortfall and its reason and the line
+continues (0 drafts: incomplete); refused short names go to `research/scouting/short-names-review.json`; transcript
+retention follows the citing briefs (`lib/transcript-retention.mjs`; refuses while one is open; no cleanup is
+scheduled). 330/330 tests, port drift none, scout dry run and parity unchanged (26/26 with --rebuild).
+
+**b2b rerun** (job `2026-10-17--genre-scout-3`, 0.1 minutes, exit 1, not rerun):
+- Pre-run line as approved: Haiku 5.5 effort low for both agents and the relay; web caps 12 / 15; max_uses 1; 4 blocked
+  domains on both tools, etsy.com engine-only; run cap USD 0.50; retries 2; max nudges 2; web search supported.
+- **Result: incomplete, no brief.** TREND-SCOUT read products.json and listed briefs/ and rejected/, then ended its turn
+  with "NO PRODUCT": its orders say "use the product key the routine prompt names (default: the desk-props pack key);
+  if it is not listed, reply NO PRODUCT", products.json lists only `pngtuber-prop-pack`, and the run input names no
+  key. Nudge 1 (`any`, offering fs_write or report_blocked) -> it called report_blocked with that reason. No web call,
+  no notes, no draft, nothing downstream; D2 worked as built.
+- Cost USD 0.002051 (3 Haiku requests: `req_011Cg86RZbgjKtyCCDHeUHxP` 0.000828, `req_011Cg86Rf8pKhVedcZgikz83`
+  0.000656, `req_011Cg86Rt6vWnbrshYP7dKzm` 0.000567; none estimated); no search fees. Ledger today USD 0.088393
+  (35 rows). No blocklist addition; no file outside scouting/ (customer-facing check: 0 files, clean).
+- `.env` unchanged (size and modified time), the override removed, the engine default still mock, no key-shaped
+  string in logs/ or the transcript.
+- Fix (owner to decide; not made): name the key. For example, step 1 of TREND-SCOUT's orders could read "default:
+  `pngtuber-prop-pack`, the desk-props pack", or scout-live's run input could name the product key.
 
 ### E6 step b1: output contract, job transcripts, one live rerun (17/10/2026)
 
@@ -714,9 +746,10 @@ The post-E3 re-port changed:
    Q1 confirmation to be recorded when it arrives. Next lounge re-bake: a ninth seat.
 1. Done and approved by the owner (17/10/2026): R3a, R3b, the importer label fix, the port batch before E6, the
    genre-trend scouting line and the scouting decisions.
-2. **E6 a0, a and b0 done; b ran once (17/10/2026) with no genre brief.** Next, on the owner's go-ahead: **c0**
-   (images and the style-reference run; no spend). Step **c** needs a verified genre brief, so the owner decides how
-   to get one (another scout run, or a brief from elsewhere) before c. Owner to-do: match the b run's request ids in
+2. **E6 a0, a, b0, b1 and b2 done; no verified genre brief yet** (b2's rerun stopped on the product key, see "E6 step
+   b2"). Owner decision first: how TREND-SCOUT is told the product key (prompt or run input), and whether to run the
+   scout again. Then, on the owner's go-ahead: **c0** (images and the style-reference run; no spend). Step **c** needs a
+   verified genre brief. Owner to-do: match b2's request ids in the Console. Owner to-do: match the b run's request ids in
    the Console (DECISIONS/PROGRESS "E6 steps b0 and b"). Owner to-do: match request `req_011Cg7xU6wxApdmaNh1rw2VC` in the Console.
 
 ### E6 plan: the first real run (each step stops for the owner's go-ahead)
@@ -781,6 +814,8 @@ and a" above). As built: max_tokens 32 and thinking disabled (owner), not 16.
 - Stop and report.
 
 **b1. Output contract + job transcripts, one live rerun (go-ahead "go scout 2").** **Done 17/10/2026 (`795adcb`); rerun USD 0.053095, 0 verified (Etsy fetch refused; see "E6 step b1"). Owner decisions needed: how the scout gets demand evidence, an agent "cannot produce" outcome for the contract, the origin-line/id check, the blocklist placeholder entry.**
+
+**b2. Scout fixes (D1–D4) and one live rerun (go-ahead "go scout 3").** **Done 17/10/2026 (`0ab5b1d`, `308c91a`); rerun USD 0.002051, incomplete: TREND-SCOUT reported blocked on the product key (see "E6 step b2"). Owner decision needed: how the scout is told the product key.**
 
 **c0. Build: images and the style-reference run (no spend; go-ahead needed).**
 - OpenRouter image client: `OPENROUTER_API_KEY` from the environment, the one allowed model, and the reported cost
