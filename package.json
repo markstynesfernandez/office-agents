@@ -22,7 +22,9 @@
     "import-legacy": "node scripts/import-legacy.mjs",
     "build-office": "node scripts/build-office.mjs",
     "screenshots-r3a": "node scripts/screenshots-r3a.mjs",
-    "screenshots-r3b": "node scripts/screenshots-r3b.mjs"
+    "screenshots-r3b": "node scripts/screenshots-r3b.mjs",
+    "owner": "node scripts/owner.mjs",
+    "parity": "node scripts/parity-pngtuber.mjs"
   },
   "dependencies": {
     "croner": "10.0.1",

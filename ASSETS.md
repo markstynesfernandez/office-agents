@@ -114,7 +114,7 @@ and the system monospace stack (`Cascadia Code`, `Consolas`, `ui-monospace`). No
 | Package | Version | Licence | Use | Where |
 |---------|---------|---------|-----|-------|
 | three | 0.186.1 | MIT | renderer, geometry, post-processing (`EffectComposer`, `RenderPass`, `GTAOPass`, `OutputPass`, `Pass`/`FullScreenQuad`, `CopyShader`, `RoundedBoxGeometry`, `BufferGeometryUtils`); R3 spike: `GLTFLoader` (loads the baked Design room) | `dependencies`; served to the browser from `node_modules/three/build` and `examples/jsm` only |
-| sharp | 0.34.5 | Apache-2.0 | downscales design and print PNGs into thumbnails: `scripts/snapshot-fixtures.mjs` now; the server's `.cache/thumbs/` in Phase 2 (decision 9). Same version the owner's station already uses. | `dependencies` |
+| sharp | 0.34.5 | Apache-2.0 | downscales design and print PNGs into thumbnails: `scripts/snapshot-fixtures.mjs` now; the server's `.cache/thumbs/` in Phase 2 (decision 9); since the port batch (17/10/2026) also the engine's digital build (clean-up, padding, PNG optimisation with the libimagequant 2.4.1 built into its prebuilt libvips, BSD-2-Clause per the package's own README, lovell/libimagequant fork), the deterministic prop edits and the listing photos. Same version the owner's station already uses. | `dependencies` |
 | @img/sharp-win32-x64 | 0.34.5 | Apache-2.0 AND LGPL-3.0-or-later | sharp's prebuilt binary; bundles libvips 8.17.3 (LGPL-3.0-or-later, dynamically linked, unmodified) | transitive (optional, platform-specific) |
 | @img/colour | 1.1.0 | MIT | sharp dependency | transitive |
 | detect-libc | 2.1.2 | Apache-2.0 | sharp dependency | transitive |
@@ -131,6 +131,17 @@ and the system monospace stack (`Cascadia Code`, `Consolas`, `ui-monospace`). No
 | Tool | Version (pinned) | Licence | Use | Where |
 |------|------------------|---------|-----|-------|
 | Blender | **5.2.1 LTS** (build 9e2066aef7ef, 2026-08-25; series 5.2 LTS, supported to July 2028). The owner installed it from https://www.blender.org/download/lts/5-2/. `scripts/build-office.mjs` (R3a; the spike's `build-design-room.mjs` before it) refuses any version outside 5.2.x unless `--any-blender` is given. | GPL-2.0-or-later (the program). Files made with it are not covered by the GPL: the glTF, its buffer, the textures as exported, the lightmaps and the manifest are this project's own (Blender licence FAQ). | headless modelling, Cycles bake and glTF export (R3 spike; since R3a `npm run build-office`); bundled add-on: glTF 2.0 I/O 5.2.40 (Apache-2.0) | `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe` (or `BLENDER_EXE`) |
+| Real-ESRGAN ncnn Vulkan (`realesrgan-ncnn-vulkan.exe`) | **v0.2.5.0, build 20220424** (Windows), sha256 `07e49f7cbb4ede01ae4dd4c399d3a7e5846e3d2085c3128eff881e55cb7b1a0c` | **MIT** (Real-ESRGAN-ncnn-vulkan: Copyright (c) 2021 Xintao Wang; includes realsr-ncnn-vulkan, Copyright (c) 2019 nihui), statically built on ncnn (BSD-3-Clause, Tencent) | the digital build's upscale (port batch 17/10/2026, owner decision: a local child process, pinned path and sha256, no network, inside the job jail, killed by the E-STOP; `src/engine/lib/esrgan.mjs` only). $0 per image, local GPU | `tools/realesrgan/` (git-ignored, never committed), pinned in `config/engine.json` `upscale` |
+| `vcomp140.dll` (shipped beside the binary in the same release zip) | sha256 `8f72ef2e483465444b2059fc6744d6cb22cd8d8a27f6fa56befd2a42dcd0f78b` | Microsoft Visual C++ OpenMP runtime, redistributable with the application (Visual Studio redistributable terms) | needed by the binary | `tools/realesrgan/` (git-ignored) |
+| Model `realesrgan-x4plus` (`.param` + `.bin`) | sha256 `35330ece…0a86` (param), `713ee713…cddf` (bin); full hashes in `config/engine.json` | **BSD-3-Clause** (Real-ESRGAN: Copyright (c) 2021, Xintao Wang) | the 4x model the build runs (the build key names it) | `tools/realesrgan/models/` (git-ignored) |
+
+The Real-ESRGAN files were copied, read only, from the legacy station's download (`Virtual-workers/station/tools/realesrgan/`,
+downloaded there 2026-10-15 from https://github.com/xinntao/Real-ESRGAN/releases, `realesrgan-ncnn-vulkan-20220424-windows.zip`);
+each copy is sha256-identical to the legacy file. Only the files the build needs were copied (the anime models were not). The
+licences were checked on 17/10/2026 against https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE (BSD 3-Clause) and
+https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/blob/master/LICENSE (MIT). The release zip's own licence files were not in
+the legacy folder; the owner may want to keep a copy of the zip with them. Nothing of Real-ESRGAN is committed or shipped in
+the repo; its outputs (the buyer's PNGs) are the owner's.
 
 npm reports an install script for sharp that is not run (`allowScripts`); it is not needed because the prebuilt
 binary package is used.

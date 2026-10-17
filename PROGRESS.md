@@ -16,6 +16,7 @@ Last updated: 17/10/2026 (R3a: baked Design and Office rooms, phase 1 of 2, now 
 | **Redesign R1** Office scene look | Done (16/10/2026), **approved by the owner** (17/10/2026). Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
 | **Redesign R2** Office look, people, UI polish | Done (17/10/2026), **approved by the owner** (17/10/2026). Follow-ups done at the start of E5 (below). Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
 | **E5** Live UI | Done (17/10/2026), **approved by the owner** (17/10/2026). Task box, scheduler, approval queue, desk and job controls, E-STOP with typed resume, live spend vs caps; every write same-origin, token, idempotency key and expectedVersion. Mock provider only. Screenshots in `screenshots/e5/`. See below. |
+| **Port batch before E6** | Done (17/10/2026), **for the owner's review**. The PNGTuber job's fixes and the 16 drifted sources ported at the 5th moment (PORTED.md); the build with the pinned Real-ESRGAN in the engine; owner overrides, set and listing approvals; QA-only and listing-only; the digital package step, listing photos, Mark published with title, price and SKU. Delta import done. Parity on the live product: 26/26, the rebuild byte for byte. Mock only, $0. See below. |
 | Pre-E6 housekeeping | Done (17/10/2026). Line endings fixed; port drift measured (not ported); port-step items planned; E6 readiness checklist below. |
 | **R3 spike** Baked lighting, Design room only | Done (17/10/2026). **Owner's decision:** roll the baked look out in two phases (R3a now, phase 2 later). Was behind `?scene=baked`. 71+ fps full quality on the Intel iGPU in every measured view, walking included (headed Chromium; see below), 1.41 MiB of assets, 41 s rebuild. Screenshots in `screenshots/r3-spike/`. See below. |
 | **R3a** Baked look, phase 1 of 2 | Done (17/10/2026), **for the owner's review**. Shared Blender library; the Design room fixed (readable in dark mode, mood board and pictures back, warm-white walls by day); the Office room baked; one oak floor everywhere; baked rooms are the default (`?scene=procedural` turns them off). 66+ fps full quality on the Intel iGPU in every measured view, walking included; 2.76 MB of the 10 MB office budget; full rebuild 104–127 s. Screenshots in `screenshots/r3a/`. See below. |
@@ -172,31 +173,86 @@ A spike only. `?scene=baked` swaps the Design room for a baked one; without the 
   At the start of E5 it was 5 files; the legacy job has since touched 5 more and changed the first 5 again. port-drift only hashes the 50 sources already ported: a new legacy file (for example the recolour or outline steps) does not show here, so the batch is the drift list plus the "To port to office-agents" log in Virtual-workers (not read in this step). The port happens in one go once the owner's job `2026-10-16--pngtuber-cosy-desk-props-r2` is done.
 - **Port-step items planned** in ENGINE-PLAN.md §9, "Port step before E6": owner override of a QA verdict (per file, with date, reason and owner, on the job and in the manifest); the recolour and outline-colour normalise steps as tested pipeline steps; ZIP delivery for multi-file packs. Nothing built.
 
-### E6 readiness checklist (17/10/2026)
+### Port batch before E6 (17/10/2026) — for the owner's review
 
-Every item still blocking E6. **Candidate first product and parity reference:** the PNGTuber job `2026-10-16--pngtuber-cosy-desk-props-r2` in the legacy station (the `pngtuber-prop-pack` product). The engine's first real job should be judged against what that job produced.
+The legacy job `2026-10-16--pngtuber-cosy-desk-props-r2` is live on Etsy (https://www.etsy.com/listing/4597311033, published
+2026-10-17, EUR 9.00, SKU DESK-PROPS-01): the first real product and the parity reference. This phase ported its fixes in one
+batch. Mock provider only; $0; no key read; nothing written to Virtual-workers. The owner's decisions and the build record are in
+DECISIONS.md ("Port batch before E6").
+
+- **Sources.** The 16 drifted files plus every "To port to office-agents" entry of the legacy HANDOFF.md (items 1–32, freeze
+  exceptions a–o), copied read only into a frozen staging folder at **2026-10-17T11:34:23Z** (the 5th moment) and ported from
+  there; none changed afterwards. 19 new legacy files are tracked; `npm run port-drift`: 0 of 69 drifted.
+- **What is ported:** the near-miss allow-list (exact whole words) and the set screen (all of design.md but the self-check,
+  file names, the brief, the listing); the whole digital build (enclosed background with edge unmix, removed-area and
+  near-white checks, Real-ESRGAN with alpha apart, PNG optimisation, one ZIP, the preview) as the prep step of packaged
+  products, with the pinned binary as the engine's only child process (killed by the E-STOP); limitProblems and buildWarnings
+  for QA DESIGN; the cleaned file-1 version and per-version style-reference decisions; the owner set approval and owner listing
+  approval as gate sign-offs; recolour of an approved file and outline normalise (refusing an unapproved source); the
+  deterministic listing text fix; the digital package step (ZIP delivery, MANIFEST with every file and ZIP entry, owner
+  overrides with date, reason and owner); listing photos from the packaged ZIP; QA-only and listing-only run modes and the
+  package step as owner actions; the price fill keyed to the job; QA pass numbers from the job's counter; Mark published with
+  the final title, price and SKU; the Lister, QA DESIGN and QA LISTING prompts and two skills (QA DESIGN 11,970 and QA LISTING
+  11,996 characters: under the 12,000 target, no trim needed). The owner's decisions are an append-only log per job, shown on
+  the job panel; `npm run owner -- <action> <job-id> '<json>'` runs them from a terminal (the page has no buttons for them yet).
+- **Delta import:** `npm run import-legacy`: 104 files added, 11 changed, 14 ledger rows and 8 runs added (ledger 176 rows,
+  $12.4899616, match); the PNGTuber job is in `data/legacy/` as `published`, with its approval records, listing photos and
+  package. **Second run: nothing changed (0 added).**
+- **Parity** (`npm run parity -- --rebuild`; read only on `data/legacy`, writes only `dry-run/parity/`, $0, no model or
+  network): **26/26 checks pass, 0 unexplained differences.** The engine re-derives the set (build current, 12 files, no limit
+  problems or build warnings, originality clear), the listing screen (clear), the owner set approval (6 QA pass, 3 owner
+  override, 3 deterministic fix, every file's status the same) and the owner listing approval; the package gate passes with
+  the same 3 design passes; the price fill gives EUR 9.00 and leaves another job's unreviewed listing untouched; the ZIP is
+  byte for byte the published download, its 12 entries match, within Etsy's limits; the listing passes US spelling; the
+  package step builds and is idempotent; all 7 listing photos come out byte for byte; and **the rebuild of set-v4 from its raw
+  files with the pinned Real-ESRGAN gives the same build key, all 12 files and the ZIP byte for byte** (about 3 minutes, local
+  GPU). The 73 differences, each with its reason (dry-run/parity/PARITY.md):
+
+  | Count | Where | Reason |
+  |---|---|---|
+  | 19 | records rewritten in the replay copy | layout only: `work/<id>/`, `outbox/<id>/` and `approval-queue/<id>` are `jobs/<id>/`, `jobs/<id>/outbox/`, `jobs/<id>/package/` |
+  | 17 | sha256s in the approvals and MANIFEST | follow those path rewrites (QA records, listing.json's designFile, the re-composed approvals, the re-based fix record) |
+  | 7 | path strings in MANIFEST, deliverables.json, photos.json | the same layout |
+  | 16 | set-v4/originality.json `screened` | the legacy set screen ran before the listing existed; a re-prep screens the listing too (as the legacy code does when listing.json exists); still clear |
+  | 19 | MANIFEST `overrides` | engine addition (owner decision): each override also carries the file's sha256, the stage, the date and who decided |
+  | 2 | MANIFEST cost.json bytes and sha256 | the replay carries the legacy total (USD 4.205638); engine jobs use their own ledger rows by jobId |
+  | 2 + 1 | measuredBy, builtBy | name the engine module |
+  | 12 | rebuild aiMs | timing |
+
+- **Tests:** 257/257 (206 before). New: `tests/port-batch.test.mjs` (the price-hook bug, pass numbering, the run modes end to end,
+  override guardrails, the set approval, the recolour step, the text fix, the upscaler pin and its kill by the E-STOP, US
+  spelling) and the ported `digital-build`, `owner-approval`, `prop-edit`, `listing-photos`, `style-ref` tests (replacing
+  `listing-notice`); `originality` re-ported. `npm run dry-run`: job A to `approval`, job B blocked on "garfield", as before.
+
+### E6 readiness checklist (17/10/2026; updated after the port batch)
+
+Every item still blocking E6. **First product and parity reference:** the PNGTuber job `2026-10-16--pngtuber-cosy-desk-props-r2`
+(the `pngtuber-prop-pack` product), live on Etsy since 2026-10-17. The engine's first real job is judged against it; the parity
+replay above passes.
 
 | # | Item | Status | Where it stands |
 |---|---|---|---|
 | 1 | Q1 billing confirmation (Anthropic Console credits; finance and the founder) | **open** | DECISIONS.md Q1. `config/station.config.json` still says "approved by Finance", which conflicts with Q1 being open. |
-| 2 | Q2 caps for digital jobs | **open** | Per-job cap $1.00 including images; a clean digital job is estimated at $0.76–1.13 (ENGINE-PLAN.md §9). No cap changed. |
-| 3 | Q3 product spec | **open** | `pngtuber-prop-pack` is the only entry and is DRAFT; 12 files against Etsy's 5 (ZIP planned, see above). |
-| 4 | Licence and download-notice wording | **open** | DRAFT in `config.digital`; the gate requires the approved text word for word. The legacy `station.config.json` changed today; check at the port whether it carries an owner decision. |
-| 5 | Image model commercial terms | **open** | "UNCONFIRMED: owner checks the provider terms"; `opaqueModelApproved: false`. |
-| 6 | Market and spelling (US or UK/IE) | **open** | §4.3 item 7. |
-| 7 | AI-disclosure wording in listings | **open** | §4.3 item 8. |
-| 8 | Price approach | **open** | The fill still proposes the top-5 high (EUR 13.90 on the draft); the floor is EUR 6.42. Prices are the owner's. |
+| 2 | Q2 caps for digital jobs | **open** | Per-job cap $1.00 including images. The live product's legacy job cost USD 4.205638 (Designer 2.746, QA DESIGN 1.224, Lister 0.014, QA LISTING 0.222), with three design passes and owner caps raised for single runs. No cap changed. |
+| 3 | Q3 product spec | **closed** (17/10/2026) | `pngtuber-prop-pack` (12 transparent 2000x2000 PNGs, one ZIP download, the preview a listing photo only) ported as owner-approved per the legacy record, and live. Any other product is a new owner decision. |
+| 4 | Licence and download-notice wording | **closed** for this product | `commercial-content` licence and the prop pack's notice, owner-approved 2026-10-16, ported word for word with the dates; the gate requires them word for word. `personal-use` and `commercial-standard` stay DRAFT and fail closed. |
+| 5 | Image model commercial terms | **partly closed** | `openai/gpt-5-image-mini` (transparent images): owner-confirmed 2026-10-16 (OpenAI Business Terms) in the asset register. Open: the opaque model (`opaqueModelApproved: false`), and the listing's owner to-do "skim OpenRouter's terms" has no recorded outcome. |
+| 6 | Market and spelling | **closed** (17/10/2026) | US English for listings (owner decision for this product), enforced by the gate's spelling check, which now includes the owner's fix list ("colourway"). |
+| 7 | AI-disclosure wording in listings | **closed** | The owner's wording (2026-10-16, `config.digital.aiDisclosure`), required word for word by the gate; on the live listing. |
+| 8 | Price approach | **closed** (17/10/2026) | The owner's price point in the brief, else the low end of the owner's range, never the top-5 high; the package carries it as a proposal (`final: false`); the owner sets the final price on Etsy, recorded by Mark published (EUR 9.00 on the live listing). A brief without an owner price line still falls back to the brief high: the owner may want such briefs refused. |
 | 9 | Provider price verification | **open** | The `anthropic-web` price is unset (a live web call would be refused); image prices are estimates until read from the provider's response; text model prices to be checked against the providers' current lists. |
 | 10 | Separate API keys (a station-engine key in the Anthropic Console workspace and a new OpenRouter key) | **open** | ENGINE-PLAN.md §7.2 step 4. None created or read. |
 
-Also needed before a real job on the candidate product (added here; not in the owner's list):
+Also needed before a real job on the product (added here; not in the owner's list):
 
 | # | Item | Status | Where it stands |
 |---|---|---|---|
-| 11 | Port batch from the PNGTuber job (the 10 drifted files, the logged fixes, the three planned items) | **open** | Waits for the owner's job to finish. |
-| 12 | Packaged-product build in the engine (clean-up, enclosed background, upscale) | **open** | Fails closed at prep today; Real-ESRGAN needs a child process, which `src/` does not allow. Needs an owner decision on how the build runs. |
-| 13 | Style-reference workflow | **open** | Fails closed at the package gate; no reference image in `image_generate`. |
-| 14 | Parity check against the legacy job (§7.2 step 3) | **open** | Not done in E4. |
+| 11 | Port batch from the PNGTuber job | **done** (17/10/2026) | 5th moment, above. |
+| 12 | Packaged-product build in the engine | **done** (17/10/2026) | The ported build with the pinned Real-ESRGAN (owner decision); the parity rebuild is byte for byte. |
+| 13 | Style-reference workflow | **partly done** | The library, the owner's decisions and the cleaned version are ported. Open: the first-file run mode and a reference image in `image_generate`, so a NEW style-reference job still fails closed at the package gate. |
+| 14 | Parity check against the legacy job (§7.2 step 3) | **done** (17/10/2026) | 26/26, 0 unexplained differences. |
+| 15 | Designer token use (legacy item 12: a compact brief extract, under 30k tokens per image) | **open** | Not built; proposal in DECISIONS.md. Measurable only on a real run. |
+| 16 | Buttons on the page for the owner's actions | **open** (not blocking) | The routes exist; `npm run owner` works today with the server stopped. |
 
 ### E5 Live UI (17/10/2026)
 
@@ -391,7 +447,10 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `96c23b2`: R3 milestone (Blender build and the baked Design room behind `?scene=baked`)
 - `91c748b`: R3 spike: baked Design room (the headed captures' fixes, the Chromium channel, docs)
 - `1db8e72`: R3a milestone (the shared library, the baked Design and Office rooms as the default scene)
-- The next commit: "R3a: baked Design and Office rooms" (docs, comments)
+- `c156965`: R3a: baked Design and Office rooms (docs, comments)
+- `052f2b1`: R3b milestone (per-unit lightmaps, baked Research, lounge and atrium)
+- `cb4bdcc`: Port batch milestone (the PNGTuber fixes at the 5th moment, tests green)
+- The next commit: "Port PNGTuber batch before E6" (owner CLI, US spelling, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -399,18 +458,20 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Half-built
 
-- **Packaged digital products** fail closed. Only the read side of `digital-build` is ported. The clean-up (now including the enclosed-background step), Real-ESRGAN and the zip build are not, and `src/` allows no child process. This affects `pngtuber-prop-pack`, and fixing it needs an owner decision.
-- **Style-reference workflow** fails closed. Only `styleRefProblems` is ported; there is no first-file run mode and no `reference_image` in `image_generate`.
+- **Packaged digital products** build in the engine since the port batch (17/10/2026): the pinned Real-ESRGAN runs as the one child process; a missing or changed binary blocks the job (it never falls back silently to a file the gate would pass).
+- **Style-reference workflow:** the library and the owner's decisions are ported (17/10/2026); there is still no first-file run mode and no `reference_image` in `image_generate`, so a new style-reference job fails closed at the package gate.
 - **Routines** run `line:research` and `line:room1-digital` (E5). With the mock replies the research line ends "no drafts" (the fixture script has no researcher replies), so no test runs a research batch that verifies a brief; the demo's script does.
 - **The package folder** cannot be opened from the page (the server starts no process); the page shows its path with a copy button.
 - **Live providers** are locked (`ProviderLocked`). The Anthropic SDK is not installed and the effort mapping is not written (E6).
 - **Web search and fetch** return canned text in the mock, and the `anthropic-web` price is unset, so a live web call would be refused (E6).
 - **Legacy archive** (Q10): the transcripts and task briefs are imported to `data/legacy/archive/`, but no page shows them yet (E5, if wanted).
-- **Parity check** (§7.2 step 3), which replays every legacy job folder through the ported gates and compares the results: not done in E4.
+- **Parity check** (§7.2 step 3): done for the live product (`npm run parity`, 17/10/2026). Other legacy jobs are POD (archived) and are not replayed.
+- **Owner actions on the page:** shown on the job panel; no buttons yet (`npm run owner` with the server stopped).
+- **Designer brief extract** (legacy item 12): not built (E6 checklist row 15).
 
 ## Test status
 
-`npm test`: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **257 passed, 0 failed**, after the port batch (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -461,9 +522,8 @@ The post-E3 re-port changed:
 
 0. **R3a: the owner reviews** the baked Design and Office rooms (`screenshots/r3a/`; open questions in DECISIONS.md,
    "R3a build record"). Phase 2 (Research, lounge, atrium) waits for the go-ahead.
-1. **Wait for the owner's legacy job** `2026-10-16--pngtuber-cosy-desk-props-r2` to finish.
-2. **Port step, one batch:** run `npm run port-drift` again, read the "To port to office-agents" log in Virtual-workers (read only), port the drifted files and the logged fixes at a new moment in PORTED.md, and build the three planned items (ENGINE-PLAN.md §9, "Port step before E6"). Mock only.
-3. **E6** starts when every row of the E6 readiness checklist above is done.
+1. **Port batch before E6: the owner reviews** (done 17/10/2026: PORTED.md 5th moment; DECISIONS.md "Port batch before E6", with its open points; `dry-run/parity/PARITY.md`).
+2. **E6** starts when every open row of the E6 readiness checklist above is done: Q1 billing, Q2 caps, the opaque image model and OpenRouter terms, provider prices, the separate API keys; and, before a new style-reference job, the first-file run mode (row 13).
 
 Re-run `npm run import-legacy` at any time to pick up legacy deltas; it backs up first and changes nothing when there is nothing new.
 

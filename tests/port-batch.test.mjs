@@ -210,3 +210,11 @@ test('the pinned upscaler: refused when its pin does not match; its child proces
   await assert.rejects(() => runPinned(process.execPath, ['-e', '1'], { cwd, signal: engine.halt.signal }), (e) => e.code === 'STOPPED', 'nothing starts while the e-stop is on');
   await until(() => true);
 });
+
+test('market US English: the gate\'s spelling check fails every word of the owner\'s US list, "colourway" included', async () => {
+  const { listingSpellingProblems } = await import('../src/engine/lib/spelling.mjs');
+  const cfg = loadConfig({ configDir: path.join(APP_ROOT, 'config'), promptsDir: path.join(APP_ROOT, 'prompts') }).station;
+  const bad = listingSpellingProblems({ title: 'Cosy Desk Props', description: 'A second colourway; warm colour.', altText: 'cosy mug', tags: ['cosy desk'] }, cfg);
+  for (const w of ['cosy', 'colourway', 'colour']) assert.ok(bad.some((x) => x.includes('"' + w + '"')), w + ': ' + bad.join(' | '));
+  assert.deepEqual(listingSpellingProblems({ title: 'Cozy Desk Props', description: 'A second colorway; warm color.', altText: 'cozy mug', tags: ['cozy desk'] }, cfg), []);
+});

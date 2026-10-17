@@ -160,7 +160,7 @@ only: zero model spend, and no real API keys are loaded.
 |---|----------|----------|
 | Q1 | Billing on Stellar's Anthropic Console credits | Being confirmed with finance. **Blocks E6 only.** |
 | Q2 | Caps for digital jobs | Open. **Blocks E6 only.** No cap is changed. |
-| Q3 | Products and the other §4.3 items (licence wording, image terms, market/spelling, AI disclosure, pricing) | Open. **Block E6 only.** |
+| Q3 | Products and the other §4.3 items (licence wording, image terms, market/spelling, AI disclosure, pricing) | **Partly decided (17/10/2026, port batch):** the `pngtuber-prop-pack` spec (12 files, one ZIP), its licence and notice wording, US English, the AI-disclosure wording and the price approach are owner decisions, ported (see "Port batch before E6: owner decisions"). Still open: the image model's terms in the engine, other products. |
 | Q4 | Listing loop exhausted | **Yes:** it goes to REJECTS-DESK, so every stopped job gets a `REJECTED.md`. |
 | Q5 | `saturated` originality list | Keep it, for all text. |
 | Q6 | Researchers' web backend | Anthropic's server-side web search and fetch tools, counted in the caps. Price confirmed at E6. |
@@ -395,3 +395,100 @@ price, licence or product changed.
   for phase 2?
 - **Phase 2 bake time.** With one shared atlas, any room change re-bakes every room (estimated 4–5 minutes once
   Research, the lounge and the atrium are in). Fine, or one atlas per phase?
+
+## Port batch before E6: owner decisions (17/10/2026)
+
+The legacy job `2026-10-16--pngtuber-cosy-desk-props-r2` is finished and live on Etsy (https://www.etsy.com/listing/4597311033,
+published 2026-10-17, EUR 9.00, SKU DESK-PROPS-01): the first real product and the parity reference. The owner's decisions for
+the port (17/10/2026), as applied:
+
+1. **Owner overrides apply only to QA judgement verdicts** (QA DESIGN, QA LISTING), recorded per file with the date, the reason
+   and the owner, shown on the job (job panel, "Owner decisions") and in `MANIFEST.json` (`overrides`, each with the file's
+   sha256, the stage, the QA pass and words, the owner's reason, the date and who decided). An owner set approval can stand in
+   for further QA passes after the pass limit, tied to the exact file hashes (the ported `composeSetApproval`; the gate
+   re-composes it, so a changed byte makes it stale). **Originality hard fails are never overridden:** an override naming the
+   originality or trademark check is refused, and so is any override or listing approval while the set's or the listing's
+   originality screen is a hit. They are fixed only by an exact-word allow-list entry or by rewording.
+2. **Originality allow-list, exact whole words only:** chucky: chunky; chanel: channel, channels; bowser: browser, browsers
+   (`config.sloganScreen.nearMissAllow`, copied unchanged from the legacy config; these are every entry in the log). Tested:
+   the words pass; "chunkys" still hits Chucky; Chanel, Bowser and their other one-typo variants still fail, in brief and
+   listing text (`tests/ported/originality.test.mjs`).
+3. **Originality screening covers what the legacy fix covers:** all of design.md except the Designer's self-check section,
+   the deliverable file names, the whole brief and the listing text (`screenDigitalSet`; tested per field).
+4. **Price fill keyed to the job,** never "the most recently changed listing": the engine's price-fill step calls the fill with
+   its job's id. Test: the legacy bug's shape (another job's listing newer than its QA record, with a design file a fill would
+   fail on) leaves the other job untouched (`tests/port-batch.test.mjs`); the parity replay checks it on the real data too.
+5. **Real-ESRGAN as a local child process:** pinned binary path under `office-agents/tools/` and its sha256 (and the DLL's and
+   the model's) checked before every run; execFile, never a shell; its cwd and every file inside the job's set folder (the
+   data jail); a minimal environment; killed at once by the E-STOP or the owner's Stop. `src/engine/lib/esrgan.mjs` is the
+   only module in `src/` allowed a child process (`tests/write-guard.test.mjs`). Licences in ASSETS.md. **Network:** the
+   binary has no network code path and the engine gives it nothing (no proxy, no keys); there is no OS-level firewall rule.
+   An outbound block for that one exe in Windows Firewall would make it certain; that is the owner's call (it needs admin).
+6. **qa-design.md and qa-listing.md budgets:** as ported they build to 11,970 and 11,996 characters, under the 12,000 target:
+   no trim and no budget raise was needed.
+7. **Licence and download-notice wording:** the owner-approved wording is ported unchanged with its approval date: licence
+   `commercial-content` ("owner-approved 2026-10-16 (owner wording, for the PNGTuber prop pack ...)") and the prop pack's own
+   notice ("owner-approved 2026-10-16 (wording by the owner)"). `personal-use` and `commercial-standard` stay DRAFT and fail
+   closed at the gate.
+8. **Product spec:** `pngtuber-prop-pack` (12 transparent 2000x2000 PNGs, one ZIP download, the preview as a listing photo
+   only) is ported as owner-approved, per the legacy record (`products.json` status, owner 2026-10-16; HANDOFF "evening 3":
+   the download is the ZIP alone).
+9. **Market: US English for listings** (owner decision for this product), enforced by the gate's spelling check. The owner's
+   word list of the deterministic text fix (Cosy->Cozy, cosy->cozy, colour->color, colourway->colorway) now joins the
+   config's pairs in that check: "colourway" was not in `config.usSpelling.pairs`, and only QA LISTING caught it on the live
+   job (`src/engine/lib/spelling.mjs`; test in `tests/port-batch.test.mjs`).
+
+## Port batch build record (17/10/2026)
+
+- **One batch, one frozen moment.** The legacy session was still writing HANDOFF.md, so all 44 sources were copied (read
+  only) into a staging folder at 2026-10-17T11:34:23Z with their sha256s and ported from there; after the port none had
+  changed. PORTED.md "5th moment" lists every file; `npm run port-drift` now tracks 69 sources (19 new) and shows no drift.
+- **The build runs in the engine.** For a packaged product, the prep step builds `files/<zip>` and the listing preview from
+  the Designer's `raw/` with the ported build (BUILD_VERSION 5), then prepares the set. A Designer problem (raw names, count,
+  no transparency) is a prep failure (one retry through the Designer, as before); an infrastructure failure (the upscaler
+  pin, the binary failing) blocks the job at once and is never paid for again through the Designer; the e-stop stops it.
+  Temp files live in `set-vN/.tmp-build-<pid>/`, never the OS temp. The GPU probe picks the NVIDIA device over the iGPU as
+  the legacy code does.
+- **QA pass numbers** come from the job's own counter (`data.qaPasses`), never the count of files in `qa/` (item 20); a file
+  already on disk under a number is never overwritten.
+- **Owner records.** The owner's decisions are an append-only log, `jobs/<id>/owner-decisions.jsonl` (never edited in place);
+  `owner-review.json` is derived from it in the legacy shape so the ported `composeSetApproval` reads it unchanged. The
+  approvals (`owner-set-approval.json`, `owner-listing-approval.json`) are written only when the ported composition passes.
+  Every action checks the job's version (a stale tab or terminal is refused), refuses legacy history, a running job and the
+  e-stop, is logged and emitted (`owner.action`). Routes: `/api/owner/*`, `/api/jobs/qa-only`, `/api/jobs/listing-only`,
+  `/api/jobs/package`; from a terminal, `npm run owner -- <action> <job-id> '<json>'` (the engine lock refuses it while the
+  server runs). The page shows the decisions; it has no buttons for them yet.
+- **Run modes.** QA-only (item 23): one QA DESIGN pass on a set as it stands, the owner's overrides in its start text
+  verbatim and tied to the file bytes, the Designer not run, stopped after the verdict; the owner's cap is the run cap
+  (checked before every call). It is refused once 3 design passes are on disk: a 4th could never be packaged (the gate's
+  limit), so the owner set approval is the route there. Listing-only (item 27): LISTER, price fill, QA LISTING on the design
+  sign-off, one rework only if its estimate fits; the cap is checked before every hop against the dearest of the agent's last
+  10 runs; refused when listing files exist (nothing overwritten); never packages. The package step is a separate owner
+  action (gate, package, approval queue).
+- **The digital package** (item 28) is `jobs/<id>/package/`: the ZIP byte for byte, listing.json, listing.md, MANIFEST.json,
+  cost.json; no timestamps; idempotent; an earlier package is moved to `package-replaced-<sha12>/`, never deleted. cost.json is
+  the job's ledger rows by jobId with workings (the legacy used a time window). Non-ZIP products keep the E3 package.
+- **Listing photos** (item 32) are rendered from the packaged ZIP (each PNG checked against `zipEntries`) into
+  `jobs/<id>/listing-photos/` with `photos.json`, outside the package, never a download; the PNGTuber plan is the owner's,
+  word for word, in `config/listing-photos/pngtuber-prop-pack.json`.
+- **Mark published** records the final title, the final price and the SKU as set on Etsy (approvals row `published`, the
+  tracker's status_reason), as the legacy approval record does; the package is not rebuilt for them.
+- **Delta import:** `npm run import-legacy` added 104 files, changed 11, added 14 ledger rows and 8 runs (ledger 176 rows,
+  $12.4899616 on both sides); the PNGTuber job is imported as `published` with its approval records, listing photos and
+  package. A second run adds 0.
+- **Parity** (`npm run parity -- --rebuild`, $0, no model, no network): 26/26 checks pass, 73 differences, all explained
+  (PROGRESS.md "Port batch before E6"). The pinned Real-ESRGAN rebuild of set-v4 gives every one of the 12 files and the ZIP
+  byte for byte as published.
+
+### For the owner (open; nothing decided here)
+
+- **Designer token use (item 12).** "A compact brief extract plus the style reference, aiming for under 30k tokens per
+  image" is not built: the effect can only be measured on a real run. Proposal for E6: the Designer's first message becomes the
+  brief's Niche, Design direction (with the palette and style rules), Quality bar and Deliverables sections plus the
+  STYLE REFERENCE line, with `brief.md` still readable in its folder.
+- **Style-reference run mode.** The library, the decisions and the cleaned version are ported; the first-file run mode and a
+  reference image in `image_generate` are not, so a NEW style-reference job still fails closed at the package gate.
+- **Firewall rule** for the upscaler exe (item 5 above), if wanted.
+- **Buttons on the page** for the owner actions (the routes exist; the terminal command works today).
+- **Importer label:** a digital legacy job is labelled `room: etsy-pod` in its imported data (cosmetic; the tracker says
+  etsy-digital).

@@ -616,7 +616,7 @@ Each phase ends with a stop for your review, with the evidence named in the righ
 
 ### Port step before E6: planned items (added 17/10/2026, owner)
 
-The legacy station's fixes from the real job `2026-10-16--pngtuber-cosy-desk-props-r2` (logged in Virtual-workers under "To port to office-agents") are ported in one batch once that job is done, at a new port moment in PORTED.md. These three items are planned for that step. **Status: planned, nothing built.** Mock provider only; $0.
+The legacy station's fixes from the real job `2026-10-16--pngtuber-cosy-desk-props-r2` (logged in Virtual-workers under "To port to office-agents") are ported in one batch once that job is done, at a new port moment in PORTED.md. These three items are planned for that step. **Status: built 17/10/2026** (the 5th port moment; mock only, $0; DECISIONS.md "Port batch before E6"). As built: the owner decided overrides cover QA DESIGN and QA LISTING verdicts only, never originality; the two steps are the ported legacy edits (`src/engine/lib/prop-edit.mjs`), started by the owner from an owner-authorised plan; the ZIP is the ported digital package step. The legacy job's other fixes (the build with Real-ESRGAN, the owner set and listing approvals, QA-only and listing-only, the text fix, listing photos) came in the same batch.
 
 1. **Owner override of a QA verdict.**
    - Recorded **per file**: the file (path and sha256), the QA verdict it overrides (agent, pass, verdict), the owner's verdict, the date, the reason (required) and the owner.
@@ -626,7 +626,7 @@ The legacy station's fixes from the real job `2026-10-16--pngtuber-cosy-desk-pro
 2. **Deterministic mechanical steps from the legacy job, as pipeline steps with tests.**
    - **Recolour of an approved file:** takes a QA-approved (or owner-overridden) file and a colour mapping, and writes a new file. No model call. The output records its source file's sha256 and the parameters, so the approval stays traceable to the file it was given for.
    - **Outline-colour normalise:** sets the outline colour across a set's files to one value. No model call.
-   - Both follow §3.3: in-process (the engine allows no child process), keyed to the job, idempotent by input hash (a repeat with the same inputs changes nothing), fail closed to `blocked` with the reason, and listed in the manifest.
+   - Both follow §3.3: in-process (as built, the only child process in the engine is the pinned Real-ESRGAN of the build step, owner decision 17/10/2026), keyed to the job, idempotent by input hash (a repeat with the same inputs changes nothing), fail closed to `blocked` with the reason, and listed in the manifest.
    - Tests: the same input gives byte-identical output; a re-run is a no-op; an unapproved input is refused; a bad mapping fails closed; the manifest records the step.
    - Ported from the legacy job's code and parameters as logged; nothing is designed from scratch here.
 3. **ZIP delivery for multi-file packs.**
