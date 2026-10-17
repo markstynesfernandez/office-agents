@@ -23,11 +23,36 @@ Last updated: 17/10/2026 (E6 steps b0 and b: live web search with the owner's so
 | **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026), with the importer label fix (`db18e5a`). The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
 | **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions") and **approved by the owner** (17/10/2026). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
 | E6 readiness | Done (17/10/2026). The owner's decisions on Q1 (verbal), Q2 caps, prices, image models, keys and scout sources recorded; the guard prices Haiku's long-prompt tier and cache reads and writes; the scout run cap. Mock only, $0. See below. |
-| E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **c0** next (build, no spend); step **c** needs a verified genre brief, which b did not produce. Images not built yet. The plan is under "Exact next step". |
+| E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **b1** (output contract + job transcripts, `795adcb`) done; the **b1 rerun** (17/10/2026, USD 0.053095) completed research-done but **0 verified** briefs: the scout's Etsy demand fetch is refused (`url_not_allowed`), so no brief can carry demand evidence; see "E6 step b1". Owner decisions needed before c0; step **c** needs a verified genre brief. Images not built yet. The plan is under "Exact next step". |
 | E7 Routines and cut-over | Not started |
 
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
+
+### E6 step b1: output contract, job transcripts, one live rerun (17/10/2026)
+
+**b1a** (`795adcb`): every model call of a job appends a key-redacted line to `data/jobs/<id>/transcript.jsonl`
+(internal, data/ only). Line steps declare `outputs` (TREND-SCOUT: 4 genre drafts via fs_write, partial allowed;
+EVIDENCE-CHECKER: a verdict per brief received). Missing outputs at end of turn -> a follow-up message and
+`tool_choice` forcing fs_write (Haiku 5.5; Sonnet 5.5 tier uses auto), max 2 nudges; still missing -> job state
+`incomplete`, no downstream step, scout-live exits 1. TREND-SCOUT prompt step 7 now says: write each draft with
+fs_write, one call per draft. 316 tests green, scout dry run and parity unchanged, port drift none.
+
+**b1b rerun** (job `2026-10-17--genre-scout-2`): research-done, exit 0, USD 0.053095 (text 0.026796, web relay tokens
+0.006299, search fees 0.02), 17 ledger rows, none estimated; 2 searches + 1 fetch (TREND-SCOUT), 0 by
+EVIDENCE-CHECKER. Ledger today USD 0.086342 (32 rows). Each agent was nudged once and then wrote its outputs.
+- **Cause of b's 0 briefs (from the transcript):** TREND-SCOUT web_fetched an Etsy search URL for the demand check;
+  the server tool returned `url_not_allowed` (etsy.com is not on the station's blocked list; the API's web fetch
+  only fetches URLs already in its conversation). With no demand evidence it correctly wrote no brief and said so.
+- **The nudge then pushed it to write 4 drafts with demand evidence "UNKNOWN — needs owner check"**; it flagged
+  them itself as not valid briefs. EVIDENCE-CHECKER rejected all 4 (no Etsy demand evidence, keywords or price range).
+  Lesson: the contract needs a way for an agent to report "cannot produce, reason X" instead of being forced to write.
+- **Drafts not screened:** the drafts put `origin: genre-scout` on the audience_segment line, so `isScoutBrief` did
+  not match and scout-notes reported "no genre drafts"; ids lack the `genre-` prefix, so scout-live's brief report was
+  empty. No game name is in any draft (customer-facing check: only the placeholder below matched).
+- **Blocklist pollution:** the notes gave one studio as "UNKNOWN — needs owner check" and the engine added that phrase
+  to the internal blocklist (with 2 new games). It now matches any brief using that placeholder. Needs owner cleanup.
+- Drafts stay in `research/scout-drafts/2026-10-17/` with status rejected (brief-check moves only verified briefs).
 
 ### E6 steps b0 and b: live web search, the first live scout run (17/10/2026)
 
@@ -754,6 +779,8 @@ and a" above). As built: max_tokens 32 and thinking disabled (owner), not 16.
   - a check that no scouted name appears outside `scouting/`;
   - the ledger rows against the Console.
 - Stop and report.
+
+**b1. Output contract + job transcripts, one live rerun (go-ahead "go scout 2").** **Done 17/10/2026 (`795adcb`); rerun USD 0.053095, 0 verified (Etsy fetch refused; see "E6 step b1"). Owner decisions needed: how the scout gets demand evidence, an agent "cannot produce" outcome for the contract, the origin-line/id check, the blocklist placeholder entry.**
 
 **c0. Build: images and the style-reference run (no spend; go-ahead needed).**
 - OpenRouter image client: `OPENROUTER_API_KEY` from the environment, the one allowed model, and the reported cost
