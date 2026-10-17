@@ -1,12 +1,19 @@
 // scouting.mjs — the genre-trend scouting line's IP fence (DECISIONS.md "Genre-trend scouting"). Station code, no model.
 // TREND-SCOUT reads public popularity signals (top streamed categories, store charts) and writes two things into the
 // research folder: internal scouting notes at scouting/<day>/notes.json (games, studios, evidence links: the ONLY place a
-// game title may appear) and up to 4 genre briefs in drafts/<day>/ (genre and aesthetic only, `origin: genre-scout`).
+// game title may appear) and up to 4 genre briefs in its own drafts folder, scout-drafts/<day>/ (genre and aesthetic only,
+// `origin: genre-scout`), so the research line and this line can run on the same day without sharing drafts.
 //   - every title the scout records (plus its studio and any `alsoBlock` names: characters, locations, items) goes into
-//     the scouting blocklist, scouting/blocklist.json, written by the engine only (never by an agent)
-//   - the engine puts that list into the originality lists (category "scouted-games") together with extra derivative
-//     wording ("fan", "fandom", "homage", "tribute"); so the brief check, intake, the image-prompt screen, the design-set
-//     screen and the listing/package gates all refuse a scouted name, wherever it appears
+//     the scouting blocklist, scouting/blocklist.json, written by the engine only (never by an agent); entries stay for good
+//   - the engine puts that list into the originality lists (category "scouted-games", exact plus the station's one-letter
+//     misspelling match) together with extra derivative wording (whole phrases: "fan art", "fandom", "tribute", ...); so the
+//     brief check, intake, the image-prompt screen, the design-set screen and the listing/package gates all refuse a
+//     scouted name, wherever it appears
+//   - a title the notes tag "common-word" (an ordinary dictionary word) is the exception: the bare word only WARNS (the
+//     brief check and the listing report it; QA-LISTING judges the context), while the full title and "<word> game" still
+//     hard-fail like any scouted name
+//   - the notes (scouting/<day>/ and scouting/blocked/<day>/) are deleted 90 days after their day, by an engine step at the
+//     start of every scout run; the blocklist is never deleted
 //   - a brief is screened WHOLE against the scouted names (not only its Design direction); a genre-scout brief is also
 //     screened whole for derivative wording
 //   - a genre-scout draft that fails that screen is moved to scouting/blocked/<day>/ (it names a game, so it stays there)
@@ -14,22 +21,33 @@
 //     job folder only ever receives brief.md, so DESIGNER, LISTER and the QA agents never see the notes
 import fs from 'node:fs';
 import path from 'node:path';
-import { screenText, hitLine } from './originality.mjs';
+import { screenText, screenFields, hitLine } from './originality.mjs';
 
 export const SCOUT_DIR = 'scouting';                       // inside data/research/
 export const SCOUTED = 'scouted-games', WORDING = 'derivative-wording';
 export const ORIGIN = 'genre-scout';
-// on top of the station's own derivative list (in the style of, inspired by, dupe, fan art, homage to, unofficial, ...)
-export const DERIVATIVE_WORDING = ['fan', 'fandom', 'fanbase', 'fan favourite', 'fan favorite', 'homage', 'tribute', 'dupes'];
+// on top of the station's own derivative list (in the style of, inspired by, dupe, fan art, homage to, unofficial, ...).
+// Owner, 17/10/2026 ("Scouting decisions"): whole phrases only, no bare "fan" (it blocked a "desk fan" prop).
+// "fan-made" and "fan made" read the same once punctuation is stripped; both are listed as the owner gave them.
+export const DERIVATIVE_WORDING = ['fan art', 'fanart', 'fan-made', 'fan made', 'fandom', 'fanfic', 'inspired by', 'homage', 'tribute', 'dupe', 'knockoff', 'alternative to'];
 export const NOTES_KINDS = { aaa: 2, indie: 2 };           // owner: 2 popular AAA titles and 2 indie titles per run
+export const COMMON = 'scouted-common-word';               // warn-only: never put in the originality lists
+export const NOTE_TAGS = ['common-word'];
+export const RETENTION_DAYS = 90;                          // owner, 17/10/2026: notes go after 90 days; the blocklist stays
+export const DRAFTS_DIR = 'drafts', SCOUT_DRAFTS_DIR = 'scout-drafts';
+export const draftsDirOf = (line) => (line && line.drafts) || DRAFTS_DIR;
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+const norm = (s) => clean(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+// the bare word of a "common-word" title: the title without a subtitle (after ":" or a dash) or a leading article
+export const bareWordOf = (title) => clean(clean(title).split(/\s*[:\u2013\u2014]\s*|\s+-\s+/)[0].replace(/^(the|a|an)\s+/i, ''));
 export const notesFile = (researchDir, day) => path.join(researchDir, SCOUT_DIR, day, 'notes.json');
 export const blocklistFile = (researchDir) => path.join(researchDir, SCOUT_DIR, 'blocklist.json');
 export const isScoutPath = (rel) => String(rel || '').replace(/\\/g, '/').replace(/^\.\//, '').split('/')[0].toLowerCase() === SCOUT_DIR;
 
-// -> { ok, problems: [], entries: [{ game, kind, genre, studio, alsoBlock, evidence: [{ url, signal }], date }] }
+// -> { ok, problems: [], entries: [{ game, kind, genre, studio, alsoBlock, commonWord, evidence: [{ url, signal }], date }] }
+// tags: ["common-word"] marks a title that is an ordinary dictionary word (commonWord is then its bare word, else null)
 export function validateNotes(notes, { day } = {}) {
   const problems = [], entries = [];
   if (!notes || typeof notes !== 'object' || !Array.isArray(notes.entries)) return { ok: false, problems: ['notes.json must be { "day", "entries": [...] }'], entries };
@@ -45,38 +63,81 @@ export function validateNotes(notes, { day } = {}) {
     for (const x of ev) if (!/^https:\/\/\S+$/.test(String(x && x.url))) problems.push(at + ': evidence url must be https: ' + (x && x.url));
     if (!DAY_RE.test(String(e && e.date))) problems.push(at + ': date must be YYYY-MM-DD');
     const also = Array.isArray(e && e.alsoBlock) ? e.alsoBlock.map(clean).filter(Boolean) : [];
-    entries.push({ game, kind, genre, studio: clean(e && e.studio) || null, alsoBlock: also, evidence: ev.map((x) => ({ url: String(x && x.url), signal: clean(x && x.signal) })), date: String(e && e.date) });
+    const tags = e && e.tags != null ? (Array.isArray(e.tags) ? e.tags.map(clean) : null) : [];
+    if (!tags) problems.push(at + ': tags must be a list'); else for (const x of tags) if (!NOTE_TAGS.includes(x)) problems.push(at + ': unknown tag "' + x + '" (allowed: ' + NOTE_TAGS.join(', ') + ')');
+    const commonWord = tags && tags.includes('common-word') ? bareWordOf(game) : null;
+    if (commonWord !== null && norm(commonWord).replace(/ /g, '').length < 2) problems.push(at + ': a common-word title needs a bare word (the title without its article or subtitle)');
+    entries.push({ game, kind, genre, studio: clean(e && e.studio) || null, alsoBlock: also, commonWord: commonWord || null, evidence: ev.map((x) => ({ url: String(x && x.url), signal: clean(x && x.signal) })), date: String(e && e.date) });
   });
   for (const [k, n] of Object.entries(NOTES_KINDS)) if (count[k] !== n) problems.push('needs exactly ' + n + ' ' + k + ' entries (has ' + count[k] + ')');
   return { ok: problems.length === 0, problems, entries };
 }
 
 // every name a run's notes put on the blocklist: the title, the studio, and the alsoBlock names
-export const termsOf = (entries) => entries.flatMap((e) => [{ term: e.game, kind: 'game' }, ...(e.studio ? [{ term: e.studio, kind: 'studio' }] : []), ...e.alsoBlock.map((t) => ({ term: t, kind: 'related' }))]).filter((x) => clean(x.term).length >= 2);
+export const termsOf = (entries) => entries.flatMap((e) => [{ term: e.game, kind: 'game', ...(e.commonWord ? { commonWord: e.commonWord } : {}) }, ...(e.studio ? [{ term: e.studio, kind: 'studio' }] : []), ...e.alsoBlock.map((t) => ({ term: t, kind: 'related' }))]).filter((x) => clean(x.term).length >= 2);
 
 export function readBlocklist(researchDir) {
   try { const b = JSON.parse(fs.readFileSync(blocklistFile(researchDir), 'utf8')); return Array.isArray(b.terms) ? b : { terms: [] }; } catch (_) { return { terms: [] }; }
 }
-// idempotent: a term already listed (any case) is not added again; nothing is ever removed by the engine
+// idempotent: a term already listed (any case) is not added again (so a title first listed plain stays a hard fail even if
+// a later run tags it common-word: fails closed); nothing is ever removed by the engine
 export function addToBlocklist(J, researchDir, terms, { day, jobId }) {
   const cur = readBlocklist(researchDir), have = new Set(cur.terms.map((t) => t.term.toLowerCase())), added = [];
-  for (const t of terms) { const term = clean(t.term); if (!term || have.has(term.toLowerCase())) continue; have.add(term.toLowerCase()); added.push({ term, kind: t.kind, day, jobId }); }
+  for (const t of terms) { const term = clean(t.term); if (!term || have.has(term.toLowerCase())) continue; have.add(term.toLowerCase()); added.push({ term, kind: t.kind, ...(t.commonWord ? { commonWord: clean(t.commonWord) } : {}), day, jobId }); }
   if (added.length) {
     const terms2 = [...cur.terms, ...added].sort((a, b) => a.term.localeCompare(b.term));
-    J.put(blocklistFile(researchDir), JSON.stringify({ $comment: 'Scouting blocklist: written by the engine from TREND-SCOUT notes only. Every name here hard-fails the brief check, intake, image prompts, the design set and the listing. Internal: never shown to DESIGNER, LISTER or QA. The owner may add names by hand; the engine never removes one.', terms: terms2 }, null, 1) + '\n');
+    J.put(blocklistFile(researchDir), JSON.stringify({ $comment: 'Scouting blocklist: written by the engine from TREND-SCOUT notes only. Every name here hard-fails the brief check, intake, image prompts, the design set and the listing. Internal: never shown to DESIGNER, LISTER or QA. An entry with commonWord is a title that is an ordinary word: the bare word only warns (QA-LISTING checks the context); the full title and <word> game hard-fail. The owner may add names by hand; the engine never removes one (the notes are deleted after 90 days; this list stays).', terms: terms2 }, null, 1) + '\n');
   }
   return added;
 }
 
-// the scouted names, re-read when the file changes (the engine reads this on every screen)
+// the scouted names, re-read when the file changes (the engine reads this on every screen):
+//   hard   every name that fails a gate; for a common-word title only its full title (when it differs from the bare
+//          word) and "<bare word> game" (plural "games" matches too)
+//   common the bare words of common-word titles: warn only
 const termCache = new Map();
-export function scoutedTerms(researchDir) {
+function blocklistLists(researchDir) {
   const f = blocklistFile(researchDir);
-  let m = 0; try { m = fs.statSync(f).mtimeMs; } catch (_) { return []; }
-  const c = termCache.get(f); if (c && c.m === m) return c.terms;
-  const terms = readBlocklist(researchDir).terms.map((t) => clean(t.term)).filter(Boolean);
-  termCache.set(f, { m, terms });
-  return terms;
+  let m = 0; try { m = fs.statSync(f).mtimeMs; } catch (_) { return { hard: [], common: [] }; }
+  const c = termCache.get(f); if (c && c.m === m) return c.lists;
+  const hard = [], common = [];
+  for (const t of readBlocklist(researchDir).terms) {
+    const term = clean(t.term), w = clean(t.commonWord); if (!term) continue;
+    if (!w) { hard.push(term); continue; }
+    if (norm(term) !== norm(w)) hard.push(term);
+    hard.push(w + ' game'); common.push(w);
+  }
+  const lists = { hard, common };
+  termCache.set(f, { m, lists });
+  return lists;
+}
+export const scoutedTerms = (researchDir) => blocklistLists(researchDir).hard;
+export const commonWords = (researchDir) => blocklistLists(researchDir).common;
+
+// the warn-only screen for common-word titles (exact whole words, plurals, compounds; no misspelling match).
+// fields: { name: text | [text] } -> ['title: "lantern"', ...]
+export function commonWordWarnings(fields, words) {
+  if (!words || !words.length) return [];
+  return screenFields(fields, { sloganScreen: { lists: { [COMMON]: words } } }).hits.map((h) => h.field + ': "' + h.matched + '"');
+}
+// what QA-LISTING is told when the listing uses one (the bare word is already in the listing; the game is not named)
+export const commonWordNote = (warnings) => '[STATION — common-word check, not a fail] The listing uses ' + warnings.join('; ') + '. ' + (warnings.length > 1 ? 'Each is' : 'It is') + ' an ordinary word that is also the title of a game on the station\'s scouting list. Check the context: it passes only in its everyday sense (an object, a mood, a colour). Ask for a revise if it reads as the game in any way: written as a title, next to "game", or with that game\'s characters, places, items or look.';
+
+// retention (owner, 17/10/2026): scouting/<day>/ and scouting/blocked/<day>/ go once their day is more than 90 days
+// before `today` (day 90 is kept); folders that are not a day, and blocklist.json, are never touched.
+// -> [{ folder: 'scouting/<day>' | 'scouting/blocked/<day>', day }]
+export function pruneScouting(J, researchDir, today, { days = RETENTION_DAYS } = {}) {
+  if (!DAY_RE.test(String(today))) throw new Error('retention needs today as YYYY-MM-DD: ' + today);
+  const cutoff = Date.parse(today + 'T00:00:00Z') - days * 86400000, out = [];
+  for (const base of [[SCOUT_DIR], [SCOUT_DIR, 'blocked']]) {
+    const dir = path.join(researchDir, ...base);
+    for (const d of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
+      if (!d.isDirectory() || !DAY_RE.test(d.name) || !(Date.parse(d.name + 'T00:00:00Z') < cutoff)) continue;
+      J.remove(path.join(dir, d.name));
+      out.push({ folder: [...base, d.name].join('/'), day: d.name });
+    }
+  }
+  return out.sort((a, b) => a.folder.localeCompare(b.folder));
 }
 
 // the station config with the scouting lists added to the originality lists (memoised per term list, so the

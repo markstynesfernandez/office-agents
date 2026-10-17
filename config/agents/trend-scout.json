@@ -1,5 +1,5 @@
 {
-  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/trend-scout.md (+ the skills its front-matter names). Genre-trend scouting (DECISIONS.md): public popularity signals only, read as data; the only agent that may see scouting/ (scoutingNotes). Web: search and fetch only, maxWebCalls enforced by the engine (tools/index.mjs). fs tools only to write its notes and genre drafts. The page may change enabled, tier and effort only.",
+  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/trend-scout.md (+ the skills its front-matter names). Genre-trend scouting (DECISIONS.md): public popularity signals only, read as data; the only agent that may see scouting/ (scoutingNotes). Web: search and fetch only, maxWebCalls enforced by the engine (tools/index.mjs). fs tools only to write its notes and genre drafts (its own drafts folder, scout-drafts/). The page may change enabled, tier and effort only.",
   "key": "trend-scout",
   "name": "TREND-SCOUT",
   "department": "RESEARCH",
@@ -15,7 +15,7 @@
   "folder": "research",
   "writes": [
     "scouting/*/notes.json",
-    "drafts/*/*.md"
+    "scout-drafts/*/*.md"
   ],
   "scoutingNotes": true,
   "limits": {

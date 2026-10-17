@@ -1,13 +1,20 @@
 {
-  "$comment": "The genre-trend scouting line (DECISIONS.md 'Genre-trend scouting'). Started by the 'Weekly genre scout' routine (seeded disabled) or by hand. TREND-SCOUT writes internal notes (scouting/<day>/notes.json) and 4 genre briefs (drafts/<day>/); scout-notes (engine) checks the notes, adds every recorded name to the scouting blocklist and blocks any genre brief naming a scouted game; EVIDENCE-CHECKER then checks the rest as usual; brief-check copies a verified brief to briefs/ or rejected/. The notes never leave the research folder.",
+  "$comment": "The genre-trend scouting line (DECISIONS.md 'Genre-trend scouting'). Started by the 'Weekly genre scout' routine (seeded disabled) or by hand. scout-retention (engine) first deletes scouting notes more than 90 days old (logged; the blocklist stays). TREND-SCOUT writes internal notes (scouting/<day>/notes.json) and 4 genre briefs in this line's own drafts folder (scout-drafts/<day>/, so the research line can run the same day); scout-notes (engine) checks the notes, adds every recorded name to the scouting blocklist and blocks any genre brief naming a scouted game; EVIDENCE-CHECKER then checks the rest as usual; brief-check copies a verified brief to briefs/ or rejected/. The notes never leave the research folder.",
   "id": "genre-scout",
   "label": "Genre scout",
   "routineLabel": "Genre-trend scout",
   "maxConcurrentJobs": 1,
   "maxHops": 4,
-  "start": "trend-scout",
+  "start": "scout-retention",
   "kind": "research",
+  "drafts": "scout-drafts",
   "steps": {
+    "scout-retention": {
+      "kind": "mechanical",
+      "fn": "scoutRetention",
+      "column": "brief",
+      "next": "trend-scout"
+    },
     "trend-scout": {
       "kind": "agent",
       "agent": "trend-scout",

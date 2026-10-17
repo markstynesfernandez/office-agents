@@ -4,6 +4,7 @@
 //   change: SOFT_CATEGORIES is [] (owner Q5: the saturated list applies to all text; the source applied it to slogans only)
 //   change: file writes go through the engine's data jail (dataJail from ../store/active.mjs)
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
+//   change: FUZZY_CATEGORIES includes 'scouted-games' (owner 17/10/2026: scouted names match exact plus one-letter misspellings)
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // originality.mjs (lib) — the DETERMINISTIC originality screen. Pure functions over text + config (no model, no network).
 // It hard-fails what a word list can know: trademarks and brand names, characters and franchises, real people, lyrics / film-TV-book quotes /
@@ -26,7 +27,8 @@ import { dataJail } from '../store/active.mjs';
 // owner, 16/10/2026 (DECISIONS.md Q5): the saturated list applies to ALL text, so no category is soft any more
 export const SOFT_CATEGORIES = [];
 // typo-tolerant matching only for names people misspell on purpose; generic words (cowboys, eagles, giants) must match exactly
-const FUZZY_CATEGORIES = new Set(['brands', 'characters', 'franchises', 'people', 'artists']);
+// change (owner, 17/10/2026, "Scouting decisions"): 'scouted-games' (the engine's scouting blocklist) gets the same one-letter match
+const FUZZY_CATEGORIES = new Set(['brands', 'characters', 'franchises', 'people', 'artists', 'scouted-games']);
 const LEET = { 0: 'o', 3: 'e', 4: 'a', 5: 's', 7: 't', '@': 'a', $: 's' };
 
 const strip = (s) => String(s || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[’‘`']/g, '').replace(/&/g, ' and ');

@@ -1,7 +1,9 @@
 // genre-scout.test.mjs — the genre-trend scouting line (DECISIONS.md "Genre-trend scouting") on the mock provider with
 // the FIXTURE scouting data (fixtures/engine/scout-script.mjs; invented game titles only): the scouting blocklist fills
 // itself from the notes, a brief / design / listing / image prompt naming a scouted game fails, the notes never reach
-// a later agent, and the engine enforces TREND-SCOUT's 12 web calls.
+// a later agent, and the engine enforces TREND-SCOUT's 12 web calls. Owner decisions of 17/10/2026 ("Scouting decisions"):
+// whole-phrase derivative wording (no bare "fan"), one-letter misspellings of scouted names, common-word titles that
+// warn on the bare word, 90-day retention of the notes, and the scout's own drafts folder (scout-drafts/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,9 +14,9 @@ import { runAgent } from '../src/engine/runtime.mjs';
 import { createToolbox } from '../src/engine/tools/index.mjs';
 import { dublinDay } from '../src/engine/time.mjs';
 import { screenListing, screenDigitalSet, screenText } from '../src/engine/lib/originality.mjs';
-import { validateNotes, readBlocklist, SCOUTED, WORDING } from '../src/engine/lib/scouting.mjs';
+import { validateNotes, readBlocklist, scoutingBriefProblems, commonWordWarnings, commonWords, SCOUTED, WORDING, DERIVATIVE_WORDING } from '../src/engine/lib/scouting.mjs';
 import { buildEngineSnapshot } from '../src/server/engine-model.mjs';
-import { createScoutScript, genreBrief, FIXTURE_GAMES, BAD_BRIEF_GAME } from '../fixtures/engine/scout-script.mjs';
+import { createScoutScript, genreBrief, FIXTURE_GAMES, COMMON_WORD_GAMES, BAD_BRIEF_GAME } from '../fixtures/engine/scout-script.mjs';
 
 const ALL_NAMES = FIXTURE_GAMES.flatMap((g) => [g.game, g.studio, ...g.alsoBlock]);
 const lower = (s) => String(s).toLowerCase();
@@ -42,7 +44,9 @@ test('the scout line runs on the mock: 4 genre briefs verified, the brief naming
   assert.deepEqual(briefs, ['candlelit-dark-fantasy', 'cozy-farming', 'neon-cyberpunk', 'survival-camp'].map((s) => day + '--genre-' + s + '-desk-props.md'));
   for (const f of briefs) { const b = fs.readFileSync(research(e, 'briefs', f), 'utf8'); assert.match(b, /^status: verified$/m); assert.match(b, /^origin: genre-scout$/m); assert.deepEqual(mentions(b), [], f + ' names no scouted game, studio or related name'); }
   const bad = day + '--genre-cozy-farming-named-desk-props.md';
-  assert.ok(!fs.existsSync(research(e, 'drafts', day, bad)), 'moved out of drafts/');
+  assert.ok(fs.existsSync(research(e, 'scout-drafts', day)), 'the scout writes to its own drafts folder');
+  assert.ok(!fs.existsSync(research(e, 'scout-drafts', day, bad)), 'moved out of scout-drafts/');
+  assert.ok(!fs.existsSync(research(e, 'drafts', day)) || !fs.readdirSync(research(e, 'drafts', day)).length, 'nothing in the research line\'s drafts/');
   assert.ok(!fs.existsSync(research(e, 'briefs', bad)));
   assert.ok(!fs.existsSync(research(e, 'rejected', bad)), 'not in rejected/: it names a game, so it stays in scouting/');
   // outside scouting/, nothing in the research folder names a scouted game
@@ -78,7 +82,8 @@ test('every name the scout records is added to the scouting blocklist automatica
   assert.equal(fs.readFileSync(research(e, 'scouting', 'blocklist.json'), 'utf8'), before);
   // the engine's originality lists now carry them (every screen reads cfg.station)
   assert.deepEqual(e.cfg.station.sloganScreen.lists[SCOUTED].slice().sort(), ALL_NAMES.slice().sort());
-  assert.ok(e.cfg.station.sloganScreen.lists[WORDING].includes('fan'));
+  assert.ok(!e.cfg.station.sloganScreen.lists[WORDING].includes('fan'), 'no bare "fan" (owner 17/10/2026)');
+  assert.ok(e.cfg.station.sloganScreen.lists[WORDING].includes('fan art'));
 });
 
 test('scouting notes are refused unless they hold 2 AAA + 2 indie entries with https evidence and dates', () => {
@@ -99,7 +104,8 @@ test('a brief naming a scouted game, studio or related name fails the brief chec
     'studio in the keywords': clean.replace('- pngtuber props —', '- gravemoor interactive props —'),
     'character in the design direction': clean.replace('a sleeping cat bed', 'a statue of the Ashen Warden'),
     'game in the id (and file name)': clean.replace(/^id: (\S+)$/m, 'id: ' + day + '--cinderpine-desk-props'),
-    '"fan" wording in a genre brief': clean.replace('FIXTURE: a streamer', 'FIXTURE: a fan of the genre and a streamer')
+    '"fan art" wording in a genre brief': clean.replace('FIXTURE: a streamer', 'FIXTURE: a buyer of fan art and a streamer'),
+    'a one-letter misspelling of a scouted game': clean.replace('a sleeping cat bed', 'a Parsnip Holow seed tin')
   };
   for (const [what, b] of Object.entries(variants)) {
     const c = e.orchestrator.createJob({ briefText: b, by: 'test' });
@@ -120,7 +126,7 @@ test('a listing, a design and an image prompt naming a scouted game fail the ori
     const s = screenListing({ listing: { ...listing, [field]: v }, id, cfg });
     assert.equal(s.result, 'hit', field); assert.equal(s.hits[0].category, SCOUTED, field);
   }
-  for (const w of ['For fans of farming games.', 'A tribute to farm life.', 'Inspired by your favourite farm game.', 'A dupe of the classic set.']) assert.equal(screenListing({ listing: { ...listing, description: w }, id, cfg }).result, 'hit', w);
+  for (const w of ['Fan art props for farming streams.', 'A tribute to farm life.', 'Inspired by your favourite farm game.', 'A dupe of the classic set.', 'A knockoff of the classic set.', 'An alternative to the big farm game.']) assert.equal(screenListing({ listing: { ...listing, description: w }, id, cfg }).result, 'hit', w);
   assert.equal(screenDigitalSet({ designMd: '# set-v1\n\n## 01-mug.png\nImage prompt (exact): a mug with the Vigil Keep crest\n', fileNames: ['01-mug.png'], cfg }).result, 'hit', 'design.md');
   assert.equal(screenDigitalSet({ designMd: '# set-v1\n', fileNames: ['01-chromehold-2091-can.png'], cfg }).result, 'hit', 'a file name');
   // the image tool refuses the prompt before any call (the same screen image_generate runs)
@@ -215,4 +221,140 @@ test('TREND-SCOUT has a desk in the Research room, wired like the others', async
   assert.ok(a, 'in the snapshot');
   assert.equal(a.desk.roomId, 'research');
   assert.ok(!JSON.stringify(snap.warnings || []).includes('TREND-SCOUT has no desk'));
+});
+
+// ---- owner decisions, 17/10/2026 ("Scouting decisions")
+
+test('derivative wording is whole phrases: "desk fan" passes, "fan art" fails; every listed phrase fails', async (t) => {
+  const { e } = boot(t);
+  await scout(e);
+  const cfg = e.cfg.station, day = dublinDay();
+  assert.deepEqual(DERIVATIVE_WORDING, ['fan art', 'fanart', 'fan-made', 'fan made', 'fandom', 'fanfic', 'inspired by', 'homage', 'tribute', 'dupe', 'knockoff', 'alternative to']);
+  assert.equal(screenText('A desk fan, a mug and a lamp.', cfg).result, 'clear', 'desk fan');
+  assert.equal(screenText('Twelve props for fans of cozy games, with a little desk fan.', cfg).result, 'clear', 'bare "fan" / "fans"');
+  assert.equal(screenText('Fan art desk props.', cfg).result, 'hit', 'fan art');
+  for (const w of DERIVATIVE_WORDING) assert.equal(screenText('Desk props, ' + w + ' set.', cfg).result, 'hit', w);
+  // the whole-brief screen of a genre-scout brief
+  const g = { slug: 'lofi-study', genre: 'lofi study', segment: 'streamers who play relaxing puzzle games', props: 'a desk lamp, a stack of notebooks, a mug of tea, a cassette player, a potted fern and a desk fan', palette: 'dusty rose, cream and teal', price: 9 };
+  const b = genreBrief(day, g);
+  assert.deepEqual(scoutingBriefProblems(b, cfg), [], 'a genre brief with a desk fan passes');
+  assert.match(scoutingBriefProblems(b.replace('and a desk fan', 'and some fan art'), cfg).join('; '), /derivative-wording "fan art"|derivative "fan art"/);
+});
+
+test('scouted names match exactly and with one-letter misspellings (the station\'s near-miss rule)', async (t) => {
+  const { e } = boot(t);
+  await scout(e);
+  const cfg = e.cfg.station;
+  for (const w of ['Parsnip Holow props', 'a Cinderpyne mug', 'Chromhold 2091 can', 'Gravemor Interactive', 'Kesselwrigth Games']) {
+    const r = screenText(w, cfg);
+    assert.equal(r.result, 'hit', w); assert.equal(r.hits[0].category, SCOUTED, w); assert.equal(r.hits[0].via, 'near-miss-spelling', w);
+  }
+  assert.equal(screenText('Parsnip Hollow', cfg).hits[0].via, 'exact');
+  assert.equal(screenText('a Parsnep Holow tin', cfg).result, 'clear', 'two letters off is not a near miss');
+  assert.equal(screenText('a cinder block and a pine cone', cfg).result, 'clear', 'ordinary words');
+});
+
+test('a common-word title warns on the bare word (QA-LISTING checks the context); the full title and "<word> game" still fail', async (t) => {
+  const qaInputs = [];
+  const base = createScoutScript({ games: COMMON_WORD_GAMES });
+  const script = (ctx, params) => { if (ctx.agentKey === 'qa-listing') qaInputs.push(String(params.messages[0].content)); return base(ctx, params); };
+  script.web = base.web;
+  const { e } = boot(t, { script });
+  const j = await scout(e), day = dublinDay();
+  assert.equal(j.state, 'research-done', j.reason);
+  // the notes' tag reaches the blocklist; the bare word is not a hard-fail name
+  const bl = readBlocklist(research(e));
+  assert.deepEqual(bl.terms.filter((x) => x.commonWord).map((x) => [x.term, x.commonWord]), [['Lantern: Moss and Mile', 'Lantern']]);
+  const hard = e.cfg.station.sloganScreen.lists[SCOUTED];
+  assert.ok(hard.includes('Lantern: Moss and Mile') && hard.includes('Lantern game') && !hard.includes('Lantern'), hard.join(', '));
+  assert.deepEqual(commonWords(research(e)), ['Lantern']);
+  // the survival-camp brief has "a hand-crank lantern": verified, with the warning in the step notes
+  const survival = day + '--genre-survival-camp-desk-props.md';
+  assert.ok(fs.existsSync(research(e, 'briefs', survival)), 'not blocked by the bare word');
+  assert.match(j.data.scouting.drafts.join(' | '), /survival-camp-desk-props\.md: screened clear \(common-word warning, not a fail: brief: "lantern"\)/);
+  assert.match(j.reason, /survival-camp-desk-props\.md: verified -> briefs\/ \(common-word warning, not a fail: brief: "lantern"\)/);
+  // listing screens: bare word clear (and reported), full title and "<word> game" hard-fail
+  const cfg = e.cfg.station, id = day + '--genre-survival-camp-desk-props';
+  const listing = { title: 'Survival camp desk props for streamers, 12 PNG', tags: ['camp desk props', 'pngtuber props'], description: 'Twelve original props, with a hand-crank lantern and a camp mug.', altText: 'An enamel mug and a lantern.' };
+  assert.equal(screenListing({ listing, id, cfg }).result, 'clear');
+  assert.deepEqual(commonWordWarnings({ description: listing.description, altText: listing.altText }, commonWords(research(e))), ['description: "lantern"', 'altText: "lantern"']);
+  for (const w of ['Lantern game desk props', 'Props for lantern games', 'Lantern: Moss and Mile props', 'Lantern Moss and Mile props', 'Lanturn: Moss and Mile props']) {
+    const s = screenListing({ listing: { ...listing, title: w }, id, cfg });
+    assert.equal(s.result, 'hit', w); assert.equal(s.hits[0].category, SCOUTED, w);
+  }
+  assert.deepEqual(scoutingBriefProblems('A lantern on the desk.', cfg), [], 'the brief screen does not fail the bare word');
+  assert.ok(scoutingBriefProblems('Props for the lantern game.', cfg).length, 'the brief screen fails "<word> game"');
+  // QA-LISTING is told to check the context (and is not told the game's full title)
+  const c = e.orchestrator.createJob({ briefText: fs.readFileSync(research(e, 'briefs', survival), 'utf8'), by: 'test' });
+  assert.equal(c.ok, true, (c.reasons || []).join('; '));
+  const jdir = path.join(e.J.dataRoot, 'jobs', c.id);
+  e.J.put(path.join(jdir, 'outbox', 'listing.json'), JSON.stringify({ listingId: c.id, ...listing }, null, 2) + '\n');
+  e.store.updateJob(c.id, { step: 'qa-listing' });
+  await e.orchestrator.startJob(c.id);
+  assert.equal(qaInputs.length, 1, 'QA-LISTING ran once');
+  assert.match(qaInputs[0], /\[STATION — common-word check, not a fail\] The listing uses description: "lantern"; altText: "lantern"/);
+  assert.match(qaInputs[0], /Check the context/);
+  assert.doesNotMatch(qaInputs[0], /Moss and Mile/);
+  // notes: tags must be known
+  const nd = { day, entries: COMMON_WORD_GAMES.map((g) => ({ ...g, evidence: [{ url: 'https://x.example/a', signal: 's' }], date: day })) };
+  assert.equal(validateNotes(nd, { day }).ok, true);
+  assert.match(validateNotes({ ...nd, entries: nd.entries.map((x, i) => (i ? x : { ...x, tags: ['popular'] })) }, { day }).problems.join(';'), /unknown tag "popular"/);
+  assert.match(validateNotes({ ...nd, entries: nd.entries.map((x, i) => (i ? x : { ...x, tags: 'common-word' })) }, { day }).problems.join(';'), /tags must be a list/);
+});
+
+test('retention: the first step of a scout run deletes notes more than 90 days old, logs it, and keeps the blocklist', async (t) => {
+  const { e, r } = boot(t);
+  const day = dublinDay(), ago = (n) => new Date(Date.parse(day + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+  const old = ago(91), edge = ago(90), rdir = research(e);
+  e.J.put(path.join(rdir, 'scouting', old, 'notes.json'), '{"day":"' + old + '","entries":[]}\n');
+  e.J.put(path.join(rdir, 'scouting', 'blocked', old, old + '--genre-x-desk-props.md'), 'FIXTURE blocked draft\n');
+  e.J.put(path.join(rdir, 'scouting', edge, 'notes.json'), '{"day":"' + edge + '","entries":[]}\n');
+  e.J.put(path.join(rdir, 'scouting', 'blocklist.json'), JSON.stringify({ terms: [{ term: 'Oldhallow Quarry', kind: 'game', day: old, jobId: 'x' }] }) + '\n');
+  e.J.put(path.join(rdir, 'scouting', 'README.txt'), 'not a day folder\n');
+  const j = await scout(e);
+  assert.equal(j.state, 'research-done', j.reason);
+  assert.ok(!fs.existsSync(path.join(rdir, 'scouting', old)), 'notes 91 days old deleted');
+  assert.ok(!fs.existsSync(path.join(rdir, 'scouting', 'blocked', old)), 'blocked drafts 91 days old deleted');
+  assert.ok(fs.existsSync(path.join(rdir, 'scouting', edge, 'notes.json')), 'day 90 kept');
+  assert.ok(fs.existsSync(path.join(rdir, 'scouting', day, 'notes.json')), 'today kept');
+  assert.ok(fs.existsSync(path.join(rdir, 'scouting', 'README.txt')));
+  assert.ok(readBlocklist(rdir).terms.some((x) => x.term === 'Oldhallow Quarry'), 'blocklist entries stay');
+  assert.equal(screenText('Oldhallow Quarry props', e.cfg.station).result, 'hit', 'and still block');
+  const stage = e.store.stagesOf(j.id).find((s) => s.step === 'scout-retention');
+  assert.ok(stage, 'retention is a step of the run');
+  assert.match(stage.reason, new RegExp('deleted scouting/' + old + ', scouting/blocked/' + old));
+  const logs = fs.readdirSync(r.logs).map((f) => fs.readFileSync(path.join(r.logs, f), 'utf8')).join('\n');
+  assert.match(logs, new RegExp('scouting notes deleted \\(retention 90 days\\).*research/scouting/' + old));
+  assert.match(logs, new RegExp('scouting notes deleted \\(retention 90 days\\).*research/scouting/blocked/' + old));
+  // idempotent: a second run the same day deletes nothing
+  const j2 = await scout(e);
+  assert.match(e.store.stagesOf(j2.id).find((s) => s.step === 'scout-retention').reason, /nothing to delete/);
+});
+
+test('the scout has its own drafts folder: the research line and the scout line run on the same day without touching each other\'s drafts', async (t) => {
+  const day = dublinDay(), lofi = { slug: 'lofi-study', genre: 'lofi study', segment: 'students who stream study sessions', props: 'a desk lamp, a stack of notebooks, a mug of tea, a cassette player, a potted fern and a sleeping cat bed', palette: 'dusty rose, cream and teal', price: 9 };
+  const researchDraft = genreBrief(day, lofi).replace(/^origin: genre-scout\n/m, '');
+  const checkerDirs = [];
+  const base = createScoutScript();
+  const script = (ctx, params) => {
+    if (ctx.agentKey === 'evidence-checker') checkerDirs.push((/Drafts for this batch: (\S+)/.exec(String(params.messages[0].content)) || [])[1]);
+    if (ctx.agentKey === 'demand-researcher') {
+      const n = params.messages.filter((m) => m.role === 'assistant').length;
+      return n === 0 ? { content: [{ type: 'tool_use', id: 'tu_d', name: 'fs_write', input: { path: 'drafts/' + day + '/' + day + '--genre-lofi-study-desk-props.md', content: researchDraft } }] } : { content: [{ type: 'text', text: 'one draft' }] };
+    }
+    return base(ctx, params);
+  };
+  script.web = base.web;
+  const { e } = boot(t, { script });
+  const rj = await e.orchestrator.createResearchJob({ by: 'test' }); await e.orchestrator.startJob(rj.id);
+  const sj = await scout(e);
+  const rjob = e.store.getJob(rj.id);
+  assert.equal(rjob.state, 'research-done', rjob.reason); assert.equal(sj.state, 'research-done', sj.reason);
+  assert.deepEqual([...new Set(checkerDirs)], ['drafts/' + day + '/.', 'scout-drafts/' + day + '/.'], 'each EVIDENCE-CHECKER run was given its own line\'s folder');
+  assert.deepEqual(fs.readdirSync(research(e, 'drafts', day)), [day + '--genre-lofi-study-desk-props.md']);
+  assert.ok(fs.readdirSync(research(e, 'scout-drafts', day)).every((f) => !/lofi/.test(f)), 'no research draft in scout-drafts/');
+  assert.match(rjob.reason, /lofi-study-desk-props\.md: verified -> briefs\//);
+  assert.doesNotMatch(rjob.reason, /candlelit|cyberpunk|cozy-farming|survival/, 'the research line handled only its own drafts');
+  assert.doesNotMatch(sj.reason, /lofi/, 'the scout line handled only its own drafts');
+  assert.equal((sj.reason.match(/verified -> briefs\//g) || []).length, 4);
 });

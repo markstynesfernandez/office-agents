@@ -641,8 +641,9 @@ A second research line, `genre-scout` (DECISIONS.md, "Genre-trend scouting"):
 
 | Step | Kind | Does |
 |---|---|---|
-| `trend-scout` | agent TREND-SCOUT (RESEARCH, cheap tier) | Public popularity signals only (top streamed categories, store charts), 12 web calls at most (engine-enforced). Writes internal notes `scouting/<day>/notes.json` (2 AAA + 2 indie games, studios, evidence links, dates) and 4 genre briefs in `drafts/<day>/` (`origin: genre-scout`, genre and aesthetic only). |
-| `scout-notes` | mechanical | Checks the notes; adds every recorded game, studio and related name to the scouting blocklist (`scouting/blocklist.json`, engine-only, append-only); screens each genre draft whole and moves one naming a scouted game, or using derivative wording, to `scouting/blocked/<day>/`. |
+| `scout-retention` | mechanical | Deletes scouting notes (`scouting/<day>/`, `scouting/blocked/<day>/`) more than 90 days old, logging each; the blocklist is kept (owner 17/10/2026). |
+| `trend-scout` | agent TREND-SCOUT (RESEARCH, cheap tier) | Public popularity signals only (top streamed categories, store charts), 12 web calls at most (engine-enforced). Writes internal notes `scouting/<day>/notes.json` (2 AAA + 2 indie games, studios, evidence links, dates; `"tags": ["common-word"]` on a title that is an ordinary word) and 4 genre briefs in the line's own drafts folder `scout-drafts/<day>/` (`origin: genre-scout`, genre and aesthetic only). |
+| `scout-notes` | mechanical | Checks the notes; adds every recorded game, studio and related name to the scouting blocklist (`scouting/blocklist.json`, engine-only, append-only); screens each genre draft whole and moves one naming a scouted game, or using derivative wording, to `scouting/blocked/<day>/`; a common-word title's bare word only warns. |
 | `evidence-checker` | agent (as on the research line) | Checks the remaining drafts; cannot see `scouting/`. |
 | `brief-check` | mechanical (as on the research line) | Verified briefs to `briefs/`, the rest to `rejected/`; the whole-brief scouting screen runs here and again at intake. |
 
@@ -651,6 +652,29 @@ image-prompt screen, the design-set screen and the listing and package gates all
 TREND-SCOUT can read, list or write `scouting/`; a job folder only ever receives `brief.md`, so DESIGNER, LISTER and
 the QA agents never see the notes. Routine "Weekly genre scout" (`config/routines.json`) is seeded disabled.
 Dry run: `npm run dry-run:scout` (FIXTURE data, invented titles, $0) -> `dry-run/scout/REPORT.md`.
+Approved by the owner 17/10/2026, with the decisions in DECISIONS.md "Scouting decisions" (whole-phrase derivative
+wording, one-letter misspelling match, common-word titles warn on the bare word, 90-day retention, own drafts folder).
+**Next lounge re-bake: add a ninth lounge seat** (9 agents, 8 seats; REJECTS-DESK stays at its desk until then).
+
+#### Genre scout: sources for real runs (for the owner to check before E6; none approved yet)
+
+Owner, 17/10/2026: prefer official public APIs over page scraping. Links checked 17/10/2026; the terms themselves are
+for the owner to read. Every source is public, aggregate data about games: no person's name, handle or channel is
+recorded (data-hygiene rule). GDPR: the notes are now kept 90 days; each API's own data rules are part of its terms check.
+
+| Signal | Source | Access | Terms to check |
+|---|---|---|---|
+| Top streamed categories (AAA and indie) | Twitch API "Get Top Games" ([reference](https://dev.twitch.tv/docs/api/reference/#get-top-games)) | Official API; needs a registered app (client ID and secret, an app access token) | [Twitch Developer Services Agreement](https://legal.twitch.com/legal/developer-agreement/). A developer-forum post quotes a 24-hour limit on caching Twitch content without authorisation, so check whether the notes' figures may be kept up to 90 days. Forum posts also say Get Top Games returns a ranking without viewer counts (counts would need Get Streams per game, more calls); confirm in the reference. |
+| Most-popular gaming videos (cross-check) | YouTube Data API v3 `videos.list` with `chart=mostPopular`, `regionCode`, `videoCategoryId` ([reference](https://developers.google.com/youtube/v3/docs/videos/list)) | Official API; 1 quota unit a call; API key (auth for chart requests to confirm); the Gaming category id to confirm with `videoCategories.list` | [YouTube API Services Terms of Service (EMEA)](https://developers.google.com/youtube/terms/api-services-terms-of-service-emea) (last updated 14/09/2026 per the page; English law; EU User Consent Policy, section 9.2) |
+| Store charts (top played / top sellers) | Steam | **No documented chart method** found in the Steamworks Web API reference (checked 17/10/2026). Third parties call an undocumented `ISteamChartsService` endpoint: not an official API, so not preferred. The alternative is fetching the public charts page (scraping). | [Steam Web API Terms of Use](https://steamcommunity.com/dev/apiterms) (page says last updated July 2010) for any API use; the store pages' own terms for a page fetch (not yet located). |
+| Indie popularity | itch.io | **No public popularity API**: the official API covers your own account and OAuth apps only ([overview](https://itch.io/docs/api/overview)). Only a page fetch of the public browse pages. | [itch.io Terms of Service](https://itch.io/about/terms) (updated 15/04/2023 per the page; no clause on automated access found; section 3 bars "harvesting or collecting information about others") |
+
+Open for E6:
+- An engine tool for these APIs (keys in environment variables, never in the agent's hands or the browser; each call
+  counted in the 12 and priced in the ledger). TREND-SCOUT has only web search and fetch today.
+- A store-chart signal from an official API: none found for Steam; owner to decide between a page fetch and no store
+  chart. The same for itch.io.
+- Each source's terms read and approved by the owner (and whether caching for up to 90 days is allowed).
 
 ### First real end-to-end job: cost estimate
 

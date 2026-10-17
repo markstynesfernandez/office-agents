@@ -2,15 +2,20 @@
 // and no page is opened: the web answers come from FIXTURE pages below. The four games are INVENTED FIXTURE titles (no
 // real game, studio or character), so the blocklist and its tests never carry a real name into the repository.
 //   TREND-SCOUT:      products.json -> 12 web calls (6 searches, 6 fetches) -> a 13th call (the engine refuses it)
-//                     -> notes.json (2 AAA + 2 indie) -> 4 genre briefs + (bad: true) one brief that names a scouted game
-//   EVIDENCE-CHECKER: tries to read the scouting notes (refused: internal to TREND-SCOUT), reads each draft left in
-//                     drafts/<day>/, marks it verified (FIXTURE: sources not opened)
+//                     -> notes.json (2 AAA + 2 indie) -> 4 genre briefs in scout-drafts/<day>/ + (bad: true) one brief
+//                     that names a scouted game
+//   EVIDENCE-CHECKER: tries to read the scouting notes (refused: internal to TREND-SCOUT), reads each draft left in the
+//                     batch's drafts folder named in its run input (drafts/ or scout-drafts/), marks it verified
+//                     (FIXTURE: sources not opened)
+//   COMMON_WORD_GAMES: the same set with one INVENTED title that is an ordinary word ("Lantern: Moss and Mile", tagged
+//                     common-word); the survival-camp brief's "hand-crank lantern" then warns instead of failing
 export const FIXTURE_GAMES = [
   { game: 'Lanternfall Requiem', studio: 'Gravemoor Interactive', kind: 'aaa', genre: 'candlelit dark fantasy', alsoBlock: ['Ashen Warden', 'Vigil Keep'] },
   { game: 'Chromehold 2091', studio: 'Kesselwright Games', kind: 'aaa', genre: 'neon cyberpunk', alsoBlock: ['Vex Ardent', 'Lowtown Spire'] },
   { game: 'Parsnip Hollow', studio: 'Tiny Barnstorm', kind: 'indie', genre: 'cozy farming', alsoBlock: ['Old Mabel'] },
   { game: 'Cinderpine', studio: 'Twin Owlet Studio', kind: 'indie', genre: 'survival camp', alsoBlock: [] }
 ];
+export const COMMON_WORD_GAMES = [...FIXTURE_GAMES.slice(0, 3), { game: 'Lantern: Moss and Mile', studio: 'Twin Owlet Studio', kind: 'indie', genre: 'survival camp', alsoBlock: [], tags: ['common-word'] }];
 export const BAD_BRIEF_GAME = 'Parsnip Hollow';
 
 const GENRES = [
@@ -25,6 +30,7 @@ const text = (t) => ({ type: 'text', text: t });
 const turnOf = (params) => params.messages.filter((m) => m.role === 'assistant').length;
 const results = (params) => { const last = params.messages[params.messages.length - 1]; return Array.isArray(last.content) ? last.content.filter((b) => b.type === 'tool_result') : []; };
 const dayOf = (params) => (/Today \(Dublin\) is (\d{4}-\d{2}-\d{2})/.exec(String(params.messages[0].content)) || [])[1];
+const draftsOf = (params) => (/Drafts for this batch: (\S+?)\/\d{4}-\d{2}-\d{2}\//.exec(String(params.messages[0].content)) || [])[1] || 'drafts';
 
 // public popularity signals (FIXTURE pages; genre-level tag pages are the ones a brief may cite)
 const SEARCHES = ['most streamed game categories this week', 'top played games store chart', 'trending indie games streaming', 'cozy desk props png', 'neon desk props png', 'survival camp desk props png'];
@@ -59,27 +65,27 @@ export function genreBrief(day, g, { bad = false, badSlug = 'cozy-farming-named'
   ].join('\n');
 }
 
-export function createScoutScript({ bad = true, extraWebCall = true, badSlug = 'cozy-farming-named' } = {}) {
+export function createScoutScript({ bad = true, extraWebCall = true, badSlug = 'cozy-farming-named', games = FIXTURE_GAMES } = {}) {
   function scout(params) {
-    const t = turnOf(params), day = dayOf(params);
+    const t = turnOf(params), day = dayOf(params), dd = draftsOf(params);
     const steps = [
       [tool('p', 'fs_read', { path: 'products.json' })],
       SEARCHES.map((query, i) => tool('s' + i, 'web_search', { query })),
       FETCHES.map((url, i) => tool('f' + i, 'web_fetch', { url })),
       ...(extraWebCall ? [[tool('x', 'web_search', { query: 'one more chart' })]] : []),
-      [tool('n', 'fs_write', { path: 'scouting/' + day + '/notes.json', content: JSON.stringify({ day, entries: FIXTURE_GAMES.map((g, i) => ({ ...g, evidence: [{ url: FETCHES[i < 2 ? 0 : 1], signal: 'FIXTURE popularity signal' }], date: day })) }, null, 1) })],
-      [...GENRES.map((g, i) => tool('b' + i, 'fs_write', { path: 'drafts/' + day + '/' + day + '--genre-' + g.slug + '-desk-props.md', content: genreBrief(day, g) })),
-        ...(bad ? [tool('bad', 'fs_write', { path: 'drafts/' + day + '/' + day + '--genre-' + badSlug + '-desk-props.md', content: genreBrief(day, GENRES[2], { bad: true, badSlug }) })] : [])],
+      [tool('n', 'fs_write', { path: 'scouting/' + day + '/notes.json', content: JSON.stringify({ day, entries: games.map((g, i) => ({ ...g, evidence: [{ url: FETCHES[i < 2 ? 0 : 1], signal: 'FIXTURE popularity signal' }], date: day })) }, null, 1) })],
+      [...GENRES.map((g, i) => tool('b' + i, 'fs_write', { path: dd + '/' + day + '/' + day + '--genre-' + g.slug + '-desk-props.md', content: genreBrief(day, g) })),
+        ...(bad ? [tool('bad', 'fs_write', { path: dd + '/' + day + '/' + day + '--genre-' + badSlug + '-desk-props.md', content: genreBrief(day, GENRES[2], { bad: true, badSlug }) })] : [])],
       [text(GENRES.map((g) => day + '--genre-' + g.slug + '-desk-props, ' + g.genre + ', 1,140, medium').join('\n'))]
     ];
     return { content: steps[Math.min(t, steps.length - 1)] };
   }
   function checker(params) {
-    const t = turnOf(params), day = dayOf(params), r = results(params);
-    if (t === 0) return { content: [tool('l', 'fs_list', { path: 'drafts/' + day }), tool('lt', 'fs_list', { path: '.' }), tool('peek', 'fs_read', { path: 'scouting/' + day + '/notes.json' })] };
-    if (t === 1) { const names = String((r.find((x) => x.tool_use_id === 'tu_l') || {}).content || '').split('\n').filter((n) => n.endsWith('.md')); return names.length ? { content: names.map((n, i) => tool('r' + i, 'fs_read', { path: 'drafts/' + day + '/' + n })) } : { content: [text('no drafts')] }; }
+    const t = turnOf(params), day = dayOf(params), dd = draftsOf(params), r = results(params);
+    if (t === 0) return { content: [tool('l', 'fs_list', { path: dd + '/' + day }), tool('lt', 'fs_list', { path: '.' }), tool('peek', 'fs_read', { path: 'scouting/' + day + '/notes.json' })] };
+    if (t === 1) { const names = String((r.find((x) => x.tool_use_id === 'tu_l') || {}).content || '').split('\n').filter((n) => n.endsWith('.md')); return names.length ? { content: names.map((n, i) => tool('r' + i, 'fs_read', { path: dd + '/' + day + '/' + n })) } : { content: [text('no drafts')] }; }
     if (t === 2) {
-      const writes = r.filter((x) => !x.is_error).map((x, i) => { const body = String(x.content); const id = (/^id: (\S+)/m.exec(body) || [])[1]; return id ? tool('w' + i, 'fs_write', { path: 'drafts/' + day + '/' + id + '.md', content: body.replace(/^status: candidate$/m, 'status: verified') + '\n## Evidence check\n- FIXTURE: not opened (scouting dry run, mock provider)\n- Verdict: VERIFIED — fixture for the dry run\n' }) : null; }).filter(Boolean);
+      const writes = r.filter((x) => !x.is_error).map((x, i) => { const body = String(x.content); const id = (/^id: (\S+)/m.exec(body) || [])[1]; return id ? tool('w' + i, 'fs_write', { path: dd + '/' + day + '/' + id + '.md', content: body.replace(/^status: candidate$/m, 'status: verified') + '\n## Evidence check\n- FIXTURE: not opened (scouting dry run, mock provider)\n- Verdict: VERIFIED — fixture for the dry run\n' }) : null; }).filter(Boolean);
       return { content: writes.length ? writes : [text('nothing to verify')] };
     }
     return { content: [text('checked the drafts of ' + day)] };

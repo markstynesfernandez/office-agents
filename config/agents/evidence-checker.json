@@ -1,5 +1,5 @@
 {
-  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/evidence-checker.md (+ the skills its front-matter names). tier: config/engine.json tiers. The page may change enabled, tier and effort only.",
+  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/evidence-checker.md (+ the skills its front-matter names). tier: config/engine.json tiers. scout-drafts/: the genre-scout line's own drafts folder (owner 17/10/2026). The page may change enabled, tier and effort only.",
   "key": "evidence-checker",
   "name": "EVIDENCE-CHECKER",
   "department": "RESEARCH",
@@ -14,7 +14,8 @@
   ],
   "folder": "research",
   "writes": [
-    "drafts/*/*.md"
+    "drafts/*/*.md",
+    "scout-drafts/*/*.md"
   ],
   "limits": {
     "maxTurns": 40,

@@ -644,7 +644,7 @@ One research line, built on the mock provider only (no keys); real runs come aft
 - **Fixture**: `fixtures/engine/scout-script.mjs` uses four INVENTED game titles and FIXTURE pages (one carrying a
   prompt-injection line, read as data). No real game name is in the repository.
 
-### Flags (open; nothing decided here)
+### Flags (answered by the owner 17/10/2026: see "Scouting decisions" below)
 
 - **"fan" is a whole word, so it also blocks a "desk fan" prop** and phrases such as "fans of". It fails closed;
   an allow-list would need a code change (the near-miss allow-list does not cover exact matches).
@@ -659,3 +659,66 @@ One research line, built on the mock provider only (no keys); real runs come aft
 - **Two research lines on one day** share `drafts/<day>/`: each line's EVIDENCE-CHECKER and brief-check would also
   handle the other batch's candidates. Harmless in the mock; one research line at a time is simplest.
 - **A ninth lounge seat** (so REJECTS-DESK walks too) would change the lounge and need its re-bake.
+
+## Scouting decisions (owner, 17/10/2026)
+
+**The genre-trend scouting line (`b75cfac`, `cc9a5cc`) is approved by the owner, 17/10/2026**, with these decisions on
+the flags above. Built on the mock only (no keys, $0); commit "Scouting decisions".
+
+1. **Derivative wording.** Bare "fan" is removed. The scouting list (`DERIVATIVE_WORDING` in `lib/scouting.mjs`,
+   category `derivative-wording`) is now exactly the owner's whole phrases: "fan art", "fanart", "fan-made", "fan made",
+   "fandom", "fanfic", "inspired by", "homage", "tribute", "dupe", "knockoff", "alternative to". Matching is whole words
+   and phrases (with the station's plural, compound and punctuation readings), so "desk fan" and "fans of cozy games"
+   pass and "fan art" fails (tested).
+   *Build notes:* the earlier extras "fanbase", "fan favourite" / "fan favorite" and bare "fan" are no longer blocked
+   by this list (the owner's list replaces it). "dupe" also catches "dupes" (plural). The station's own `derivative`
+   list is unchanged and already holds "knock off", "fan made", "fanmade" and more; "knockoff" also matches "knock off"
+   and "knock-off" (compound reading), so an everyday "knock off" in text fails too, as does "an alternative to
+   plastic". Both fail closed.
+2. **Scouted names: exact plus one-letter misspelling matching.** `scouted-games` now gets the station's near-miss rule
+   (one typo, swap or doubled letter, same first letter; single-word names of 6+ letters, multi-word names of 10+
+   letters). This is one line in the ported `originality.mjs` (`FUZZY_CATEGORIES`), recorded in its header and in
+   PORTED.md; the next re-port must keep it. Shorter names (for example a 5-letter title) still match exactly only; the
+   station's `nearMissAllow` list can exempt an ordinary word the owner names. Tested ("Parsnip Holow", "Cinderpyne",
+   "Chromhold 2091" hit; two letters off does not).
+   *Reading flagged:* the flag said scouted names were exact-only, so "keep exact plus one-letter misspelling" was
+   read as "add the misspelling match". Say if the opposite was meant.
+3. **Common-word titles.** In the notes, an entry gets `"tags": ["common-word"]` when its title is an ordinary
+   dictionary word (TREND-SCOUT's prompt says so; any other tag is refused). Its *bare word* is the title without a
+   leading "The/A/An" and without a subtitle after ":" or a dash. The blocklist entry keeps `commonWord`. Then:
+   - the bare word is **not** a hard-fail name: the brief check (`scout-notes`, `brief-check`) and the listing step
+     (`price-fill`) **warn** (logged, and shown in the step note);
+   - **QA-LISTING is told** in its run input (both the normal and the listing-only run) which listing fields use the
+     word and to ask for a revise if it reads as the game in any way (as a title, next to "game", with the game's
+     characters, places, items or look). It is given the bare word only, never the full title;
+   - the **full title** (when it differs from the bare word) and **"<bare word> game"** (and "games") still hard-fail
+     everywhere, with the misspelling match.
+   *Build notes:* for a one-word title with no article or subtitle the full title *is* the bare word, so only
+   "<word> game" hard-fails. The image-prompt and design-set screens do not warn (only the brief and the listing were
+   asked for). A title already on the blocklist without the tag stays a hard fail if a later run tags it (fails
+   closed; the owner may edit the list by hand). Tested with an invented title, "Lantern: Moss and Mile".
+4. **Sources for real runs: official public APIs before page scraping.** The candidate sources, each with a link to
+   its terms, are listed in ENGINE-PLAN.md ("Genre scout: sources for real runs") for the owner to check before E6.
+   No source is approved yet. Using an API needs a key, so it needs an engine tool that holds the key (environment
+   variable) and counts against the 12 calls; TREND-SCOUT has only web search and fetch today. That is E6 work.
+5. **Retention.** A new first step, `scout-retention` (engine, mechanical), runs at the start of every scout run and
+   deletes `scouting/<day>/` and `scouting/blocked/<day>/` once the day is more than 90 days before the run's day (day
+   90 is kept). Each deletion is logged ("scouting notes deleted (retention 90 days)", with the folder), and the step's
+   note lists them. `scouting/blocklist.json` is never deleted, and its entries keep blocking. Folders that are not a
+   date are left alone. Tested (91 days deleted, 90 kept, blocklist kept, logged, a second run deletes nothing).
+   *Reading flagged:* the blocked drafts in `scouting/blocked/<day>/` are counted as scouting notes (they name games),
+   so they go after 90 days too. Retention runs only when a scout run runs (the routine is weekly once enabled), so a
+   folder can be up to a week past 90 days, longer if the routine is off. The deletion uses the jail's `remove`, so it
+   stays inside the data root.
+6. **The scout's own drafts folder: `research/scout-drafts/<day>/`.** The line config names it (`"drafts":
+   "scout-drafts"`); TREND-SCOUT may write only there (and its notes); EVIDENCE-CHECKER may also write there. The
+   engine tells each research agent its batch folder in the run input, and the genre scout's EVIDENCE-CHECKER is told
+   to read "drafts/<today>/" in its (ported, unchanged) orders as `scout-drafts/<today>/`. `scout-notes` and
+   `brief-check` read only their own line's folder. Tested: the research line and the scout line on the same day each
+   handle only their own drafts.
+7. **Lounge seats: left as is** (8 seats, 9 agents; REJECTS-DESK stays at its desk when idle). **For the next lounge
+   re-bake: add a ninth seat** (noted in ENGINE-PLAN.md and PROGRESS.md).
+
+Tests: `npm test` 273/273 (`genre-scout` 15/15: 5 new, 3 changed for the decisions). `npm run dry-run:scout`: same
+result as before (4 verified, 1 blocked and refused at intake, 13 names, 12 web calls, USD 0.00), now with the
+retention step first and the drafts in `scout-drafts/`.

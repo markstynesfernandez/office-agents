@@ -24,12 +24,12 @@ import { readJsonSafe, designPasses } from './lib/gates.mjs';
 import { fillDigitalPrices } from './lib/digital-prices.mjs';
 import { checkPackage } from './lib/gates.mjs';
 import { isListingId, sha256 } from './lib/common.mjs';
-import { hitLine } from './lib/originality.mjs';
+import { hitLine, listingFields } from './lib/originality.mjs';
 import { publicView } from './lib/digital-files.mjs';
 import { canonicalDesignFile } from './tools/index.mjs';
 import { COLUMNS as LEGACY_COLUMNS } from '../lib/legacy-readers/tracker.mjs';
 import { dublinDay } from './time.mjs';
-import { validateNotes, termsOf, addToBlocklist, scoutingBriefProblems, isScoutBrief, notesFile, SCOUT_DIR } from './lib/scouting.mjs';
+import { validateNotes, termsOf, addToBlocklist, scoutingBriefProblems, isScoutBrief, notesFile, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -51,11 +51,23 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 
   // the brief check everywhere a brief is judged (research brief-check, intake): the ported checks, then the scouting
-  // screen of the WHOLE brief (scouted game names; derivative wording in a genre-scout brief)
+  // screen of the WHOLE brief (scouted game names; derivative wording in a genre-scout brief). warnings: a scouted
+  // common-word title used as a bare word (never a fail)
+  const researchDir = () => path.join(dataRoot, 'research');
   function checkBriefAll(t) {
     const c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
-    const sp = scoutingBriefProblems(t, cfg.station);
-    return sp.length ? { ...c, ok: false, reasons: [...(c.ok ? [] : c.reasons), ...sp] } : c;
+    const sp = scoutingBriefProblems(t, cfg.station), warnings = commonWordWarnings({ brief: t }, commonWords(researchDir()));
+    return sp.length ? { ...c, ok: false, reasons: [...(c.ok ? [] : c.reasons), ...sp], warnings } : { ...c, warnings };
+  }
+  // the listing's bare common-word uses (owner 17/10/2026: the gate warns, QA-LISTING checks the context)
+  function listingWordWarnings(job) {
+    const L = readJson(path.join(jobDir(job.id), 'outbox', 'listing.json'));
+    return L ? commonWordWarnings(listingFields(L), commonWords(researchDir())) : [];
+  }
+  function qaListingWordNote(job) {
+    const w = listingWordWarnings(job); if (!w.length) return '';
+    log.info('QA-LISTING told to check a common-word use', { jobId: job.id, warnings: w });
+    return '\n\n' + commonWordNote(w);
   }
   function lineOf(id) { const l = cfg.lines[id]; if (!l) throw new Error('no such line: ' + id); return l; }
   function trackerRow(job, patch) {
@@ -193,7 +205,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const L = lineOf(job.line), research = job.kind === 'research', folder = research ? path.join(dataRoot, 'research') : jobDir(job.id), l = job.loops || {}, max = research ? 0 : (L.steps['qa-design'].onRevise || {}).max ?? 2;
     let input, loopNote = null;
     if (research) {
-      J.makeDir(path.join(folder, 'drafts', job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: drafts/' + job.data.day + '/.';
+      // each research line has its own drafts folder (the genre scout: scout-drafts/), so two lines can run on one day
+      const dd = draftsDirOf(L);
+      J.makeDir(path.join(folder, dd, job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: ' + dd + '/' + job.data.day + '/.' + (dd !== 'drafts' ? ' This line keeps its drafts in ' + dd + '/: wherever your orders say drafts/<today>/, use ' + dd + '/' + job.data.day + '/.' : '');
       if ((cfg.agents[def.agent] || {}).scoutingNotes) { J.makeDir(path.join(folder, SCOUT_DIR, job.data.day)); input += ' Your internal scouting notes for this run: ' + SCOUT_DIR + '/' + job.data.day + '/notes.json.'; }
     }
     else if (step === 'designer') {
@@ -206,13 +220,13 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else if (job.data.runMode && job.data.runMode.kind === 'listing-only' && (step === 'lister' || step === 'qa-listing')) {
       const m = job.data.runMode, q = step === 'lister' && pass > 1 ? readJson(path.join(folder, 'qa-listing', 'pass' + ((job.data.qaPasses || {}).listing || 0) + '.json')) || {} : null;
       const ho = ['```', 'LISTING_ID: ' + job.id, 'BRIEF: work/' + job.id + '/brief.md', 'DESIGN: ' + m.designFile.replace(/^jobs\//, 'work/'), 'STAGE_DONE: ' + (m.signOff === 'owner-set-approval' ? 'OWNER SET APPROVAL' : 'QA DESIGN'), '```'].join('\n');
-      input = step === 'lister' ? (q ? '[LOOP — pass ' + pass + '] QA LISTING asked for a revise:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' + ho : m.startText) : 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + ho;
+      input = step === 'lister' ? (q ? '[LOOP — pass ' + pass + '] QA LISTING asked for a revise:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' + ho : m.startText) : 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + ho + qaListingWordNote(job);
     }
     else if (step === 'lister') { const q = pass > 1 ? readJson(path.join(folder, 'qa-listing', 'pass' + (l.listing || 0) + '.json')) || {} : null; input = (q ? '[LOOP — pass ' + pass + '] QA LISTING asked for a revise:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' : 'Write the listing for the QA-approved set.\n\n') + handoff(job); }
-    else if (step === 'qa-listing') input = 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + handoff(job);
+    else if (step === 'qa-listing') input = 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + handoff(job) + qaListingWordNote(job);
     else if (step === 'rejects-desk') { input = '[LOOP — escalated] ' + (job.data.escalation || 'the work was not approved') + '\nRecord why in REJECTED.md.\n\n' + handoff(job); loopNote = 'This job is being stopped: write REJECTED.md only.'; }
     else input = handoff(job);
-    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (drafts/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, hooks: { onRunStart: hooks.onRunStart } });
+    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, hooks: { onRunStart: hooks.onRunStart } });
     const stop = stopFrom(run, def.agent.toUpperCase());
     if (stop) return stop;
     if (def.verdict) return routeVerdict(store.getJob(job.id), step, def, pass, run);
@@ -322,7 +336,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const og = readJson(path.join(jobDir(job.id), 'derived', 'listing.originality.json'));
       if (!og) return { blocked: 'listing originality record missing' };
       if (og.result === 'hit') return { blocked: 'ORIGINALITY HARD FAIL in the listing: ' + og.hits.map((h) => hitLine(h)).join('; ') };
-      return { next: def.next, note: 'prices and facts filled: ' + r.prices.map((p) => p.variant + ' EUR ' + p.priceEur).join(', ') };
+      const w = listingWordWarnings(job);
+      if (w.length) { log.warn('listing uses a scouted common-word title as a bare word (warning, not a fail): QA-LISTING checks the context', { jobId: job.id, warnings: w }); store.updateJob(job.id, { data: { commonWordWarnings: w } }); }
+      return { next: def.next, note: 'prices and facts filled: ' + r.prices.map((p) => p.variant + ' EUR ' + p.priceEur).join(', ') + (w.length ? '; common-word warning for QA-LISTING: ' + w.join('; ') : '') };
     },
     packageGate(job, def) {
       const r = checkPackage({ id: job.id, roomDir: dataRoot, blocklist: cfg.blocklist, cfg: cfg.station, products: cfg.products });
@@ -332,7 +348,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     },
     package(job) { return buildPackage(job); },
     briefCheck(job) { return researchBriefCheck(job); },
-    scoutNotes(job, def) { return scoutNotesStep(job, def); }
+    scoutNotes(job, def) { return scoutNotesStep(job, def); },
+    scoutRetention(job, def) { return scoutRetentionStep(job, def); }
   };
 
   // ---- the package: what the owner uploads by hand. A ZIP product (deliverables.package zip) gets the ported digital package step
@@ -397,12 +414,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
 
   // ---- the research line's brief check: a draft that passes goes to research/briefs/ (verified), else research/rejected/
   function researchBriefCheck(job) {
-    const day = job.data.day || dublinDay(), drafts = path.join(dataRoot, 'research', 'drafts', day), out = [];
+    const day = job.data.day || dublinDay(), drafts = path.join(dataRoot, 'research', draftsDirOf(lineOf(job.line)), day), out = [];
     for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')) : []) {
       const t = fs.readFileSync(path.join(drafts, f), 'utf8'), st = briefField(t, 'status');
       if (st !== 'verified') { out.push(f + ': ' + (st || 'no status') + ' (not moved)'); continue; }
       const c = checkBriefAll(t);
-      if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), t); out.push(f + ': verified -> briefs/'); }
+      if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), t); out.push(f + ': verified -> briefs/' + (c.warnings.length ? ' (common-word warning, not a fail: ' + c.warnings.join('; ') + ')' : '')); }
       else { J.put(path.join(dataRoot, 'research', 'rejected', f), t + '\n\n## Station brief check\n' + c.reasons.map((r) => '- ' + r).join('\n') + '\n'); out.push(f + ': rejected -> ' + c.reasons.join('; ')); }
     }
     return { end: 'research-done', reason: out.join(' | ') || 'no drafts for ' + day };
@@ -420,11 +437,15 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (!v.ok) return { blocked: 'scouting notes refused: ' + v.problems.join('; ') };
     const added = addToBlocklist(J, rdir, termsOf(v.entries), { day, jobId: job.id });
     log.info('scouting blocklist updated', { jobId: job.id, added: added.length, games: v.entries.length });
-    const drafts = path.join(rdir, 'drafts', day), out = [];
+    const drafts = path.join(rdir, draftsDirOf(lineOf(job.line)), day), out = [];
     for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')).sort() : []) {
       const t = fs.readFileSync(path.join(drafts, f), 'utf8'); if (!isScoutBrief(t)) continue;
       const sp = scoutingBriefProblems(t, cfg.station);
-      if (!sp.length) { out.push(f + ': screened clear'); continue; }
+      if (!sp.length) {
+        const w = commonWordWarnings({ brief: t }, commonWords(rdir));
+        if (w.length) log.warn('genre brief uses a scouted common-word title as a bare word (warning, not a fail)', { jobId: job.id, file: f, warnings: w });
+        out.push(f + ': screened clear' + (w.length ? ' (common-word warning, not a fail: ' + w.join('; ') + ')' : '')); continue;
+      }
       const rf = J.move(path.join(drafts, f), path.join(rdir, SCOUT_DIR, 'blocked', day, f));   // moved, never deleted; it names a game, so it stays in scouting/
       J.put(rf, t + '\n\n## Station scouting screen\n' + sp.map((r) => '- ' + r).join('\n') + '\n');
       const shown = scoutingBriefProblems(f.replace(/\.md$/, '').replace(/-/g, ' '), cfg.station).length ? '(a draft whose file name names a scouted game)' : f;   // job notes reach the office page
@@ -433,6 +454,16 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     }
     store.updateJob(job.id, { data: { scouting: { games: v.entries.length, added: added.length, drafts: out } } });
     return { next: def.next, note: 'scouting notes valid (' + v.entries.length + ' games, ' + added.length + ' new blocklist names); ' + (out.join(' | ') || 'no genre drafts') };
+  }
+
+  // ---- scouting retention (owner, 17/10/2026): the first step of every scout run deletes the scouting notes
+  // (scouting/<day>/, scouting/blocked/<day>/) whose day is more than 90 days old; every deletion is logged; the
+  // scouting blocklist is never deleted. Idempotent: a second run the same day finds nothing.
+  function scoutRetentionStep(job, def) {
+    const day = job.data.day || dublinDay(), gone = pruneScouting(J, researchDir(), day);
+    for (const g of gone) log.info('scouting notes deleted (retention ' + RETENTION_DAYS + ' days)', { jobId: job.id, folder: 'research/' + g.folder, day: g.day, today: day });
+    log.info('scouting retention checked', { jobId: job.id, today: day, keepDays: RETENTION_DAYS, deleted: gone.length });
+    return { next: def.next, note: 'scouting retention (' + RETENTION_DAYS + ' days): ' + (gone.length ? 'deleted ' + gone.map((g) => g.folder).join(', ') : 'nothing to delete') + '; the blocklist is kept' };
   }
 
   // ---- research jobs (the research line and the genre-scout line)
