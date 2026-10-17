@@ -199,8 +199,8 @@ export function computeLayout(departments, services = []) {
 }
 
 // R3 spike: everything a baked room must match, in the room's own frame (x from its -x wall, z from its -z wall; y is
-// world height). The Blender build (scripts/build-design-room.mjs) writes this into the room's manifest; the page uses
-// the baked room only while the live layout gives the same spec, so the labels, desks and seats still line up.
+// world height). The Blender build (scripts/build-office.mjs, R3a) writes this per room into the manifest; the page uses
+// a baked room only while the live layout gives the same spec, so the labels, desks and seats still line up.
 export function bakedRoomSpec(L, key = 'design') {
   const r = L.rooms.find((x) => x.key === key); if (!r) return null;
   const q = (v) => Math.round(v * 1e4) / 1e4, loc = (p) => ({ x: q(p.x - r.x0), z: q(p.z - r.z0) });

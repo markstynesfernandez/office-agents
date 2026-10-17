@@ -87,7 +87,7 @@ class HalfResGTAOPass extends GTAOPass {
   }
 }
 
-// R3 spike: a cheap glow on the baked room's LED strips (dark mode only). The strips are drawn above 1.0 (HDR, not tone
+// R3 spike, R3a: a cheap glow on the baked rooms' LED strips (dark mode only). The strips are drawn above 1.0 (HDR, not tone
 // mapped; nothing else in the scene is), so a threshold + 2x2 downsample to half resolution, a 9-tap blur each way at
 // half resolution and an additive blend back onto the frame pick them out without a second scene render.
 class HalfResGlowPass extends Pass {
@@ -247,8 +247,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   let L = null, data = null, structureKey = null, selectedId = null;
   let statics = [], inst = {}, screens = [], workers = [], lines = [], terminals = [], pickables = [];
   const dummy = new THREE.Object3D();
-  // R3 spike: the baked Design room. Loaded only behind ?scene=baked; used only while its spec matches the live layout
-  // (layout.js bakedRoomSpec), otherwise the procedural room stays. Everything else in the office is unchanged.
+  // R3a: the baked rooms (Design and Office), drawn by default (?scene=procedural turns them off). Each is used only
+  // while its spec matches the live layout (layout.js bakedRoomSpec), otherwise that room is drawn procedurally.
   const baked = { want: options.scene !== 'procedural', office: null, active: new Set(), failed: null, warned: new Set() };
   // when it arrives after the first snapshot, the normal data path rebuilds the office with it (statuses, screens, lines)
   if (baked.want) loadBakedOffice({ decalMap: TX.atlas }).then((o) => { baked.office = o; if (data) { structureKey = null; setData(data); } invalidate(2); })

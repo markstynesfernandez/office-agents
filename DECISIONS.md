@@ -307,8 +307,91 @@ on the whole office. Choices made inside it, for the owner to confirm or change.
 - **fps measured in headed Chromium.** Windows has `chrome.exe` set to "High performance", so headed Chrome runs on the RTX 5060. The setting was not changed; headed Playwright Chromium (no per-app setting, so the Intel iGPU) gives the budget figure. Same harness, same 1600x1000, renderer checked.
 - **Reproducible build.** Seeded modelling; the glb is byte-identical between rebuilds. Lightmaps differ only by GPU sampling noise (well under 1/255 on average). Blender 5.2.1 is pinned (`build-design-room.mjs` refuses another version unless `--any-blender`); 5.2.2 is the latest 5.2 patch and would need a re-pin. `Material.use_nodes` and `World.use_nodes` are deprecated (removed in Blender 6.0); the script still works on 5.2.
 
-### For the owner (open; nothing decided here)
+### For the owner (answered 17/10/2026: see "R3a build record" below)
 
 - **Roll out to the whole office?** What it would involve, from this room: about 40 s of build and about 1.4 MiB for one room of this size. Six such areas (three rooms, lounge, atrium, closet) at that rate would pass 6 MB unless the textures are shared and the lightmaps go into fewer, larger atlases; not measured. One lightmap pair per room, or one atlas for the static office; every layout change (desks, departments, services) needs a rebuild on a PC with Blender and an NVIDIA GPU (CPU baking works but is slower; not measured). The atrium's moving parts (the core, walkers) and all people would stay real-time.
 - **Light mode:** keep the dark-wall look in light mode, or bake a light version?
 - **Chrome's GPU setting:** `chrome.exe` on "High performance" in Windows graphics settings: keep it, or set it back so headed Chrome measures the iGPU as in R1 and R2?
+
+## R3a build record (17/10/2026)
+
+The owner's R3a brief: the baked look, phase 1 of 2. Choices made inside it, for the owner to confirm or change. No cap,
+price, licence or product changed.
+
+### The owner's decisions on the spike (17/10/2026)
+
+- Roll out the baked look in two phases. Phase 1 (R3a): fix the Design room, build a shared material and texture
+  library, convert the Office room. Phase 2 (later): Research, lounge and atrium.
+- Keep `chrome.exe` on High performance for the owner's viewing; fps checks stay on the Intel iGPU through headed
+  Playwright Chromium, as in the spike.
+- Asset budget: 10 MB compressed for the whole office, with shared textures and packed lightmaps.
+- Design room: readable in dark mode (no darker overall than the procedural version, warm LED mood kept); the mood board
+  and framed abstract art back (procedural, no copies), readable at overview zoom; warm-white walls for the day bake,
+  dark walls for the evening bake only; one mid-tone oak floor in every room, procedural rooms included.
+- Make the baked scene the default if both rooms pass; `?scene=procedural` stays.
+
+### Choices made in the build
+
+- **One atlas for every baked room.** All rooms' lightmap UVs are packed together into one day and one evening atlas
+  (3072 px), so every room has the same texel density and the page loads two lightmaps whatever the number of rooms.
+  The cost: a change to any room re-bakes all of them (about 2 minutes now; with phase 2's three more areas, roughly
+  4–5 minutes, an estimate, not measured). Each room is still baked on its own: the rooms sit 60 units apart during the
+  bake, so they do not light or shade each other.
+- **glTF with separate textures, not a glb.** `office.gltf` + `office.bin` + `textures/*.jpg`: each shared texture is one
+  file, used by every room, and the procedural rooms load the same `textures/floor.jpg`. One file per texture also lets
+  phase 2 add rooms without duplicating anything.
+- **Decals from the page's own atlas.** The mood board, the whiteboard and the framed pictures in the glTF carry UVs into
+  the page's procedural atlas (`textures.js` `ATLAS`: seeded abstract shapes, swatches and wavy lines, no text, not
+  copies of any artwork); the page assigns that canvas texture at load. No new artwork file, and baked and procedural
+  rooms show the same pictures. In the bake those surfaces are a flat stand-in colour (only their bounce light matters).
+- **Themed materials from the palette.** Walls (one material per room, for the department tint), caps and skirting are
+  flat themed colours: the light palette's wall tinted 42% towards the department accent for the day bake and the light
+  theme (exactly the procedural rooms' colour), the dark palette's wall tinted 8% for the evening bake and the dark
+  theme. The bake uses the matching colours, so the bounce light fits each theme. The manifest stores them and
+  `tests/baked-room.test.mjs` fails if the palette or the atlas changes without a rebuild. Note: the spike's evening walls
+  were its own neutral charcoal (`#34373d`); they are now the palette's dark walls with the department tint (Design a
+  lavender grey `#534c5b`, Office a green grey `#4d5650`), a little lighter.
+- **Readability in dark mode.** Two levers, both measured: the evening bake's cool sky fill 0.8 -> 1.5 (it lifts the
+  floor, the desks and the walls evenly; the LEDs and lamps stay the warm accents), and the page's evening lightmap gain
+  1.0 -> 1.15 (`baked.js` `LM_GAIN`, the "exposure" of the unlit baked surfaces). Before the gain both rooms measured 2%
+  darker than the procedural rooms; after it, 6–8% brighter (PROGRESS.md, R3a brightness table). The measure: mean luma
+  of the screenshot inside each room's projected outline, baked vs `?scene=procedural`, same camera; the capture script
+  records a problem if a dark-mode room is darker.
+- **Design room layout.** The mood board (3.8 x 1.35) hangs on the oak slat panel over the desks with a warm LED strip
+  along its top; the spike's long shelf over the desks went to make room. The left wall has three framed pictures
+  (1.05 x 1.3, 0.8 x 1.0, 0.7 x 0.9) over a dark credenza; the spike's ten fabric pads went. The two binder shelves,
+  the cove LEDs, the walnut desks, chairs, lamps, fig, small plant and easel stay.
+- **Office room.** The R2 Office's pieces, from the library: two lockers, a framed picture and a lit wall shelf with a
+  trailing plant on the left wall; the whiteboard with a marker tray and two lit book shelves on the back wall; rugs per
+  row; the meeting table with two stools; a fig and a small plant. Desk tops are oak (Design's are walnut), so the two
+  rooms share every model but read differently. Lockers are a mid grey in both themes (the procedural ones change colour
+  with the theme). Rugs are the oatmeal hessian in both baked rooms (the procedural rooms' rugs are dark grey).
+- **The oak floor.** The Poly Haven plank floor photo shifted to a mid-tone oak (`#a47f58` on average), 2.2 units a tile,
+  grain along z, in every baked room. The procedural rooms and the lounge now load the same texture at the same scale;
+  the palette's `wood` colour is white in both themes so the texture shows as it is. The old canvas planks only show
+  until the JPEG has loaded, or if it cannot load.
+- **Default on, per-room fallback.** `?scene=procedural` is the only switch (any other value, or none, draws the baked
+  rooms). Each room is compared with the live layout on its own: a stale Office falls back to procedural while the
+  Design room stays baked, and the console says which room. Desks, chairs, lamps and plants of a baked room are hidden
+  in the instanced meshes; monitors, keyboards, status lights, screen glows and people stay real-time.
+- **The glow pass** (half resolution, dark mode only) now covers both rooms' LED strips. The dark overview costs about
+  1.4 ms a frame more than the procedural one (71.4 against 79.8 fps on the iGPU); every view stays above 60.
+- **Budget counting.** 10 MB = 10,000,000 bytes, counted as served (JPEG and WebP are already compressed; the glTF JSON
+  and `office.bin` are not), for every file in `src/web/assets/office/`, manifest included. Phase 1 uses 2.76 MB
+  (27.6%). `office.bin` (1.06 MB of geometry) is the easiest saving for phase 2 if needed: the exporter can write
+  meshopt-compressed buffers (the page would then need three's MeshoptDecoder); not done now.
+- **Build tidiness.** Blender writes into a staging folder; only a successful build replaces the published assets. The
+  driver turns off Python's bytecode cache (no `__pycache__` next to the library), and `.gitignore` ignores it anyway.
+  `*.bin` is marked binary in `.gitattributes`.
+
+### For the owner (open; nothing decided here)
+
+- **Light-mode Design room.** It measures about 10% darker than its procedural version (the dark slat backing, walnut
+  desks and dark credenza; its walls are the same warm white as the other rooms). Keep, or lighten it (a pale backing
+  behind the slats, oak desks)?
+- **Evening walls.** Now the palette's dark walls with the department tint (Design slightly lavender, Office slightly
+  green), like the procedural rooms. Keep, or a neutral charcoal for every baked room?
+- **Rugs.** Oatmeal hessian in the baked rooms, dark grey in the procedural Research room and the lounge. Pick one
+  for phase 2?
+- **Phase 2 bake time.** With one shared atlas, any room change re-bakes every room (estimated 4–5 minutes once
+  Research, the lounge and the atrium are in). Fine, or one atlas per phase?

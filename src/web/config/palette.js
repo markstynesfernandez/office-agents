@@ -1,8 +1,9 @@
 // palette.js — the one place colours live (spec: "One config file holds the palette"). Redesign R1, R2:
-// light mode (R2: more contrast): crisp warm-white walls with a clearly visible department tint, a warmer honey wood
-//   floor, pale polished concrete in the atrium, dark rugs under the desk clusters, a stronger sun with softer, darker
-//   shadows; LED strips read as pale aluminium profiles and give no glow.
-// dark mode: charcoal walls, a warm wood floor, dark rugs, warm LED strips (emissive lines plus soft additive washes),
+// light mode (R2: more contrast): crisp warm-white walls with a clearly visible department tint, one mid-tone oak
+//   floor in both themes (R3a: the shared texture as is, wood: white), pale polished concrete in the atrium, dark rugs
+//   under the desk clusters, a stronger sun with softer, darker shadows; LED strips read as pale aluminium profiles and
+//   give no glow.
+// dark mode: charcoal walls, the same oak floor, dark rugs, warm LED strips (emissive lines plus soft additive washes),
 //   glowing monitors and desk lamps. One warm accent (ledGlowColour / --accent) runs through the scene and the UI.
 export const PALETTE = {
   light: {

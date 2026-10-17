@@ -48,7 +48,7 @@ for this project; licence: this project. `design-refs/02.png` was used for mood 
 | Atrium floor: polished concrete (replaces the R1 stone tiles) | `CanvasTexture`: soft clouding, fine specks, thin saw-cut joints, from a seeded generator | `scene/textures.js` |
 | Top-bar service glyphs: a spark, a route, an upscale arrow, a shop bag, a dashed ring | inline SVG paths written for this project (generic shapes, not any company's logo) | `src/web/main.js` |
 
-**R3 spike: baked Design room (17/10/2026), behind `?scene=baked` only.** The first non-procedural assets. The room is
+**R3 spike: baked Design room (17/10/2026), behind `?scene=baked` only; replaced by R3a below.** The first non-procedural assets. The room is
 modelled in code by `scripts/blender/build-design-room.py` (no model file, kit or download is used for geometry), lit and
 baked in Blender, and exported to glTF. Blender's outputs are this project's own (licence: this project); the five
 photo textures inside them are CC0 (below). `design-refs/05.png` was used for mood only (dark walls, warm wood): no
@@ -60,6 +60,26 @@ layout, model, artwork or texture was traced or copied.
 | Day and evening lightmaps | Cycles bake (diffuse, direct + indirect, no colour), OptiX on the GPU, 2048 px, 1024 samples, scaled and stored 8-bit sRGB | `src/web/assets/design-room/lightmap-day.webp`, `lightmap-evening.webp` (WebP via sharp, quality 90) |
 | Manifest (spec, lightmap scales, LED strips, build info) and sizes | `scripts/build-design-room.mjs` | `src/web/assets/design-room/manifest.json`, `sizes.json` |
 
+The spike's files (`build-design-room.*`, `src/web/assets/design-room/`) were removed in R3a.
+
+**R3a: baked Design and Office rooms (17/10/2026), the default scene (`?scene=procedural` turns them off).** Built in
+code from the shared library `scripts/blender/office_lib.py` (room recipes in `office_rooms.py`, driver `build-office.py`,
+run by `npm run build-office`), lit and baked in Blender, exported to glTF. Blender's outputs are this project's own
+(licence: this project); the five photo textures in them are CC0 (below). No model file, kit or download is used for
+geometry. The pictures, the mood board and the whiteboard show the page's own procedural atlas (`textures.js`), so no
+new artwork file exists. `design-refs/` was not used in R3a.
+
+| Asset | Made with | Where |
+|-------|-----------|-------|
+| Shared library: desk (walnut or oak top, drawer pedestals, optional L return), task chair, desk lamp, rug, binder shelf (binders with blank label patches, no text), wall shelf with books, box and trailing plant, two-door locker, credenza, round meeting table with two stools, easel, oak slat panel, mood board (oak frame), whiteboard with marker tray, framed picture, LED strips; plants: fiddle-leaf fig, small pot plant, trailing shelf plant | Python in Blender 5.2.1 (boxes, cylinders, low-poly spheres, polygon leaves), seeded | `scripts/blender/office_lib.py` |
+| Design room (9.7 x 5.2) and Office room (10.9 x 8.7): shells (floor, walls, caps, skirting, cove LEDs) and the library pieces placed from `layout.js` `bakedRoomSpec` | as above; 9,948 triangles (Design 4,032, Office 5,916) | `src/web/assets/office/office.gltf`, `office.bin` |
+| Shared textures, each written once: oak, walnut, floor (mid-tone oak), fabric, rug | the CC0 photos below, resized to 512 px and colour-shifted in Blender, JPEG quality 82 | `src/web/assets/office/textures/*.jpg` (238 KB together) |
+| Day and evening lightmap atlases (every baked room in one atlas per mode) | Cycles bake (diffuse, direct + indirect, no colour), OptiX on the GPU, 3072 px, 1024 samples, scaled and stored 8-bit sRGB | `src/web/assets/office/lightmap-day.webp`, `lightmap-evening.webp` (WebP via sharp, quality 90) |
+| Manifest (per-room spec, look, lightmap scales, LED strips, build info) and sizes | `scripts/build-office.mjs` | `src/web/assets/office/manifest.json`, `sizes.json` |
+| Oak floor of the procedural rooms and the lounge | the shared `textures/floor.jpg`, same scale (`bakedlook.js` `FLOOR_OAK`) | loaded by `scene/baked.js`, used in `scene/office.js` |
+
+Size: 2,762,638 bytes as served for everything in `src/web/assets/office/` (27.6% of the 10 MB office budget).
+
 **Third-party textures (CC0 1.0, Poly Haven).** Five 1k diffuse JPGs, downloaded 17/10/2026 from the Poly Haven API
 and checked against its MD5: `assets-src/polyhaven/` (source URLs, publication dates, authors and MD5s in
 `assets-src/polyhaven/SOURCES.md`). Licence text: `assets-src/licences/CC0-1.0.txt` (CC0 1.0 Universal legal code, from
@@ -68,11 +88,11 @@ https://polyhaven.com/license.
 
 | File | Source | Published | Licence | Used for |
 |------|--------|-----------|---------|----------|
-| `oak_veneer_01_diff_1k.jpg` | https://polyhaven.com/a/oak_veneer_01 | 2024-03-08 | CC0 1.0 | slats, shelves, easel |
-| `walnut_veneer_diff_1k.jpg` | https://polyhaven.com/a/walnut_veneer | 2026-08-11 | CC0 1.0 | desk tops, drawer fronts |
-| `wood_floor_diff_1k.jpg` | https://polyhaven.com/a/wood_floor | 2023-10-24 | CC0 1.0 | floor (shifted a little deeper) |
-| `poly_wool_herringbone_diff_1k.jpg` | https://polyhaven.com/a/poly_wool_herringbone | 2025-09-05 | CC0 1.0 | wall pads (shifted to a muted rust), chair upholstery (charcoal) |
-| `hessian_230_diff_1k.jpg` | https://polyhaven.com/a/hessian_230 | 2025-09-05 | CC0 1.0 | rug (oatmeal) |
+| `oak_veneer_01_diff_1k.jpg` | https://polyhaven.com/a/oak_veneer_01 | 2024-03-08 | CC0 1.0 | slats, shelves, mood board frame, easel, meeting table, Office desk tops (R3a) |
+| `walnut_veneer_diff_1k.jpg` | https://polyhaven.com/a/walnut_veneer | 2026-08-11 | CC0 1.0 | Design desk tops, drawer fronts, credenza top |
+| `wood_floor_diff_1k.jpg` | https://polyhaven.com/a/wood_floor | 2023-10-24 | CC0 1.0 | the office floor everywhere, baked and procedural (R3a: shifted to a mid-tone oak, `#a47f58`) |
+| `poly_wool_herringbone_diff_1k.jpg` | https://polyhaven.com/a/poly_wool_herringbone | 2025-09-05 | CC0 1.0 | chair upholstery (charcoal); the spike's wall pads were removed in R3a |
+| `hessian_230_diff_1k.jpg` | https://polyhaven.com/a/hessian_230 | 2025-09-05 | CC0 1.0 | rugs (oatmeal) |
 
 Palette: `src/web/config/palette.js` (own choice; one accent per department used as a soft wall tint and on the cards;
 light and dark themes; one warm accent in dark mode, shared with the UI's `--accent` in `src/web/styles.css`).
@@ -110,7 +130,7 @@ and the system monospace stack (`Cascadia Code`, `Consolas`, `ui-monospace`). No
 
 | Tool | Version (pinned) | Licence | Use | Where |
 |------|------------------|---------|-----|-------|
-| Blender | **5.2.1 LTS** (build 9e2066aef7ef, 2026-08-25; series 5.2 LTS, supported to July 2028). The owner installed it from https://www.blender.org/download/lts/5-2/. `scripts/build-design-room.mjs` refuses any version outside 5.2.x unless `--any-blender` is given. | GPL-2.0-or-later (the program). Files made with it are not covered by the GPL: the glb, lightmaps and manifest are this project's own (Blender licence FAQ). | headless modelling, Cycles bake and glTF export for the R3 spike (`npm run build-design-room`); bundled add-on: glTF 2.0 I/O 5.2.40 (Apache-2.0) | `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe` (or `BLENDER_EXE`) |
+| Blender | **5.2.1 LTS** (build 9e2066aef7ef, 2026-08-25; series 5.2 LTS, supported to July 2028). The owner installed it from https://www.blender.org/download/lts/5-2/. `scripts/build-office.mjs` (R3a; the spike's `build-design-room.mjs` before it) refuses any version outside 5.2.x unless `--any-blender` is given. | GPL-2.0-or-later (the program). Files made with it are not covered by the GPL: the glTF, its buffer, the textures as exported, the lightmaps and the manifest are this project's own (Blender licence FAQ). | headless modelling, Cycles bake and glTF export (R3 spike; since R3a `npm run build-office`); bundled add-on: glTF 2.0 I/O 5.2.40 (Apache-2.0) | `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe` (or `BLENDER_EXE`) |
 
 npm reports an install script for sharp that is not run (`allowScripts`); it is not needed because the prebuilt
 binary package is used.

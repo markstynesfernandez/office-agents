@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (R3 spike: baked Design room behind `?scene=baked`, for the owner's decision; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (R3a: baked Design and Office rooms, phase 1 of 2, now the default scene, for the owner's review; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -17,13 +17,110 @@ Last updated: 17/10/2026 (R3 spike: baked Design room behind `?scene=baked`, for
 | **Redesign R2** Office look, people, UI polish | Done (17/10/2026), **approved by the owner** (17/10/2026). Follow-ups done at the start of E5 (below). Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
 | **E5** Live UI | Done (17/10/2026), **approved by the owner** (17/10/2026). Task box, scheduler, approval queue, desk and job controls, E-STOP with typed resume, live spend vs caps; every write same-origin, token, idempotency key and expectedVersion. Mock provider only. Screenshots in `screenshots/e5/`. See below. |
 | Pre-E6 housekeeping | Done (17/10/2026). Line endings fixed; port drift measured (not ported); port-step items planned; E6 readiness checklist below. |
-| **R3 spike** Baked lighting, Design room only | Done (17/10/2026), **waiting for the owner's decision** on rolling it out to the whole office. Behind `?scene=baked`; the default scene is unchanged. 71+ fps full quality on the Intel iGPU in every measured view, walking included (headed Chromium; see below), 1.41 MiB of assets, 41 s rebuild. Screenshots in `screenshots/r3-spike/`. See below. |
+| **R3 spike** Baked lighting, Design room only | Done (17/10/2026). **Owner's decision:** roll the baked look out in two phases (R3a now, phase 2 later). Was behind `?scene=baked`. 71+ fps full quality on the Intel iGPU in every measured view, walking included (headed Chromium; see below), 1.41 MiB of assets, 41 s rebuild. Screenshots in `screenshots/r3-spike/`. See below. |
+| **R3a** Baked look, phase 1 of 2 | Done (17/10/2026), **for the owner's review**. Shared Blender library; the Design room fixed (readable in dark mode, mood board and pictures back, warm-white walls by day); the Office room baked; one oak floor everywhere; baked rooms are the default (`?scene=procedural` turns them off). 66+ fps full quality on the Intel iGPU in every measured view, walking included; 2.76 MB of the 10 MB office budget; full rebuild 104–127 s. Screenshots in `screenshots/r3a/`. See below. |
 | E6 First real job | Not started. Blocked: see the E6 readiness checklist below. |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
 
-### R3 spike: baked Design room (17/10/2026) — for the owner's decision, nothing rolled out
+### R3a: baked Design and Office rooms, phase 1 of 2 (17/10/2026) — for the owner's review
+
+The owner's decisions on the spike (recorded in DECISIONS.md, "R3a build record"): roll the baked look out in two phases
+(this phase: fix the Design room, a shared library, the Office room; phase 2 later: Research, lounge and atrium); 10 MB
+compressed for the whole office's baked assets; Chrome stays on High performance for the owner's viewing, fps checks
+stay on the Intel iGPU through Playwright. Mock data only.
+
+- **Shared library.** `scripts/blender/office_lib.py` is the one module every baked room is built from: the mesh
+  builder, the shared materials (vertex colour, five photo textures, the decal atlas, themed wall/cap/skirting colours,
+  unlit LED) and the pieces (desk with drawer pedestals and L return, task chair, desk lamp, rug, binder shelf, wall shelf
+  with books, lockers, credenza, meeting table with stools, easel, slat panel, mood board, whiteboard, framed picture,
+  LED strips; plants: fiddle-leaf fig, small pot plant, trailing shelf plant). `office_rooms.py` holds one short recipe
+  per room; `build-office.py` builds every room, packs all their lightmap UVs into **one atlas** per mode (one texel
+  density for every room) and exports `office.gltf` + `office.bin` with the textures as separate files in `textures/`,
+  each written once. `npm run build-office` (`scripts/build-office.mjs`) replaces `build-design-room`; the old
+  `src/web/assets/design-room/`, its script and `screenshots-r3.mjs` are removed.
+- **Design room fixes.** (1) Dark mode: the evening bake's fill is raised (sky 0.8 -> 1.5) and the page lifts the
+  evening lightmap by 1.15; measured, both baked rooms are now 6–8% brighter than the procedural rooms in dark mode
+  (table below). (2) The mood board is back on the oak slat panel over the desks (3.8 x 1.35, in an oak frame, a warm LED
+  strip along its top), and three framed abstract pictures hang over a credenza on the left wall; their artwork is the
+  page's own procedural atlas (`textures.js`, seeded shapes, no text, no copies), so baked and procedural rooms show the
+  same pictures. The long shelf over the desks and the fabric pads made way for them. (3) Light mode: walls, caps and
+  skirting are themed materials; the day bake uses the light palette's warm-white walls with the department tint (as the
+  procedural rooms), the evening bake the dark palette's walls, and the page swaps the colours with the theme.
+  (4) Floor: one mid-tone oak (the Poly Haven plank floor shifted to `#a47f58`, 2.2 units a tile) in every room,
+  baked or procedural, and the lounge; the procedural floors load the same `textures/floor.jpg` (palette `wood` is now
+  white in both themes).
+- **Office room.** Same footprint (10.9 x 8.7), four desks in two rows (the first of each row L-shaped), chairs and seats
+  as the live layout; lockers, the framed picture and a lit wall shelf on the left wall; the whiteboard (the page's
+  procedural whiteboard) and two lit book shelves on the back wall; rugs per row; oak desk tops; the meeting table with
+  two stools; a fig and a small plant; warm cove LEDs. Day and evening bakes.
+- **Default and fallback.** The baked rooms are the default scene; `?scene=procedural` draws every room procedurally.
+  Each baked room is checked on its own against the live layout (`bakedRoomSpec`): a stale room falls back to the
+  procedural one with a console warning and the other stays baked (tested: a fifth Office desk makes only the Office
+  stale).
+- **Rebuild time:** 126.8 s for the full build on the first run (Blender 117.6 s: modelling 0.1, textures 0.5, UVs 6.4,
+  day bake 41.0, evening bake 60.9, export 0.8; the rest is start-up and the WebP step), 103.7 s on a second run.
+  3072 px atlases, 1024 samples, OptiX on the RTX 5060. `--quick` (1536 px, 128 samples): about 22 s.
+- **Reproducible:** `office.gltf`, `office.bin` and the five textures were byte-identical on a rebuild. The lightmaps
+  differ only by GPU sampling noise: mean 0.16/255 (day) and 0.07/255 (evening), at most 17/255 and 19/255 on isolated
+  texels, 1.5% and 0.4% of channels by more than 2/255 (more than the spike: the same samples over a bigger atlas).
+- **Size against the 10 MB office budget:** 2,762,638 bytes as served (2.76 MB, 27.6% of the budget; 1.83 MB with
+  brotli): day atlas 921 KB, evening atlas 497 KB, `office.bin` 1,060 KB (geometry, uncompressed), `office.gltf` 38 KB,
+  five shared textures 238 KB, manifest and sizes 11 KB. 9,948 triangles (Design 4,032, Office 5,916).
+- **Brightness** (`screenshots/r3a/brightness.json`: mean luma, 0–255, inside each room's outline on screen, baked vs
+  `?scene=procedural`, same camera):
+
+| View | Room | Theme | Baked | Procedural | Ratio |
+|---|---|---|---|---|---|
+| Overview | Design | dark | 67.0 | 63.1 | 1.06 |
+| Overview | Office | dark | 68.5 | 63.3 | 1.08 |
+| Room view | Design | dark | 63.1 | 58.9 | 1.07 |
+| Room view | Office | dark | 64.0 | 59.3 | 1.08 |
+| Overview | Design | light | 125.1 | 138.6 | 0.90 |
+| Overview | Office | light | 138.2 | 134.5 | 1.03 |
+| Room view | Design | light | 119.1 | 133.2 | 0.89 |
+| Room view | Office | light | 135.4 | 131.8 | 1.03 |
+
+  (The light Design room reads about 10% darker than its procedural version because of its dark slat backing, walnut
+  desks and dark credenza, not its walls; the brief's brightness rule is for dark mode.)
+- **fps** (`screenshots/r3a/fps-headed.json`; **headed Playwright Chromium on the Intel UHD iGPU**, renderer checked,
+  1600x1000, full quality = camera still, AO on; legacy fixtures view; one back-to-back run):
+
+| View | Camera moving | Full quality | Frame avg / p95 | Draw calls |
+|---|---|---|---|---|
+| Overview, light | 81.4 | 78.6 | 12.61 / 14.3 ms | 80 |
+| Overview, light, procedural (reference) | 82.4 | 81.1 | 12.28 / 13.9 ms | 58 |
+| Overview, dark (glow on) | 72.4 | 71.4 | 13.92 / 16.0 ms | 87 |
+| Overview, dark, procedural (reference) | 82.1 | 79.8 | 12.49 / 14.4 ms | 61 |
+| Design room, light | 74.5 | 75.4 | 13.16 / 15.1 ms | 60 |
+| Design room, dark | 69.8 | 68.9 | 14.42 / 16.7 ms | 67 |
+| Office room, light | 75.4 | 73.1 | 13.61 / 15.7 ms | 63 |
+| Office room, dark | 68.5 | 67.1 | 14.79 / 16.6 ms | 70 |
+| Walk: overview, dark, 5 agents walking | 66.0 | 66.0 | 15.22 / 17.3 ms | 87 |
+| Walk: overview, light, 5 agents walking | 72.7 | 72.7 | 13.81 / 16.8 ms | 80 |
+| Walk: overview, dark, procedural (reference) | 75.4 | 75.4 | 13.31 / 15.6 ms | 61 |
+
+  The first run of the same set had the dark walk row at 1 fps (the browser window was covered; every other row
+  matched); it was re-run whole and the table is the second run. Browsers were launched by Playwright with fresh
+  temporary profiles; only the script's own server on a random port was opened (never 127.0.0.1:8787).
+- **Captures** (`screenshots/r3a/`, git-ignored as before): `01-overview-light.png`, `02-overview-dark.png`,
+  `03-design-light.png`, `04-design-dark.png`, `05-office-light.png`, `06-office-dark.png`; side-by-sides against R2
+  (`side-by-side-design-r2.png`, `side-by-side-office-r2.png`: R2's dark room captures, same cameras) and, because R2
+  has no light room captures, against today's procedural rooms (`side-by-side-design-light.png`,
+  `side-by-side-office-light.png`); `fps-headed.json`, `asset-sizes.json`, `brightness.json`, `build.json`; the
+  procedural reference captures in `ref/`. Problems: none.
+- **Files:** new `scripts/blender/office_lib.py`, `office_rooms.py`, `build-office.py`, `scripts/build-office.mjs`,
+  `scripts/screenshots-r3a.mjs`, `src/web/scene/bakedlook.js`, `src/web/assets/office/*`; changed `src/web/scene/baked.js`
+  (multi-room loader, themed colours, shared floor texture), `office.js` (default on, per-room guard, procedural floor
+  texture), `rooms.js` (`skipRooms`, oak floor scale), `layout.js` (comment), `src/web/main.js` (`?scene=procedural`),
+  `src/web/config/palette.js` (wood white), `src/server/index.mjs` (MIME for .gltf, .bin), `tests/baked-room.test.mjs`
+  (rewritten, 8 tests), `tests/write-guard.test.mjs` (the new scripts' jails), `package.json` (`build-office`,
+  `screenshots-r3a`), `.gitattributes` (`*.bin binary`), `.gitignore` (`__pycache__/`), `ASSETS.md`, `DECISIONS.md`,
+  `PROGRESS.md`; removed `scripts/blender/build-design-room.py`, `scripts/build-design-room.mjs`,
+  `scripts/screenshots-r3.mjs`, `src/web/assets/design-room/`.
+
+### R3 spike: baked Design room (17/10/2026) — decided: roll out in two phases (R3a)
 
 A spike only. `?scene=baked` swaps the Design room for a baked one; without the flag the office is exactly as before
 (the default Design room view differs from R2's capture in 0.05% of pixels: monitor text and the clock). Mock data only.
@@ -292,7 +389,9 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `39b48c8`: Normalise line endings (`.gitattributes`)
 - `f51ec46`: Pre-E6 housekeeping (E5 approval, drift list, port-step items, E6 readiness checklist)
 - `96c23b2`: R3 milestone (Blender build and the baked Design room behind `?scene=baked`)
-- The next commit: "R3 spike: baked Design room" (the headed captures' fixes, the Chromium channel, docs)
+- `91c748b`: R3 spike: baked Design room (the headed captures' fixes, the Chromium channel, docs)
+- `1db8e72`: R3a milestone (the shared library, the baked Design and Office rooms as the default scene)
+- The next commit: "R3a: baked Design and Office rooms" (docs, comments)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -311,7 +410,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **204 passed, 0 failed**, after the R3 spike (17/10/2026); new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -360,7 +459,8 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-0. **R3 spike: the owner decides** whether to bake the whole office (DECISIONS.md, "R3 spike build record", lists what a roll-out would involve). Until then `?scene=baked` stays a flag and nothing else changes. Also for the owner: `chrome.exe` is set to "High performance" in Windows graphics settings (so headed Chrome uses the RTX 5060); set it back to "Let Windows decide" or "Power saving" if future fps runs should use headed Chrome on the iGPU again.
+0. **R3a: the owner reviews** the baked Design and Office rooms (`screenshots/r3a/`; open questions in DECISIONS.md,
+   "R3a build record"). Phase 2 (Research, lounge, atrium) waits for the go-ahead.
 1. **Wait for the owner's legacy job** `2026-10-16--pngtuber-cosy-desk-props-r2` to finish.
 2. **Port step, one batch:** run `npm run port-drift` again, read the "To port to office-agents" log in Virtual-workers (read only), port the drifted files and the logged fixes at a new moment in PORTED.md, and build the three planned items (ENGINE-PLAN.md §9, "Port step before E6"). Mock only.
 3. **E6** starts when every row of the E6 readiness checklist above is done.
