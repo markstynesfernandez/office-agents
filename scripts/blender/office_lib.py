@@ -1,16 +1,23 @@
-# office_lib.py — R3a: the shared Blender library for the baked office. Every baked room (office_rooms.py) is built
-# from these pieces, so a desk, a chair or a plant is the same model in every room, and every room uses the same few
-# materials and textures (one oak floor for the whole office). Nothing here is room-specific.
-#   materials  solid / leaf (vertex colour), oak, walnut, floor, fabric, rug (shared photo textures), decal (the page's
-#              canvas atlas: mood board, whiteboard, framed pictures), themed: wall_<room>, cap, skirting (one colour
-#              per theme, set by the page and by the bake mode), led (unlit, real-time on the page)
+# office_lib.py — R3a, R3b: the shared Blender library for the baked office. Every baked area (office_rooms.py: the
+# three department rooms, the lounge and the atrium) is built from these pieces, so a desk, a chair or a plant is the
+# same model everywhere, and every area uses the same few materials and textures (one oak floor for the whole office).
+# Nothing here is area-specific.
+#   materials  solid / leaf (vertex colour), oak, walnut, floor, fabric, upholstery, rug (shared photo textures; fabric
+#              and upholstery share one), decal (the page's canvas atlas: mood board, whiteboard, framed pictures),
+#              concrete (the page's canvas concrete), themed colours (walls, caps, skirting, the slab, the plinth, the
+#              closet, the Design room's backing and credenza: one colour per theme, from the look), themed tints
+#              (fabric, upholstery, rug: the shared texture times a colour per theme), a themed texture (design_wood:
+#              oak by day, walnut by evening), led (unlit, real-time on the page)
 #   furniture  desk (with drawer pedestals, optional L return), task chair, desk lamp, rug, shelves with binders, a
-#              wall shelf with books and a trailing plant, lockers, credenza, meeting table with stools, easel
+#              wall shelf with books and a trailing plant, a library bookcase, lockers, credenza, meeting table with
+#              stools, easel, sofa, armchair, coffee table, side table, arc floor lamp, bench, printer, water cooler
 #   plants     fiddle-leaf fig (tall), small pot plant, trailing shelf plant
-#   wall items slat panel, mood board, whiteboard, framed picture (decals from the page's atlas), LED strips
-# Coordinates: a room's own frame as in layout.js (x along the back wall, y up, z towards the open front; the two back
-# walls are the planes x = 0 and z = 0, inner faces at WT). Converted to Blender's z-up only when vertices are written.
-# Seeded throughout, so a rebuild gives the same rooms. Licence of the outputs: this project; textures CC0 (ASSETS.md).
+#   wall items slat panel, mood board, whiteboard, framed picture (decals from the page's atlas), clock, LED strips
+#   structure  room shell, wall runs, the slab, the core plinth, the services closet
+# Coordinates: an area's own frame as in layout.js bakedRoomSpec (x along the back wall, y up, z towards the open front;
+# a room's two back walls are the planes x = 0 and z = 0, inner faces at WT). Converted to Blender's z-up only when
+# vertices are written. Seeded throughout, so a rebuild gives the same rooms. Licence of the outputs: this project;
+# textures CC0 (ASSETS.md).
 import bpy, math, os, random
 import numpy as np
 from mathutils import Vector, Matrix
@@ -24,27 +31,37 @@ def T(x=0, y=0, z=0, ry=0, rx=0, rz=0):         # translation * Ry * Rx * Rz (th
 def to_bl(p): return (p[0], -p[2], p[1])        # three (x, y, z) -> Blender (x, -z, y)
 
 # shared photo textures: file, real-world tile size (scene units ~ metres), target average colour (None: as photographed).
-# The floor's tile size and colour come from the look (build-office.mjs), because the page's procedural rooms use the
-# same floor texture at the same scale.
+# The floor's tile size and colour, and the fabric's and rug's averages, come from the look (build-office.mjs), because
+# the page draws the same textures (the procedural floors) and tints them (bakedlook.js).
 TEX = {
-    'oak':    ['oak_veneer_01_diff_1k.jpg', 1.2, None],              # slats, shelves, frames, easel, office desk tops
-    'walnut': ['walnut_veneer_diff_1k.jpg', 1.6, None],              # design desk tops, drawer fronts, credenza
+    'oak':    ['oak_veneer_01_diff_1k.jpg', 1.2, None],              # slats, shelves, frames, easel, bookcase, desk tops
+    'walnut': ['walnut_veneer_diff_1k.jpg', 1.6, None],              # drawer fronts, Design desk tops by evening
     'floor':  ['wood_floor_diff_1k.jpg', 2.2, '#a47f58'],            # one mid-tone oak floor for the whole office
-    'fabric': ['poly_wool_herringbone_diff_1k.jpg', 0.4, '#34353a'], # chair upholstery (charcoal)
-    'rug':    ['hessian_230_diff_1k.jpg', 0.45, '#b7a487'],          # rugs (oatmeal)
+    'fabric': ['poly_wool_herringbone_diff_1k.jpg', 0.4, '#c8c3ba'], # upholstery (a light neutral; tinted per material)
+    'rug':    ['hessian_230_diff_1k.jpg', 0.45, '#a9a6a1'],          # rugs (a light neutral; tinted dark grey)
 }
+MAT_TEX = {'upholstery': 'fabric', 'design_wood': 'walnut'}           # materials drawing a shared texture under another name
+UV_SCALE = {'concrete': 6.4}                                         # the page's canvas concrete, at the procedural scale
+def tex_of(mat): return MAT_TEX.get(mat, mat if mat in TEX else None)
+def uv_scale(mat):
+    t = tex_of(mat)
+    return TEX[t][1] if t else UV_SCALE.get(mat, 1.0)
 TEX_PX = 512
 C = {
     'backing': '#141416', 'pedestal': '#2a2b2f', 'metal': '#1b1c1f', 'handle': '#8d8a84', 'pot': '#38342f', 'potRim': '#4a443d',
     'soil': '#2f261e', 'trunk': '#5f4a38', 'potSmall': '#c9b8a3', 'lamp': '#1c1c1f', 'canvas': '#ece6da', 'label': '#ece6da',
-    'rugBorder': '#4a3b2c', 'caster': '#111113', 'frame': '#2a2a2d', 'mat': '#ece6da', 'locker': '#8e9096', 'seam': '#3a3b3f',
+    'rugBorder': '#3d3c3b', 'caster': '#111113', 'frame': '#2a2a2d', 'mat': '#ece6da', 'locker': '#8e9096', 'seam': '#3a3b3f',
     'whiteboardFrame': '#b9bcc1', 'credenza': '#2e2f33', 'leather': '#6b4a35', 'mug': '#d8d2c8', 'box': '#c9bfae', 'vase': '#c2b8a8',
+    'armchair': '#a2694a', 'shade': '#2b2b2e', 'inlay': '#a8916f', 'printer': '#d8d6d1', 'printerTop': '#c6c4bf', 'printerLid': '#55575d',
+    'paper': '#f4f2ee', 'cooler': '#e4e2dd', 'water': '#8fc0e2', 'clockRim': '#2f3034', 'clockFace': '#f3f0ea', 'caseBack': '#6e5a47',
 }
 BINDERS = ['#1f3b5c', '#3a3a3c', '#8c2f2f', '#4a6a8a', '#e3ddd2', '#2f5d50', '#b5533c', '#d9b26f']
-BOOKS = ['#7b2d26', '#2f4858', '#3d5a40', '#8c6d46', '#5b5f97', '#b5533c', '#d9b26f', '#e8e1d4', '#3b3b3b', '#6b4e71', '#9a8f7a', '#2e5e6e']
+BOOKS = ['#7b2d26', '#2f4858', '#3d5a40', '#8c6d46', '#5b5f97', '#b5533c', '#d9b26f', '#e8e1d4', '#3b3b3b', '#6b4e71', '#9a8f7a', '#2e5e6e', '#a3473a', '#c9c1b1']
 LEAVES = ['#36612f', '#2f5a2b', '#3e6d35', '#2b5126']
 TRAIL = ['#4f7f45', '#3e6d35', '#5d8c4f']
-LED_W_PER_M = {'shelf': 16.0, 'cove': 14.0, 'board': 18.0}
+LED_W_PER_M = {'shelf': 16.0, 'cove': 14.0, 'board': 18.0, 'case': 7.0, 'ring': 0.0}
+# faces the isometric camera (from +x, +y, +z) can never see, for boxes on each wall: left out to save geometry
+HIDDEN = {'z': ('nx', 'ny', 'nz'), 'x': ('px', 'ny', 'nz')}       # local names (an 'x'-wall item is turned a quarter turn)
 
 # ---------------------------------------------------------------- mesh builder (three.js-style frame)
 class MB:
@@ -55,7 +72,7 @@ class MB:
         if n.length < 1e-12: return
         if uvs is None:      # planar UVs on the dominant axis, in tile units; the grain runs up walls and along x on floors
             n.normalize(); ax = max(range(3), key=lambda i: abs(n[i]))
-            scale = TEX[mat][1] if mat in TEX else 1.0
+            scale = uv_scale(mat)
             uvs = []
             for p in pts:
                 u, v = (p.z, p.y) if ax == 0 else ((p.x, -p.z) if ax == 1 else (p.x, p.y))
@@ -72,13 +89,49 @@ class MB:
         off = uvoff if uvoff is not None else (s.rng.random(), s.rng.random())
         for k, q in faces.items():
             if k not in skip: s.face([P(*c) for c in q], mat, col, off)
+    # a box with chamfered edges and corners (r: the chamfer), for upholstery and soft furniture; skip as box() (a part
+    # is left out when its outward normal points mostly that way)
+    def rbox(s, w, h, d, r, M, mat, col='#ffffff', skip=()):
+        r = min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)
+        H, A = (w / 2, h / 2, d / 2), (w / 2 - r, h / 2 - r, d / 2 - r)
+        off = (s.rng.random(), s.rng.random())
+        dirs = {'px': (1, 0, 0), 'nx': (-1, 0, 0), 'py': (0, 1, 0), 'ny': (0, -1, 0), 'pz': (0, 0, 1), 'nz': (0, 0, -1)}
+        def emit(pts, nrm):
+            nv = Vector(nrm).normalized()
+            if any(nv.dot(Vector(dirs[k])) > 0.6 for k in skip): return
+            p = [Vector(q) for q in pts]
+            if (p[1] - p[0]).cross(p[2] - p[0]).dot(nv) < 0: p.reverse()
+            s.face([tuple(M @ q) for q in p], mat, col, off)
+        for ax in range(3):                                  # the six flat faces
+            b, c = [i for i in range(3) if i != ax]
+            for sg in (1, -1):
+                pts = []
+                for (u, v) in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                    q = [0, 0, 0]; q[ax] = sg * H[ax]; q[b] = u * A[b]; q[c] = v * A[c]; pts.append(q)
+                n = [0, 0, 0]; n[ax] = sg; emit(pts, n)
+        for ax in range(3):                                  # the twelve edge chamfers (along axis ax)
+            b, c = [i for i in range(3) if i != ax]
+            for sb in (1, -1):
+                for sc in (1, -1):
+                    pts = []
+                    for (t, onb) in ((-1, True), (1, True), (1, False), (-1, False)):
+                        q = [0, 0, 0]; q[ax] = t * A[ax]
+                        q[b] = sb * (H[b] if onb else A[b]); q[c] = sc * (A[c] if onb else H[c]); pts.append(q)
+                    n = [0, 0, 0]; n[b] = sb; n[c] = sc; emit(pts, n)
+        for sx in (1, -1):                                   # the eight corner triangles
+            for sy in (1, -1):
+                for sz in (1, -1):
+                    S = (sx, sy, sz)
+                    pts = [[S[i] * (H[i] if i == j else A[i]) for i in range(3)] for j in range(3)]
+                    emit(pts, S)
     # a cylinder along local y, centred at the origin (r0 bottom, r1 top), n sides
-    def cyl(s, r0, r1, h, n, M, mat, col='#ffffff', caps=(True, True)):
+    def cyl(s, r0, r1, h, n, M, mat, col='#ffffff', caps=(True, True), outer=True):
         P = lambda a, b, c: tuple(M @ Vector((a, b, c)))
         ring = lambda r, y: [(math.cos(2 * math.pi * i / n) * r, y, -math.sin(2 * math.pi * i / n) * r) for i in range(n)]
         lo, hi = ring(r0, -h / 2), ring(r1, h / 2)
         for i in range(n):
-            j = (i + 1) % n; s.face([P(*lo[i]), P(*lo[j]), P(*hi[j]), P(*hi[i])], mat, col)
+            j = (i + 1) % n; q = [P(*lo[i]), P(*lo[j]), P(*hi[j]), P(*hi[i])]
+            s.face(q if outer else list(reversed(q)), mat, col)
         if caps[1]: s.face([P(*p) for p in hi], mat, col)
         if caps[0]: s.face([P(*p) for p in reversed(lo)], mat, col)
     def sphere(s, r, M, mat, col, ws=8, hs=6):
@@ -90,6 +143,13 @@ class MB:
                 if j == 0: q = [q[0], q[1], q[2]]
                 elif j == hs - 1: q = [q[0], q[1], q[3]]
                 s.face([P(*p) for p in q], mat, col)
+    # a flat ring (annulus) in the local xz plane facing +y, n segments
+    def ring(s, r0, r1, n, M, mat, col='#ffffff', phase=0.0):
+        P = lambda a, c: tuple(M @ Vector((a, 0, c)))
+        at = lambda r, i: (math.cos(phase + 2 * math.pi * i / n) * r, -math.sin(phase + 2 * math.pi * i / n) * r)
+        for i in range(n):
+            a0, a1, b1, b0 = at(r0, i), at(r0, i + 1), at(r1, i + 1), at(r1, i)
+            s.face([P(*a0), P(*b0), P(*b1), P(*a1)], mat, col)
     # a quad facing local +z (w x h, centred), with UVs from a region of the page's atlas (three.js convention, v up);
     # Blender's v is flipped here because the glTF exporter flips it back, so the page samples the region as drawn
     def decal(s, w, h, M, region):
@@ -97,21 +157,23 @@ class MB:
         P = lambda a, b: tuple(M @ Vector((a, b, 0)))
         s.face([P(-x, -y), P(x, -y), P(x, y), P(-x, y)], 'decal', '#ffffff', uvs=[(u0, 1 - v0), (u1, 1 - v0), (u1, 1 - v1), (u0, 1 - v1)])
 
-# ---------------------------------------------------------------- a room being built: its meshes, LEDs and lamp bulbs
+# ---------------------------------------------------------------- an area being built: its meshes, LEDs and lights
 class Kit:
-    """one room: room (baked), em (unlit LED strips and bulbs), occ (bake-only occluders for the real-time monitors
-    and keyboards). S: the room spec (layout.js bakedRoomSpec), look: the shared look (build-office.mjs)."""
+    """one baked area: room (baked), em (unlit LED strips and bulbs), occ (bake-only occluders: the real-time monitors
+    and keyboards, the walls round the atrium). S: the area spec (layout.js bakedRoomSpec), look: the shared look
+    (build-office.mjs). role: material per role (the Design room uses themed ones), lights: the evening bake's other
+    lights (floor lamps, the closet strip), cushions: the seat cushions as modelled (the seat-bounds test reads them)."""
     def __init__(s, spec, look, seed):
         s.S, s.look, s.key = spec, look, spec['key']
         s.rng = random.Random(seed)
         s.room, s.em, s.occ = MB(s.rng), MB(s.rng), MB(s.rng)
-        s.leds, s.bulbs = [], []
-        s.W, s.D, s.FLOOR, s.WH, s.WT = spec['w'], spec['d'], spec['floor'], spec['wallH'], spec['wallT']
+        s.leds, s.bulbs, s.lights, s.cushions = [], [], [], []
+        s.W, s.D, s.FLOOR = spec['w'], spec['d'], spec['floor']
+        s.WH, s.WT = spec.get('wallH', 2.7), spec.get('wallT', 0.18)
         s.PT = s.FLOOR + 0.02                    # top of the wood floor (office.js PT)
         s.DESK_Y = s.PT + 0.73                   # desk top centre (office.js deskY)
         s.wall = 'wall_' + s.key
-        for w in spec['walls']:
-            if abs(w['at']) > 1e-6: raise RuntimeError(s.key + ': the library expects the back walls at x = 0 and z = 0')
+        s.role = {'deskTop': 'oak', 'drawer': 'walnut', 'credenza': 'solid', 'credenzaTop': 'walnut', 'backing': 'solid'}
     # placement on a back wall: 'z' (the back wall, faces +z) or 'x' (the left wall, faces +x); u along the wall, v out
     def on_wall(s, axis, u, y, v, rz=0):
         return T(u, y, s.WT + v, 0, 0, rz) if axis == 'z' else T(s.WT + v, y, u, math.pi / 2, 0, rz)
@@ -123,9 +185,15 @@ def led(k, a, b, emit, kind, thick=(0.014, 0.012)):
     k.em.box(L, thick[0], thick[1], T(mid.x, mid.y, mid.z, ry), 'led', '#ffffff', skip=('ny',))
     k.leds.append({'a': [round(v, 4) for v in a], 'b': [round(v, 4) for v in b], 'emit': [round(v, 4) for v in Vector(emit).normalized()], 'kind': kind})
 
+def spot(k, pos, aim, energy, colour='#ffc684', size=115, blend=0.6, radius=0.05):
+    """an evening-bake spot light (a floor lamp's bulb), aimed along aim"""
+    k.lights.append({'type': 'SPOT', 'pos': [round(v, 4) for v in pos], 'aim': list(aim), 'energy': energy, 'colour': colour, 'size': size, 'blend': blend, 'radius': radius})
+
 # ---------------------------------------------------------------- shell: floor, walls (themed), caps, skirting, coves
 def shell(k):
     W, D, PT, FLOOR, WH, WT = k.W, k.D, k.PT, k.FLOOR, k.WH, k.WT
+    for w in k.S['walls']:
+        if abs(w['at']) > 1e-6: raise RuntimeError(k.key + ': the room shell expects the back walls at x = 0 and z = 0')
     k.room.face([(0, PT, D), (W, PT, D), (W, PT, 0), (0, PT, 0)], 'floor', uvoff=(0.13, 0.41))
     k.room.face([(0, FLOOR, D), (W, FLOOR, D), (W, PT, D), (0, PT, D)], 'skirting')     # floor edge, front
     k.room.face([(W, FLOOR, D), (W, FLOOR, 0), (W, PT, 0), (W, PT, D)], 'skirting')     # floor edge, right
@@ -146,11 +214,37 @@ def shell(k):
     led(k, (WT + 0.05, PT + 0.012, zb), (W - 0.05, PT + 0.012, zb), (0, 1, -0.35), 'cove')
     led(k, (xl, PT + 0.012, WT + 0.05), (xl, PT + 0.012, D - 0.05), (-0.35, 1, 0), 'cove')
 
+def wall_run(k, w, mat, base_y):
+    """a wall from an area spec (axis, at, from, to, h, open ends) on a floor at base_y: the wall (inner face towards +x
+    or +z), its cap, its skirting and a cap on each open end"""
+    WT, FLOOR, h = k.WT, k.FLOOR, w['h']
+    L, mid = w['to'] - w['from'], (w['from'] + w['to']) / 2
+    if w['axis'] == 'x':
+        x = w['at'] + WT / 2
+        k.room.box(WT, h, L, T(x, FLOOR + h / 2, mid), mat, skip=('nx', 'ny', 'py', 'nz'))
+        k.room.box(WT + 0.04, 0.05, L, T(x, FLOOR + h + 0.025, mid), 'cap', skip=('nx', 'ny', 'nz'))
+        k.room.box(0.03, 0.1, L, T(w['at'] + WT + 0.015, base_y + 0.05, mid), 'skirting', skip=('nx', 'ny', 'nz'))
+        for e, open_ in zip((w['from'], w['to']), w['open']):
+            if open_: k.room.box(WT + 0.04, h, 0.04, T(x, FLOOR + h / 2, e + (0.02 if e == w['from'] else -0.02)), 'cap', skip=('nx', 'ny', 'py', 'nz'))
+    else:
+        z = w['at'] + WT / 2
+        k.room.box(L, h, WT, T(mid, FLOOR + h / 2, z), mat, skip=('nz', 'ny', 'py', 'nx'))
+        k.room.box(L, 0.05, WT + 0.04, T(mid, FLOOR + h + 0.025, z), 'cap', skip=('nz', 'ny', 'nx'))
+        k.room.box(L, 0.1, 0.03, T(mid, base_y + 0.05, w['at'] + WT + 0.015), 'skirting', skip=('nz', 'ny', 'nx'))
+        for e, open_ in zip((w['from'], w['to']), w['open']):
+            if open_: k.room.box(0.04, h, WT + 0.04, T(e + (0.02 if e == w['from'] else -0.02), FLOOR + h / 2, z), 'cap', skip=('nz', 'ny', 'py', 'nx'))
+
+def occluder_wall(k, w):
+    """a bake-only wall (it shades the area in the bake and is not exported): a neighbouring room's wall"""
+    L, mid, h, WT = w['to'] - w['from'], (w['from'] + w['to']) / 2, w['h'], k.WT
+    if w['axis'] == 'x': k.occ.box(WT, h + 0.05, L, T(w['at'] + WT / 2, k.FLOOR + h / 2, mid), 'solid', '#d0ccc4')
+    else: k.occ.box(L, h + 0.05, WT, T(mid, k.FLOOR + h / 2, w['at'] + WT / 2), 'solid', '#d0ccc4')
+
 # ---------------------------------------------------------------- wall pieces
 def slat_panel(k, x0, x1, h=2.42):
-    """a warm oak slat panel on the back wall from x0 to x1, on a dark backing"""
+    """a warm oak slat panel on the back wall from x0 to x1, on a backing (role 'backing': dark, or themed)"""
     zf, PT = k.WT, k.PT
-    k.room.box(x1 - x0, h, 0.02, T((x0 + x1) / 2, PT + h / 2 + 0.04, zf + 0.01), 'solid', C['backing'], skip=('nz', 'ny'))
+    k.room.box(x1 - x0, h, 0.02, T((x0 + x1) / 2, PT + h / 2 + 0.04, zf + 0.01), k.role['backing'], C['backing'], skip=('nz', 'ny'))
     SLAT, GAPW = 0.046, 0.024
     for i in range(int((x1 - x0 - 0.02) / (SLAT + GAPW))):
         x = x0 + 0.035 + i * (SLAT + GAPW) + SLAT / 2
@@ -184,6 +278,45 @@ def binder_shelf(k, x0, x1, y, z_wall, seed, depth=0.27):
     led(k, (x0 + 0.05, y - 0.03, z_wall + depth - 0.035), (x1 - 0.05, y - 0.03, z_wall + depth - 0.035), (0, -1, -0.45), 'shelf')
     binders(k, x0 + 0.06, x1 - 0.06, y + 0.0225, zc - 0.005, seed)
 
+def bookcase(k, x0, x1, seed, depth=0.38, height=2.3):
+    """the library wall: a tall oak bookcase on the back wall from x0 to x1, in bays and five levels, with procedural
+    book spines (plain colours, no titles), runs of binders with blank labels, lying stacks, and an LED strip under each
+    shelf (Research room)"""
+    r, PT, zw, hid = random.Random(seed), k.PT, k.WT, HIDDEN['z']
+    D, Hc, L, um, y0 = depth, height, x1 - x0, (x0 + x1) / 2, k.PT
+    k.room.box(L, Hc, 0.03, T(um, y0 + Hc / 2, zw + 0.015), 'solid', C['caseBack'], skip=hid)
+    k.room.box(L, 0.08, D, T(um, y0 + 0.04, zw + D / 2), 'oak', skip=hid)
+    k.room.box(L, 0.05, D, T(um, y0 + Hc - 0.025, zw + D / 2), 'oak', skip=('nx', 'nz'))
+    bays = max(1, round(L / 1.05)); bw = L / bays
+    for b in range(bays + 1): k.room.box(0.04, Hc, D, T(x0 + b * bw, y0 + Hc / 2, zw + D / 2), 'oak', skip=('ny', 'nz'))
+    levels = 5; lh = (Hc - 0.13) / levels
+    for lv in range(1, levels): k.room.box(L, 0.03, D, T(um, y0 + 0.08 + lv * lh, zw + D / 2), 'oak', skip=('nx', 'nz'))
+    zf = zw + D                                                # the bookcase's front plane
+    for lv in range(levels):
+        base, maxH = y0 + 0.08 + lv * lh + 0.015, lh - 0.06
+        if lv > 0: led(k, (x0 + 0.04, base + lh - 0.035, zf - 0.03), (x1 - 0.04, base + lh - 0.035, zf - 0.03), (0, -1, -0.3), 'case')
+        for b in range(bays):
+            cu, end = x0 + b * bw + 0.04, x0 + (b + 1) * bw - 0.04
+            while cu < end - 0.04:
+                roll = r.random()
+                if roll < 0.05: cu += 0.08 + r.random() * 0.14; continue                     # a gap
+                if roll < 0.11 and end - cu > 0.3:                                             # a stack lying flat
+                    for i in range(2 + int(r.random() * 3)):
+                        k.room.box(0.26 - i * 0.015, 0.045, 0.21, T(cu + 0.14, base + 0.0225 + i * 0.047, zf - 0.13), 'solid', r.choice(BOOKS), skip=hid)
+                    cu += 0.32; continue
+                if roll < 0.3:                                                                  # a run of binders, blank labels
+                    c = r.choice(BINDERS)
+                    for i in range(2 + int(r.random() * 3)):
+                        if cu >= end - 0.08: break
+                        h = min(maxH, 0.32)
+                        k.room.box(0.075, h, 0.27, T(cu + 0.0375, base + h / 2, zf - 0.135), 'solid', c, skip=hid)
+                        k.room.box(0.045, 0.06, 0.004, T(cu + 0.0375, base + h * 0.3, zf + 0.001), 'solid', C['label'], skip=('nz', 'nx', 'ny'))
+                        cu += 0.079
+                    continue
+                w, h, d = 0.03 + r.random() * 0.045, min(maxH, 0.2 + r.random() * 0.15), 0.19 + r.random() * 0.08
+                k.room.box(w, h, d, T(cu + w / 2, base + h / 2, zf - d / 2), 'solid', r.choice(BOOKS), skip=hid)
+                cu += w + 0.003
+
 def trailing_plant(k, M):
     """a trailing plant in a small pot (M: the pot's base): a leafy crown and strands hanging forward (local +z)"""
     r = k.rng
@@ -203,7 +336,7 @@ def wall_shelf(k, axis, u, length, y, seed):
     cu = u - length / 2 + 0.12
     for i in range(4 + int(r.random() * 4)):
         w, h = 0.035 + r.random() * 0.035, 0.18 + r.random() * 0.1
-        k.room.box(w, h, 0.18, k.on_wall(axis, cu + w / 2, y + 0.02 + h / 2, 0.14), 'solid', r.choice(BOOKS), skip=('ny', 'nz')); cu += w + 0.004
+        k.room.box(w, h, 0.18, k.on_wall(axis, cu + w / 2, y + 0.02 + h / 2, 0.14), 'solid', r.choice(BOOKS[:12]), skip=('ny', 'nz')); cu += w + 0.004
     k.room.box(0.22, 0.12, 0.16, k.on_wall(axis, u + length * 0.12, y + 0.08, 0.13), 'solid', C['box'], skip=('ny', 'nz'))
     trailing_plant(k, k.on_wall(axis, u + length / 2 - 0.2, y + 0.02, 0.14))
 
@@ -212,6 +345,17 @@ def frame(k, axis, u, y, w, h, region):
     k.room.box(w, h, 0.04, k.on_wall(axis, u, y, 0.02), 'solid', C['frame'], skip=('nz',))
     k.room.box(w - 0.07, h - 0.07, 0.004, k.on_wall(axis, u, y, 0.042), 'solid', C['mat'], skip=('nz', 'nx', 'px', 'ny', 'py'))
     k.room.decal(w - 0.24, h - 0.24, k.on_wall(axis, u, y, 0.046), region)
+
+def clock(k, axis, u, y):
+    """a wall clock: rim, face, twelve ticks and two hands (it shows no particular time)"""
+    M = k.on_wall(axis, u, y, 0)
+    k.room.cyl(0.21, 0.21, 0.04, 24, M @ T(0, 0, 0.02, 0, math.pi / 2), 'solid', C['clockRim'], caps=(False, True))
+    k.room.cyl(0.185, 0.185, 0.004, 24, M @ T(0, 0, 0.042, 0, math.pi / 2), 'solid', C['clockFace'], caps=(False, True))
+    for i in range(12):
+        a = i * math.pi / 6
+        k.room.box(0.012, 0.025 if i % 3 else 0.045, 0.004, M @ T(math.sin(a) * 0.155, math.cos(a) * 0.155, 0.046, 0, 0, -a), 'solid', C['clockRim'], skip=('nz',))
+    k.room.box(0.016, 0.11, 0.006, M @ T(0, 0, 0.05, 0, 0, -2.1) @ T(0, 0.045, 0), 'solid', C['clockRim'], skip=('nz',))
+    k.room.box(0.011, 0.15, 0.006, M @ T(0, 0, 0.054, 0, 0, -0.5) @ T(0, 0.065, 0), 'solid', C['clockRim'], skip=('nz',))
 
 def mood_board(k, axis, u, y, w, h, region, v0=0.0):
     """a pinboard / mood board in an oak frame (its content is the page's procedural board: swatches, sketches, cards)"""
@@ -243,21 +387,22 @@ def locker(k, axis, u, w=0.9, h=1.9):
         for s in (-1, 1): k.room.box(0.22, 0.008, 0.004, k.on_wall(axis, u + s * 0.22, PT + h - 0.12 - i * 0.03, 0.502), 'solid', C['seam'], skip=('nz',))
 
 def credenza(k, axis, u, length, seed):
-    """a low dark credenza with a walnut top, a few books, a small vase and a small plant on it"""
+    """a low credenza (role 'credenza': dark, or themed) with a wooden top, a few books, a small vase and a plant"""
     PT, r = k.PT, random.Random(seed)
-    k.room.box(length, 0.62, 0.45, k.on_wall(axis, u, PT + 0.33, 0.24), 'solid', C['credenza'], skip=('ny', 'nz'))
-    k.room.box(length + 0.04, 0.04, 0.48, k.on_wall(axis, u, PT + 0.66, 0.24), 'walnut', skip=('nz',))
+    k.room.box(length, 0.62, 0.45, k.on_wall(axis, u, PT + 0.33, 0.24), k.role['credenza'], C['credenza'], skip=('ny', 'nz'))
+    k.room.box(length + 0.04, 0.04, 0.48, k.on_wall(axis, u, PT + 0.66, 0.24), k.role['credenzaTop'], skip=('nz',))
     n = max(2, round(length / 0.6))
     for i in range(1, n): k.room.box(0.008, 0.54, 0.004, k.on_wall(axis, u - length / 2 + length * i / n, PT + 0.33, 0.466), 'solid', C['seam'], skip=('nz',))
-    for i in range(3): k.room.box(0.3 - i * 0.02, 0.05, 0.22, k.on_wall(axis, u - length * 0.28, PT + 0.705 + i * 0.05, 0.22), 'solid', r.choice(BOOKS), skip=('ny',))
+    for i in range(3): k.room.box(0.3 - i * 0.02, 0.05, 0.22, k.on_wall(axis, u - length * 0.28, PT + 0.705 + i * 0.05, 0.22), 'solid', r.choice(BOOKS[:12]), skip=('ny',))
     k.room.cyl(0.06, 0.05, 0.24, 10, k.on_wall(axis, u + length * 0.05, PT + 0.8, 0.2), 'solid', C['vase'], caps=(False, True))
     small_plant(k, k.on_wall(axis, u + length * 0.3, PT + 0.68, 0.22), r.randint(1, 10 ** 6), scale=0.6)
 
 # ---------------------------------------------------------------- floor pieces
-def rug(k, x0, x1, z0, z1):
-    PT = k.PT
-    k.room.box(x1 - x0, 0.012, z1 - z0, T((x0 + x1) / 2, PT + 0.006, (z0 + z1) / 2), 'solid', C['rugBorder'], skip=('ny',))
-    k.room.box(x1 - x0 - 0.2, 0.01, z1 - z0 - 0.2, T((x0 + x1) / 2, PT + 0.017, (z0 + z1) / 2), 'rug', skip=('ny',), uvoff=(0.3, 0.7))
+def rug(k, x0, x1, z0, z1, y=None):
+    """a rug: a dark border and the tinted rug texture (dark grey in every area; the tint is themed)"""
+    y = k.PT if y is None else y
+    k.room.box(x1 - x0, 0.012, z1 - z0, T((x0 + x1) / 2, y + 0.006, (z0 + z1) / 2), 'solid', C['rugBorder'], skip=('ny',))
+    k.room.box(x1 - x0 - 0.2, 0.01, z1 - z0 - 0.2, T((x0 + x1) / 2, y + 0.017, (z0 + z1) / 2), 'rug', skip=('ny',), uvoff=(0.3, 0.7))
 
 def drawers(k, M, w, h, d, face):          # a drawer pedestal; face: the local side the drawers open to ('pz' or 'nx')
     k.room.box(w, h, d, M, 'solid', C['pedestal'], skip=('ny',))
@@ -265,10 +410,10 @@ def drawers(k, M, w, h, d, face):          # a drawer pedestal; face: the local 
     for i in range(n):
         y = -h / 2 + 0.02 + gap + fh / 2 + i * (fh + gap)
         if face == 'pz':
-            k.room.box(w - 0.03, fh, 0.016, M @ T(0, y, d / 2 + 0.008), 'walnut', skip=('nz',))
+            k.room.box(w - 0.03, fh, 0.016, M @ T(0, y, d / 2 + 0.008), k.role['drawer'], skip=('nz',))
             k.room.box(0.16, 0.014, 0.022, M @ T(0, y + fh * 0.28, d / 2 + 0.027), 'solid', C['handle'], skip=('nz',))
         else:
-            k.room.box(0.016, fh, d - 0.03, M @ T(-w / 2 - 0.008, y, 0), 'walnut', skip=('px',))
+            k.room.box(0.016, fh, d - 0.03, M @ T(-w / 2 - 0.008, y, 0), k.role['drawer'], skip=('px',))
             k.room.box(0.022, 0.014, 0.16, M @ T(-w / 2 - 0.027, y + fh * 0.28, 0), 'solid', C['handle'], skip=('px',))
 
 def desk_lamp(k, x, z):
@@ -303,10 +448,11 @@ def chair(k, x, z):                     # an ergonomic task chair facing the des
         k.room.box(0.035, 0.2, 0.035, M @ T(sx * 0.27, 0.56, 0.06), 'solid', C['metal'])
         k.room.box(0.075, 0.03, 0.27, M @ T(sx * 0.27, 0.675, 0.03), 'solid', '#2a2a2d')
 
-def desk(k, dk, top='walnut'):
-    """a desk at the spec's desk position (top 2.1 x 0.95, drawer pedestal, modesty panel; L return on the first desk
-    of a row), its lamp, its chair and the bake-only occluders of the real-time monitor and keyboard"""
-    x, z, PT, DY = dk['x'], dk['z'], k.PT, k.DESK_Y
+def desk(k, dk):
+    """a desk at the spec's desk position (top 2.1 x 0.95 in the room's 'deskTop' material, drawer pedestal, modesty
+    panel; L return on the first desk of a row), its lamp, its chair and the bake-only occluders of the real-time
+    monitor and keyboard"""
+    x, z, PT, DY, top = dk['x'], dk['z'], k.PT, k.DESK_Y, k.role['deskTop']
     k.room.box(2.1, 0.06, 0.95, T(x, DY, z), top)
     drawers(k, T(x - 0.74, PT + 0.35, z + 0.02), 0.46, 0.68, 0.82, 'pz')
     k.room.box(0.04, 0.7, 0.84, T(x + 0.98, PT + 0.35, z), 'solid', C['metal'], skip=('ny',))
@@ -343,6 +489,148 @@ def easel(k, pr, region):
     k.room.box(0.7, 0.55, 0.03, Bd, 'solid', C['canvas'])
     k.room.decal(0.64, 0.49, Bd @ T(0, 0, -0.017, math.pi), region)
 
+def frame_of(o, y0):
+    """the transform of a furniture item that faces local -z, turned by its yaw (layout.js), standing at height y0"""
+    return T(o['x'], y0, o['z'], o.get('yaw', 0))
+
+def cushion_rect(k, M, cw, cd, top):
+    """record a seat cushion's top as modelled (room frame: x/z extents and height) for the seat-bounds test"""
+    pts = [M @ Vector((sx * cw / 2, 0, sz * cd / 2)) for sx in (-1, 1) for sz in (-1, 1)]
+    k.cushions.append({'x0': round(min(p.x for p in pts), 4), 'x1': round(max(p.x for p in pts), 4), 'z0': round(min(p.z for p in pts), 4), 'z1': round(max(p.z for p in pts), 4), 'top': round(top, 4)})
+
+def sofa(k, o, SOFA, mat='upholstery'):
+    """a three-seat sofa from the layout's SOFA dimensions (the cushions are the seats people sit on)"""
+    F, L, arm, n = k.FLOOR, o['len'], SOFA['arm'], SOFA['cushions']
+    M = frame_of(o, 0)
+    k.room.rbox(L, 0.24, SOFA['depth'], 0.05, M @ T(0, F + 0.2, 0), mat, skip=('ny',))
+    cw = (L - 2 * arm) / n
+    for i in range(n):
+        lx, ch = -L / 2 + arm + cw * (i + 0.5), 0.15
+        C0 = M @ T(lx, SOFA['top'] - ch / 2, SOFA['cushionZ'])
+        k.room.rbox(cw - 0.03, ch, SOFA['cushionD'], 0.05, C0, mat, skip=('ny',))
+        cushion_rect(k, C0, cw - 0.03, SOFA['cushionD'], SOFA['top'])
+    k.room.rbox(L - 0.3, 0.5, 0.2, 0.06, M @ T(0, F + 0.58, 0.34), mat, skip=('ny',))
+    for sx in (-1, 1): k.room.rbox(arm, 0.44, SOFA['depth'], 0.05, M @ T(sx * (L / 2 - arm / 2), F + 0.42, 0), mat, skip=('ny',))
+    for lx, lz in ((-L / 2 + 0.1, -0.36), (L / 2 - 0.1, -0.36), (-L / 2 + 0.1, 0.36), (L / 2 - 0.1, 0.36)):
+        k.room.cyl(0.025, 0.02, 0.1, 6, M @ T(lx, F + 0.05, lz), 'solid', C['metal'], caps=(False, False))
+
+def armchair(k, o, A, col=None):
+    """a leather armchair from the layout's ARMCHAIR dimensions (its cushion is a seat in the lounge)"""
+    F, col = k.FLOOR, col or C['armchair']
+    M = frame_of(o, 0)
+    k.room.rbox(A['w'], 0.24, 0.85, 0.05, M @ T(0, F + 0.2, 0), 'solid', col, skip=('ny',))
+    ch = 0.14; C0 = M @ T(0, A['top'] - ch / 2, A['cushionZ'])
+    k.room.rbox(A['cushionW'], ch, A['cushionD'], 0.05, C0, 'solid', col, skip=('ny',))
+    cushion_rect(k, C0, A['cushionW'], A['cushionD'], A['top'])
+    k.room.rbox(A['w'], 0.55, 0.18, 0.06, M @ T(0, F + 0.55, 0.34), 'solid', col, skip=('ny',))
+    for sx in (-1, 1): k.room.rbox(0.14, 0.42, 0.8, 0.05, M @ T(sx * 0.39, F + 0.42, 0.02), 'solid', col, skip=('ny',))
+    for lx, lz in ((-0.36, -0.34), (0.36, -0.34), (-0.36, 0.34), (0.36, 0.34)):
+        k.room.cyl(0.025, 0.02, 0.1, 6, M @ T(lx, F + 0.05, lz), 'solid', C['metal'], caps=(False, False))
+
+def coffee_table(k, t):
+    """the lounge's coffee table: an oak top on four legs, two books and a small plant"""
+    F = k.FLOOR
+    k.room.rbox(t['w'], 0.05, t['d'], 0.02, T(t['x'], F + 0.42, t['z']), 'oak')
+    for sx, sz in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+        k.room.box(0.04, 0.4, 0.04, T(t['x'] + sx * (t['w'] / 2 - 0.08), F + 0.2, t['z'] + sz * (t['d'] / 2 - 0.08)), 'solid', C['metal'], skip=('ny', 'py'))
+    k.room.box(0.34, 0.05, 0.26, T(t['x'] - 0.3, F + 0.47, t['z'] + 0.1, 0.3), 'solid', BOOKS[4], skip=('ny',))
+    k.room.box(0.3, 0.04, 0.22, T(t['x'] - 0.3, F + 0.515, t['z'] + 0.1, 0.2), 'solid', BOOKS[7], skip=('ny',))
+    small_plant(k, T(t['x'] + 0.35, F + 0.445, t['z'] - 0.15), 71, scale=0.55)
+
+def side_table(k, x, z):
+    """a small round side table with a book (the Research reading nook)"""
+    F = k.FLOOR
+    k.room.cyl(0.24, 0.24, 0.03, 16, T(x, F + 0.55, z), 'oak')
+    k.room.cyl(0.03, 0.03, 0.54, 8, T(x, F + 0.27, z), 'solid', C['metal'], caps=(False, False))
+    k.room.cyl(0.16, 0.17, 0.02, 14, T(x, F + 0.01, z), 'solid', C['metal'], caps=(False, True))
+    k.room.box(0.22, 0.05, 0.16, T(x, F + 0.59, z, 0.4), 'solid', BOOKS[1], skip=('ny',))
+
+def floor_lamp(k, x, z, tx, tz, energy=90.0):
+    """an arc floor lamp: base at (x, z), its shade reaching towards (tx, tz); its bulb is unlit (real-time on the page)
+    and a warm spot light in the evening bake"""
+    F, yaw = k.FLOOR, math.atan2(-(tx - x), -(tz - z))
+    O = T(x, 0, z, yaw)
+    k.room.cyl(0.17, 0.19, 0.04, 16, T(x, F + 0.02, z), 'solid', C['metal'], caps=(False, True))
+    k.room.cyl(0.02, 0.02, 1.7, 8, T(x, F + 0.87, z), 'solid', C['metal'], caps=(False, False))
+    k.room.box(0.03, 0.03, 0.75, O @ T(0, F + 1.78, -0.33, 0, 0.25), 'solid', C['metal'])
+    k.room.cyl(0.2, 0.035, 0.22, 16, O @ T(0, F + 1.62, -0.68), 'solid', C['shade'], caps=(False, True))
+    k.room.cyl(0.2, 0.035, 0.22, 16, O @ T(0, F + 1.62, -0.68), 'solid', '#e8dccb', caps=(False, False), outer=False)   # the shade's inside
+    bulb = O @ T(0, F + 1.55, -0.68)
+    k.em.sphere(0.06, bulb, 'led', '#ffffff')
+    spot(k, tuple(bulb.to_translation()), (0, -1, 0), energy, size=130, blend=0.7)
+
+def bench(k, o):
+    """an atrium bench: three oak slats on two metal legs (layout.js prop 'bench')"""
+    F, M = k.FLOOR, frame_of(o, 0)
+    for i in range(3): k.room.box(1.7, 0.05, 0.13, M @ T(0, F + 0.45, -0.15 + i * 0.15), 'oak')
+    for sx in (-0.68, 0.68): k.room.box(0.05, 0.42, 0.4, M @ T(sx, F + 0.22, 0), 'solid', C['metal'], skip=('ny',))
+    k.room.box(1.36, 0.035, 0.035, M @ T(0, F + 0.12, 0), 'solid', C['metal'])
+
+def printer(k, o):
+    """the office printer on its cabinet, with a scanner unit, an output tray with paper and a control panel"""
+    F, M = k.FLOOR, frame_of(o, 0)
+    k.room.rbox(0.9, 0.62, 0.62, 0.03, M @ T(0, F + 0.33, 0), 'solid', C['printer'], skip=('ny',))
+    k.room.rbox(0.86, 0.34, 0.6, 0.03, M @ T(0, F + 0.81, 0.01), 'solid', C['printerTop'], skip=('ny',))
+    k.room.box(0.62, 0.03, 0.42, M @ T(0, F + 1.0, 0.02), 'solid', C['printerLid'], skip=('ny',))
+    k.room.box(0.5, 0.02, 0.26, M @ T(0.04, F + 0.67, -0.2), 'solid', C['paper'], skip=('ny',))
+    k.room.box(0.2, 0.09, 0.012, M @ T(0.25, F + 0.9, -0.31, 0, -0.4), 'solid', C['metal'])
+    for i in range(2): k.room.box(0.8, 0.006, 0.004, M @ T(0, F + 0.22 + i * 0.2, -0.312), 'solid', C['seam'], skip=('pz',))
+
+def cooler(k, o):
+    """a water cooler with its bottle, tap recess, drip tray and a cup bin beside it"""
+    F, M = k.FLOOR, frame_of(o, 0)
+    k.room.rbox(0.38, 0.95, 0.38, 0.03, M @ T(0, F + 0.475, 0), 'solid', C['cooler'], skip=('ny',))
+    k.room.box(0.2, 0.12, 0.04, M @ T(0, F + 0.78, -0.2), 'solid', C['metal'], skip=('pz',))
+    k.room.box(0.24, 0.02, 0.12, M @ T(0, F + 0.5, -0.19), 'solid', C['metal'])
+    k.room.cyl(0.15, 0.15, 0.36, 14, M @ T(0, F + 1.16, 0), 'solid', C['water'], caps=(False, False))
+    k.room.cyl(0.06, 0.15, 0.08, 14, M @ T(0, F + 1.38, 0), 'solid', C['water'], caps=(False, True))
+    k.room.cyl(0.05, 0.05, 0.03, 10, M @ T(0.32, F + 0.02, -0.05), 'solid', C['box'], caps=(False, True))
+    k.room.cyl(0.045, 0.035, 0.22, 10, M @ T(0.32, F + 0.13, -0.05), 'solid', C['label'], caps=(False, True))
+
+# ---------------------------------------------------------------- structure: the slab, the core plinth, the closet
+def slab(k):
+    """the floor slab's visible sides (front and right, down to the ground) and its foot (themed 'slab')"""
+    W, D, F = k.W, k.D, k.FLOOR
+    k.room.face([(0, 0.05, D), (W, 0.05, D), (W, F, D), (0, F, D)], 'slab')
+    k.room.face([(W, 0.05, D), (W, 0.05, 0), (W, F, 0), (W, F, D)], 'slab')
+    e = 0.03                                                    # the foot: 3 cm proud of the slab, 5 cm high
+    k.room.face([(-e, 0, D + e), (W + e, 0, D + e), (W + e, 0.05, D + e), (-e, 0.05, D + e)], 'slab')
+    k.room.face([(W + e, 0, D + e), (W + e, 0, -e), (W + e, 0.05, -e), (W + e, 0.05, D + e)], 'slab')
+    k.room.face([(-e, 0.05, D + e), (W + e, 0.05, D + e), (W, 0.05, D), (0, 0.05, D)], 'slab')
+    k.room.face([(W, 0.05, D), (W + e, 0.05, D + e), (W + e, 0.05, -e), (W, 0.05, 0)], 'slab')
+
+def concrete_floor(k, rects):
+    """the atrium's polished concrete floor (themed colour times the page's canvas concrete) on the given rectangles"""
+    F = k.FLOOR
+    for r in rects: k.room.face([(r['x0'], F, r['z1']), (r['x1'], F, r['z1']), (r['x1'], F, r['z0']), (r['x0'], F, r['z0'])], 'concrete')
+
+def plinth(k, cx, cz, R):
+    """the memory core's octagonal plinth, its pedestal, the plaza disc and inlay ring, and an unlit LED ring on top
+    (the crystal, its torus and its glow stay real-time on the page)"""
+    F = k.FLOOR
+    k.room.cyl(R - 0.27, R - 0.35, 0.12, 8, T(cx, F + 0.38, cz, math.pi / 8), 'plinth', caps=(False, True))
+    k.room.cyl(R, R - 0.1, 0.32, 8, T(cx, F + 0.16, cz, math.pi / 8), 'plinth_edge', caps=(False, False))
+    k.room.ring(R - 0.27, R - 0.1, 8, T(cx, F + 0.32, cz, math.pi / 8), 'plinth_edge')    # the top between the edge and the pedestal
+    k.room.cyl(0.6, 0.46, 0.5, 6, T(cx, F + 0.66, cz), 'plinth_edge', caps=(False, True))
+    k.room.cyl(R + 0.75, R + 0.75, 0.004, 48, T(cx, F + 0.002, cz), 'plaza', caps=(False, True))
+    k.room.ring(R + 0.2, R + 0.27, 48, T(cx, F + 0.0045, cz), 'solid', C['inlay'])
+    k.em.ring(R - 0.16, R - 0.12, 8, T(cx, F + 0.323, cz, math.pi / 8), 'led', '#ffffff')
+    k.leds.append({'a': [round(cx, 4), round(F + 0.323, 4), round(cz, 4)], 'b': [round(cx, 4), round(F + 0.323, 4), round(cz, 4)], 'emit': [0, 1, 0], 'kind': 'ring'})
+
+def closet(k, c, wall):
+    """the services closet: its dark floor, the low partition (themed), the cable tray on its hangers, and a cool
+    light along the tray in the evening bake (its LED strip, the cabinets' status lights and the cabinets themselves
+    stay real-time on the page)"""
+    F, WT = k.FLOOR, k.WT
+    w, d, cxm, czm = c['x1'] - c['x0'], c['z1'] - c['z0'], (c['x0'] + c['x1']) / 2, (c['z0'] + c['z1']) / 2
+    k.room.box(w - 0.1, 0.012, d - WT - 0.05, T(cxm + 0.05, F + 0.006, czm + WT / 2), 'closet_floor', skip=('ny', 'nx', 'nz'))
+    wall_run(k, wall, 'closet_wall', F)
+    tx = c['x0'] + WT + 0.45 - 0.05
+    k.room.box(0.3, 0.06, d - WT - 0.3, T(tx, F + 2.35, czm + WT / 2), 'solid', C['metal'])
+    for i in range(4): k.room.box(0.025, 0.4, 0.025, T(tx, F + 2.55, c['z0'] + WT + 0.3 + i * (d - WT - 0.6) / 3), 'solid', C['metal'], skip=('ny', 'py'))
+    a, b = (tx + 0.17, F + 2.31, c['z0'] + WT + 0.2), (tx + 0.17, F + 2.31, c['z1'] - 0.2)
+    k.lights.append({'type': 'AREA', 'a': list(a), 'b': list(b), 'aim': [0.3, -1, 0], 'energy': 9.0 * (b[2] - a[2]), 'colour': '#cfe2ff'})
+
 # ---------------------------------------------------------------- plants
 LEAF = [(0, 0), (0.28, 0.12), (0.42, 0.38), (0.34, 0.55), (0.46, 0.78), (0.3, 0.96), (0, 1.0), (-0.3, 0.96), (-0.46, 0.78), (-0.34, 0.55), (-0.42, 0.38), (-0.28, 0.12)]
 def leaf(k, base, az, elev, length, width, roll, col):
@@ -355,9 +643,9 @@ def leaf(k, base, az, elev, length, width, roll, col):
         pts.append(tuple(Vector(base) + d * (sz * length) + side * (sx * width) + up * sag))
     k.room.face(list(reversed(pts)), 'leaf', col)           # wound so the face normal is the leaf's upper side
 
-def fig(k, x, z, seed):
+def fig(k, x, z, seed, y0=None):
     """a fiddle-leaf fig in a tall dark pot (layout.js plant 'tall')"""
-    r, PT = random.Random(seed), k.PT
+    r, PT = random.Random(seed), (k.PT if y0 is None else y0)
     k.room.cyl(0.26, 0.2, 0.5, 18, T(x, PT + 0.25, z), 'solid', C['pot'], caps=(False, False))
     k.room.cyl(0.265, 0.265, 0.03, 18, T(x, PT + 0.5, z), 'solid', C['potRim'], caps=(False, True))
     k.room.cyl(0.24, 0.24, 0.01, 14, T(x, PT + 0.47, z), 'solid', C['soil'], caps=(False, True))
@@ -384,16 +672,18 @@ def small_plant(k, M, seed, scale=1.0):
         az = i * 2.39996; elev = 0.9 - (i % 4) * 0.22 + (r.random() - 0.5) * 0.2
         leaf(k, (o.x + math.cos(az) * 0.03 * s, o.y + (0.33 + (i % 3) * 0.04) * s, o.z - math.sin(az) * 0.03 * s), az, elev, (0.2 + r.random() * 0.06) * s, 0.12 * s, (r.random() - 0.5) * 0.5, LEAVES[(i + 1) % len(LEAVES)])
 
-def plants(k, seed0=31):
-    """every plant the layout puts in the room (layout.js plants: 'tall' -> fig, otherwise a small pot plant)"""
+def plants(k, seed0=31, y0=None):
+    """every plant the layout puts in the area (layout.js plants: 'tall' -> fig, otherwise a small pot plant)"""
+    y0 = k.PT if y0 is None else y0
     for i, p in enumerate(k.S['plants']):
-        if p['kind'] == 'tall': fig(k, p['x'], p['z'], seed0 + i)
-        else: small_plant(k, T(p['x'], k.PT, p['z']), seed0 + i)
+        if p['kind'] == 'tall': fig(k, p['x'], p['z'], seed0 + i, y0)
+        else: small_plant(k, T(p['x'], y0, p['z']), seed0 + i)
 
 # ---------------------------------------------------------------- Blender side: textures, materials, objects
 def configure(look):
-    """the floor's tile size and colour come from the look, because the page's procedural rooms use the same floor"""
+    """the floor's tile size and colour, and the fabric's and rug's averages, come from the look (bakedlook.js)"""
     TEX['floor'][1] = look['floor']['tile']; TEX['floor'][2] = look['floor']['colour']
+    for name, t in look.get('textures', {}).items(): TEX[name][2] = t['mean']
 
 def load_textures(tex_dir):
     """the shared photo textures at 512 px, shifted to their target colours; packed, so the exporter writes them once"""
@@ -419,27 +709,37 @@ def make_material(name, teximg, colour=None):
     bsdf.inputs['Roughness'].default_value = 0.85
     if 'Specular IOR Level' in bsdf.inputs: bsdf.inputs['Specular IOR Level'].default_value = 0.25
     m.use_backface_culling = name != 'leaf'
+    t = tex_of(name)
     if name in ('solid', 'leaf'):
         vc = nt.nodes.new('ShaderNodeVertexColor'); vc.layer_name = 'Col'
         nt.links.new(vc.outputs['Color'], bsdf.inputs['Base Color'])
     elif name == 'led':
         bsdf.inputs['Base Color'].default_value = (1, 0.85, 0.65, 1)
         bsdf.inputs['Emission Color'].default_value = (1, 0.72, 0.42, 1); bsdf.inputs['Emission Strength'].default_value = 0.0
-    elif name in teximg:
-        tex = nt.nodes.new('ShaderNodeTexImage'); tex.image = teximg[name]
+    elif t:                   # a shared texture, times a tint (white unless themed) for the bake's bounce light
+        tex = nt.nodes.new('ShaderNodeTexImage'); tex.image = teximg[t]; tex.name = 'tex'
         uvn = nt.nodes.new('ShaderNodeUVMap'); uvn.uv_map = 'UVMap'
-        nt.links.new(uvn.outputs['UV'], tex.inputs['Vector']); nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
-    else:                     # flat colour: decal (bake stand-in) and the themed wall/cap/skirting (set per bake mode)
+        mul = nt.nodes.new('ShaderNodeVectorMath'); mul.operation = 'MULTIPLY'; mul.name = 'tint'; mul.inputs[1].default_value = (1, 1, 1)
+        nt.links.new(uvn.outputs['UV'], tex.inputs['Vector']); nt.links.new(tex.outputs['Color'], mul.inputs[0]); nt.links.new(mul.outputs['Vector'], bsdf.inputs['Base Color'])
+    else:                     # flat colour: decal and concrete (bake stand-ins) and the themed colours (set per bake mode)
         bsdf.inputs['Base Color'].default_value = (*(colour or lin('#9a958d')), 1)
     return m
 
 def set_colour(m, hexcol):
     m.node_tree.nodes.get('Principled BSDF').inputs['Base Color'].default_value = (*lin(hexcol), 1)
+def set_tint(m, rgb): m.node_tree.nodes['tint'].inputs[1].default_value = tuple(rgb)
+def set_image(m, img): m.node_tree.nodes['tex'].image = img
+def untint(m):
+    """before export: the texture straight into the base colour (the page applies the tints itself)"""
+    nt = m.node_tree
+    if 'tint' not in nt.nodes: return
+    nt.links.new(nt.nodes['tex'].outputs['Color'], nt.nodes.get('Principled BSDF').inputs['Base Color']); nt.nodes.remove(nt.nodes['tint'])
 
 def make_object(scene, name, mb, mats, lightmap):
     me = bpy.data.meshes.new(name)
     me.from_pydata([to_bl(p) for p in mb.v], [], mb.f); me.update()
-    used = sorted(set(mb.m), key=lambda n: list(mats.keys()).index(n))
+    order = list(mats.keys())
+    used = sorted(set(mb.m), key=lambda n: order.index(n))
     for n in used: me.materials.append(mats[n])
     me.polygons.foreach_set('material_index', [used.index(n) for n in mb.m])
     uv = me.uv_layers.new(name='UVMap'); flat = []

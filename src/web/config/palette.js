@@ -12,7 +12,7 @@ export const PALETTE = {
     slabEdge: '#d8d0c3', slabFoot: '#c4baab',
     tile: '#dcd6cd', wood: '#ffffff',      // multiplied by the oak floor (R3a: one wood, the texture's own tone) / concrete textures
     wall: '#fcf9f3', wallTint: 0.42, wallCap: '#cdc2b2', baseboard: '#e4dacb',
-    rug: '#6b6762', rugBorder: '#55524e', loungeRug: '#8b7f73', loungeRugBorder: '#706559',
+    rug: '#6b6762', rugBorder: '#55524e', loungeRug: '#6b6762', loungeRugBorder: '#55524e',   // R3b: dark grey rugs everywhere (owner)
     shelf: '#f1ebe1', shelfBack: '#e7e0d5', shelfObject: '#cbbfae', label: '#f6f3ec',
     potSmall: '#d9cdbb', leafSmall: '#7aa872', leafTrail: '#5f9a5c',
     frame: '#3a3633', mat: '#f8f5ef', clockRim: '#2f3034', clockFace: '#fbf9f5',
@@ -39,7 +39,7 @@ export const PALETTE = {
     slabEdge: '#1d1d20', slabFoot: '#151517',
     tile: '#5a5753', wood: '#ffffff',      // tile: polished dark concrete (R2); wood: the shared oak as is (R3a)
     wall: '#3c3d42', wallTint: 0.08, wallCap: '#111113', baseboard: '#232427',
-    rug: '#4a4a4e', rugBorder: '#36363a', loungeRug: '#403d3a', loungeRugBorder: '#2f2d2b',
+    rug: '#4a4a4e', rugBorder: '#36363a', loungeRug: '#4a4a4e', loungeRugBorder: '#36363a',
     shelf: '#26262a', shelfBack: '#303034', shelfObject: '#3b3a37', label: '#d9d4ca',
     potSmall: '#4b4844', leafSmall: '#5f9a63', leafTrail: '#4f8a56',
     frame: '#141414', mat: '#e8e2d8', clockRim: '#1b1b1e', clockFace: '#e3ddd2',

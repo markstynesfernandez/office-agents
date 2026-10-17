@@ -1,26 +1,65 @@
 {
-  "version": 2,
-  "files": {
-    "gltf": "office.gltf"
-  },
+  "version": 3,
   "look": {
     "floor": {
       "tile": 2.2,
       "colour": "#a47f58",
       "texture": "textures/floor.jpg"
     },
+    "textures": {
+      "fabric": {
+        "mean": "#c8c3ba"
+      },
+      "rug": {
+        "mean": "#a9a6a1"
+      }
+    },
     "themed": {
       "day": {
         "cap": "#cdc2b2",
         "skirting": "#e4dacb",
+        "wall_research": "#d7e0e7",
         "wall_design": "#e8dbe7",
-        "wall_office": "#dee9d7"
+        "wall_office": "#dee9d7",
+        "wall_atrium": "#fcf9f3",
+        "concrete": "#dcd6cd",
+        "slab": "#d8d0c3",
+        "plinth": "#ece6dd",
+        "plinth_edge": "#cfc5b7",
+        "plaza": "#cdc6bb",
+        "closet_wall": "#dedad3",
+        "closet_floor": "#bdbab5",
+        "design_backing": "#e3dbce",
+        "design_credenza": "#e8e1d6",
+        "fabric": "#34353a",
+        "upholstery": "#d8cec0",
+        "rug": "#6b6762"
       },
       "evening": {
         "cap": "#111113",
         "skirting": "#232427",
+        "wall_research": "#47505b",
         "wall_design": "#534c5b",
-        "wall_office": "#4d5650"
+        "wall_office": "#4d5650",
+        "wall_atrium": "#3c3d42",
+        "concrete": "#5a5753",
+        "slab": "#1d1d20",
+        "plinth": "#4a4846",
+        "plinth_edge": "#2c2c2f",
+        "plaza": "#43413e",
+        "closet_wall": "#2a2b2f",
+        "closet_floor": "#222225",
+        "design_backing": "#141416",
+        "design_credenza": "#2e2f33",
+        "fabric": "#34353a",
+        "upholstery": "#5b5a61",
+        "rug": "#4a4a4e"
+      }
+    },
+    "themedTex": {
+      "design_wood": {
+        "day": "oak",
+        "evening": "walnut"
       }
     },
     "atlas": {
@@ -76,8 +115,455 @@
       ]
     }
   },
-  "rooms": {
+  "units": {
+    "research": {
+      "gltf": "research.gltf",
+      "rooms": [
+        "research"
+      ],
+      "lightmaps": {
+        "day": {
+          "file": "lightmap-research-day.webp",
+          "scale": 1.039252,
+          "coverage": 0.8948,
+          "p995": 0.95611,
+          "max": 1.1161
+        },
+        "evening": {
+          "file": "lightmap-research-evening.webp",
+          "scale": 10.254364,
+          "coverage": 0.8948,
+          "p995": 9.43402,
+          "max": 52.65
+        }
+      },
+      "materials": [
+        "solid",
+        "leaf",
+        "oak",
+        "walnut",
+        "floor",
+        "fabric",
+        "rug",
+        "decal",
+        "cap",
+        "skirting",
+        "wall_research",
+        "led"
+      ],
+      "atlas": {
+        "size": 2432,
+        "density": 105.65,
+        "surface": 327.05,
+        "uvCoverage": 0.6172
+      },
+      "build": {
+        "at": "2026-10-17T11:09:16.701Z",
+        "blender": "Blender 5.2.1 LTS",
+        "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
+        "samples": 1024,
+        "blenderSeconds": 88.1,
+        "seconds": 91,
+        "phases": {
+          "model": 0.05,
+          "textures": 0.34,
+          "uv": 11.03,
+          "bake_day": 19.51,
+          "bake_evening": 50.7,
+          "export": 0.64
+        }
+      }
+    },
     "design": {
+      "gltf": "design.gltf",
+      "rooms": [
+        "design"
+      ],
+      "lightmaps": {
+        "day": {
+          "file": "lightmap-design-day.webp",
+          "scale": 1.051853,
+          "coverage": 0.8793,
+          "p995": 0.9677,
+          "max": 1.1262
+        },
+        "evening": {
+          "file": "lightmap-design-evening.webp",
+          "scale": 10.193881,
+          "coverage": 0.8793,
+          "p995": 9.37837,
+          "max": 46.7531
+        }
+      },
+      "materials": [
+        "solid",
+        "leaf",
+        "oak",
+        "floor",
+        "fabric",
+        "rug",
+        "design_wood",
+        "decal",
+        "cap",
+        "design_backing",
+        "design_credenza",
+        "skirting",
+        "wall_design",
+        "led"
+      ],
+      "atlas": {
+        "size": 1984,
+        "density": 99.51,
+        "surface": 232.59,
+        "uvCoverage": 0.5852
+      },
+      "build": {
+        "at": "2026-10-17T11:09:59.892Z",
+        "blender": "Blender 5.2.1 LTS",
+        "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
+        "samples": 1024,
+        "blenderSeconds": 41.7,
+        "seconds": 43.2,
+        "phases": {
+          "model": 0.03,
+          "textures": 0.44,
+          "uv": 9.55,
+          "bake_day": 11.53,
+          "bake_evening": 15.06,
+          "export": 0.52
+        }
+      }
+    },
+    "office": {
+      "gltf": "office.gltf",
+      "rooms": [
+        "office"
+      ],
+      "lightmaps": {
+        "day": {
+          "file": "lightmap-office-day.webp",
+          "scale": 1.051872,
+          "coverage": 0.9146,
+          "p995": 0.96772,
+          "max": 1.1634
+        },
+        "evening": {
+          "file": "lightmap-office-evening.webp",
+          "scale": 4.154829,
+          "coverage": 0.9146,
+          "p995": 3.82244,
+          "max": 51.1939
+        }
+      },
+      "materials": [
+        "solid",
+        "leaf",
+        "oak",
+        "walnut",
+        "floor",
+        "fabric",
+        "rug",
+        "decal",
+        "cap",
+        "skirting",
+        "wall_office",
+        "led"
+      ],
+      "atlas": {
+        "size": 2176,
+        "density": 103.12,
+        "surface": 311.85,
+        "uvCoverage": 0.7004
+      },
+      "build": {
+        "at": "2026-10-17T11:10:44.824Z",
+        "blender": "Blender 5.2.1 LTS",
+        "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
+        "samples": 1024,
+        "blenderSeconds": 43,
+        "seconds": 44.9,
+        "phases": {
+          "model": 0.04,
+          "textures": 0.33,
+          "uv": 7.45,
+          "bake_day": 12.74,
+          "bake_evening": 17.07,
+          "export": 0.5
+        }
+      }
+    },
+    "atrium": {
+      "gltf": "atrium.gltf",
+      "rooms": [
+        "atrium",
+        "lounge"
+      ],
+      "lightmaps": {
+        "day": {
+          "file": "lightmap-atrium-day.webp",
+          "scale": 1.150175,
+          "coverage": 0.8131,
+          "p995": 1.05816,
+          "max": 1.389
+        },
+        "evening": {
+          "file": "lightmap-atrium-evening.webp",
+          "scale": 0.80985,
+          "coverage": 0.8131,
+          "p995": 0.74506,
+          "max": 46.8117
+        }
+      },
+      "materials": [
+        "solid",
+        "leaf",
+        "oak",
+        "floor",
+        "upholstery",
+        "rug",
+        "decal",
+        "concrete",
+        "cap",
+        "closet_floor",
+        "closet_wall",
+        "plaza",
+        "plinth",
+        "plinth_edge",
+        "skirting",
+        "slab",
+        "wall_atrium",
+        "led"
+      ],
+      "atlas": {
+        "size": 3008,
+        "density": 105.96,
+        "surface": 537.58,
+        "uvCoverage": 0.667
+      },
+      "build": {
+        "at": "2026-10-17T11:12:07.477Z",
+        "blender": "Blender 5.2.1 LTS",
+        "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
+        "samples": 1024,
+        "blenderSeconds": 79.4,
+        "seconds": 82.7,
+        "phases": {
+          "model": 0.06,
+          "textures": 0.35,
+          "uv": 11.5,
+          "bake_day": 34.32,
+          "bake_evening": 25.46,
+          "export": 0.63
+        }
+      }
+    }
+  },
+  "rooms": {
+    "research": {
+      "unit": "research",
+      "spec": {
+        "key": "research",
+        "kind": "research",
+        "w": 10.9,
+        "d": 5.2,
+        "floor": 0.46,
+        "wallH": 2.7,
+        "wallT": 0.18,
+        "desks": [
+          {
+            "x": 4.45,
+            "z": 2.4,
+            "lshape": true,
+            "chair": {
+              "x": 4.45,
+              "z": 3.38
+            }
+          },
+          {
+            "x": 8.25,
+            "z": 2.4,
+            "lshape": false,
+            "chair": {
+              "x": 8.25,
+              "z": 3.38
+            }
+          }
+        ],
+        "plants": [
+          {
+            "x": 10.25,
+            "z": 0.75,
+            "kind": "tall"
+          },
+          {
+            "x": 0.75,
+            "z": 4.5,
+            "kind": "tall"
+          }
+        ],
+        "props": [],
+        "walls": [
+          {
+            "axis": "x",
+            "at": 0,
+            "from": 0,
+            "to": 5.2,
+            "h": 2.7
+          },
+          {
+            "axis": "z",
+            "at": 0,
+            "from": 0,
+            "to": 10.9,
+            "h": 2.7
+          }
+        ],
+        "openFront": true,
+        "openRight": true
+      },
+      "node": "room_research",
+      "leds": "leds_research",
+      "strips": [
+        {
+          "a": [
+            0.23,
+            0.492,
+            0.225
+          ],
+          "b": [
+            10.85,
+            0.492,
+            0.225
+          ],
+          "emit": [
+            0,
+            0.9439,
+            -0.3304
+          ],
+          "kind": "cove"
+        },
+        {
+          "a": [
+            0.225,
+            0.492,
+            0.23
+          ],
+          "b": [
+            0.225,
+            0.492,
+            5.15
+          ],
+          "emit": [
+            -0.3304,
+            0.9439,
+            0
+          ],
+          "kind": "cove"
+        },
+        {
+          "a": [
+            0.39,
+            1.408,
+            0.53
+          ],
+          "b": [
+            9.66,
+            1.408,
+            0.53
+          ],
+          "emit": [
+            0,
+            -0.9578,
+            -0.2873
+          ],
+          "kind": "case"
+        },
+        {
+          "a": [
+            0.39,
+            1.842,
+            0.53
+          ],
+          "b": [
+            9.66,
+            1.842,
+            0.53
+          ],
+          "emit": [
+            0,
+            -0.9578,
+            -0.2873
+          ],
+          "kind": "case"
+        },
+        {
+          "a": [
+            0.39,
+            2.276,
+            0.53
+          ],
+          "b": [
+            9.66,
+            2.276,
+            0.53
+          ],
+          "emit": [
+            0,
+            -0.9578,
+            -0.2873
+          ],
+          "kind": "case"
+        },
+        {
+          "a": [
+            0.39,
+            2.71,
+            0.53
+          ],
+          "b": [
+            9.66,
+            2.71,
+            0.53
+          ],
+          "emit": [
+            0,
+            -0.9578,
+            -0.2873
+          ],
+          "kind": "case"
+        },
+        {
+          "a": [
+            0.415,
+            2.004,
+            0.79
+          ],
+          "b": [
+            0.415,
+            2.004,
+            1.91
+          ],
+          "emit": [
+            0.4104,
+            -0.9119,
+            0
+          ],
+          "kind": "shelf"
+        }
+      ],
+      "cushions": [
+        {
+          "x0": 0.8682,
+          "x1": 1.7248,
+          "z0": 2.3401,
+          "z1": 3.1967,
+          "top": 0.91
+        }
+      ],
+      "triangles": 8438
+    },
+    "design": {
+      "unit": "design",
       "spec": {
         "key": "design",
         "kind": "design",
@@ -242,6 +728,7 @@
       "triangles": 4032
     },
     "office": {
+      "unit": "office",
       "spec": {
         "key": "office",
         "kind": "office",
@@ -422,66 +909,541 @@
         }
       ],
       "triangles": 5916
-    }
-  },
-  "lightmaps": {
-    "day": {
-      "file": "lightmap-day.webp",
-      "scale": 1.051857,
-      "coverage": 0.8899,
-      "p995": 0.96771,
-      "max": 1.1797
     },
-    "evening": {
-      "file": "lightmap-evening.webp",
-      "scale": 7.926386,
-      "coverage": 0.8899,
-      "p995": 7.29227,
-      "max": 52.0965
+    "lounge": {
+      "unit": "atrium",
+      "spec": {
+        "key": "lounge",
+        "kind": "lounge",
+        "w": 9.7,
+        "d": 8.7,
+        "floor": 0.46,
+        "sofa": {
+          "len": 3.3,
+          "depth": 0.92,
+          "arm": 0.17,
+          "cushions": 3,
+          "cushionD": 0.68,
+          "cushionZ": -0.06,
+          "top": 0.915
+        },
+        "armchair": {
+          "w": 0.9,
+          "cushionW": 0.66,
+          "cushionD": 0.66,
+          "cushionZ": -0.05,
+          "top": 0.91
+        },
+        "furniture": {
+          "sofaA": {
+            "x": 5.15,
+            "z": 1.8,
+            "yaw": 3.1416,
+            "len": 3.3
+          },
+          "sofaB": {
+            "x": 2.3,
+            "z": 4.65,
+            "yaw": -1.5708,
+            "len": 3.3
+          },
+          "chair1": {
+            "x": 7.6,
+            "z": 4.9,
+            "yaw": 1.5708
+          },
+          "chair2": {
+            "x": 5.4,
+            "z": 7.1,
+            "yaw": 0
+          },
+          "table": {
+            "x": 5.2,
+            "z": 4.7,
+            "w": 1.5,
+            "d": 1.1
+          },
+          "lamp": {
+            "x": 2.1,
+            "z": 1.6
+          },
+          "rug": {
+            "x0": 1.45,
+            "x1": 8.25,
+            "z0": 0.95,
+            "z1": 7.75
+          }
+        },
+        "seats": [
+          {
+            "x": 6.1367,
+            "z": 1.76,
+            "yaw": 3.1416,
+            "cushion": {
+              "x0": 5.6583,
+              "x1": 6.615,
+              "z0": 1.52,
+              "z1": 2.2,
+              "top": 0.915
+            }
+          },
+          {
+            "x": 5.15,
+            "z": 1.76,
+            "yaw": 3.1416,
+            "cushion": {
+              "x0": 4.6717,
+              "x1": 5.6283,
+              "z0": 1.52,
+              "z1": 2.2,
+              "top": 0.915
+            }
+          },
+          {
+            "x": 4.1633,
+            "z": 1.76,
+            "yaw": 3.1416,
+            "cushion": {
+              "x0": 3.685,
+              "x1": 4.6417,
+              "z0": 1.52,
+              "z1": 2.2,
+              "top": 0.915
+            }
+          },
+          {
+            "x": 2.26,
+            "z": 3.6633,
+            "yaw": -1.5708,
+            "cushion": {
+              "x0": 2.02,
+              "x1": 2.7,
+              "z0": 3.185,
+              "z1": 4.1417,
+              "top": 0.915
+            }
+          },
+          {
+            "x": 2.26,
+            "z": 4.65,
+            "yaw": -1.5708,
+            "cushion": {
+              "x0": 2.02,
+              "x1": 2.7,
+              "z0": 4.1717,
+              "z1": 5.1283,
+              "top": 0.915
+            }
+          },
+          {
+            "x": 2.26,
+            "z": 5.6367,
+            "yaw": -1.5708,
+            "cushion": {
+              "x0": 2.02,
+              "x1": 2.7,
+              "z0": 5.1583,
+              "z1": 6.115,
+              "top": 0.915
+            }
+          },
+          {
+            "x": 7.64,
+            "z": 4.9,
+            "yaw": 1.5708,
+            "cushion": {
+              "x0": 7.22,
+              "x1": 7.88,
+              "z0": 4.57,
+              "z1": 5.23,
+              "top": 0.91
+            }
+          },
+          {
+            "x": 5.4,
+            "z": 7.14,
+            "yaw": 0,
+            "cushion": {
+              "x0": 5.07,
+              "x1": 5.73,
+              "z0": 6.72,
+              "z1": 7.38,
+              "top": 0.91
+            }
+          }
+        ],
+        "plants": [
+          {
+            "x": 8.1,
+            "z": 7.6,
+            "kind": "tall"
+          },
+          {
+            "x": 1.55,
+            "z": 6.25,
+            "kind": "tall"
+          },
+          {
+            "x": 9,
+            "z": 0.75,
+            "kind": "tall"
+          }
+        ]
+      },
+      "node": "room_lounge",
+      "leds": "leds_lounge",
+      "strips": [],
+      "cushions": [
+        {
+          "x0": 5.6583,
+          "x1": 6.615,
+          "z0": 1.52,
+          "z1": 2.2,
+          "top": 0.915
+        },
+        {
+          "x0": 4.6717,
+          "x1": 5.6283,
+          "z0": 1.52,
+          "z1": 2.2,
+          "top": 0.915
+        },
+        {
+          "x0": 3.685,
+          "x1": 4.6417,
+          "z0": 1.52,
+          "z1": 2.2,
+          "top": 0.915
+        },
+        {
+          "x0": 2.02,
+          "x1": 2.7,
+          "z0": 3.185,
+          "z1": 4.1417,
+          "top": 0.915
+        },
+        {
+          "x0": 2.02,
+          "x1": 2.7,
+          "z0": 4.1717,
+          "z1": 5.1283,
+          "top": 0.915
+        },
+        {
+          "x0": 2.02,
+          "x1": 2.7,
+          "z0": 5.1583,
+          "z1": 6.115,
+          "top": 0.915
+        },
+        {
+          "x0": 7.22,
+          "x1": 7.88,
+          "z0": 4.57,
+          "z1": 5.23,
+          "top": 0.91
+        },
+        {
+          "x0": 5.07,
+          "x1": 5.73,
+          "z0": 6.72,
+          "z1": 7.38,
+          "top": 0.91
+        }
+      ],
+      "triangles": 3096
+    },
+    "atrium": {
+      "unit": "atrium",
+      "spec": {
+        "key": "atrium",
+        "kind": "atrium",
+        "w": 26,
+        "d": 18.2,
+        "floor": 0.46,
+        "wallH": 2.7,
+        "wallT": 0.18,
+        "coreR": 1.5,
+        "core": {
+          "x": 13.6,
+          "z": 7.35
+        },
+        "floorRects": [
+          {
+            "x0": 10.9,
+            "x1": 16.3,
+            "z0": 0,
+            "z1": 5.2
+          },
+          {
+            "x0": 0,
+            "x1": 26,
+            "z0": 5.2,
+            "z1": 9.5
+          },
+          {
+            "x0": 10.9,
+            "x1": 16.3,
+            "z0": 9.5,
+            "z1": 18.2
+          }
+        ],
+        "walls": [
+          {
+            "axis": "z",
+            "at": 0,
+            "from": 10.9,
+            "to": 16.3,
+            "h": 2.7,
+            "owner": "atrium",
+            "open": [
+              false,
+              false
+            ]
+          },
+          {
+            "axis": "x",
+            "at": 0,
+            "from": 5.2,
+            "to": 9.5,
+            "h": 2.7,
+            "owner": "atrium",
+            "open": [
+              false,
+              false
+            ]
+          },
+          {
+            "axis": "x",
+            "at": 11,
+            "from": 0,
+            "to": 4.78,
+            "h": 1.1,
+            "owner": "closet",
+            "open": [
+              false,
+              true
+            ]
+          }
+        ],
+        "occluders": [
+          {
+            "axis": "x",
+            "at": 0,
+            "from": 0,
+            "to": 5.2,
+            "h": 2.7
+          },
+          {
+            "axis": "z",
+            "at": 0,
+            "from": 0,
+            "to": 10.9,
+            "h": 2.7
+          },
+          {
+            "axis": "x",
+            "at": 16.3,
+            "from": 0,
+            "to": 5.2,
+            "h": 2.7
+          },
+          {
+            "axis": "z",
+            "at": 0,
+            "from": 16.3,
+            "to": 26,
+            "h": 2.7
+          },
+          {
+            "axis": "x",
+            "at": 0,
+            "from": 9.5,
+            "to": 18.2,
+            "h": 2.7
+          },
+          {
+            "axis": "z",
+            "at": 9.5,
+            "from": 0,
+            "to": 10.9,
+            "h": 2.7
+          }
+        ],
+        "closet": {
+          "x0": 11,
+          "x1": 12.5,
+          "z0": 0,
+          "z1": 4.78
+        },
+        "props": [
+          {
+            "kind": "printer",
+            "x": 13.4,
+            "z": 0.54,
+            "yaw": 3.1416
+          },
+          {
+            "kind": "cooler",
+            "x": 14.15,
+            "z": 0.44,
+            "yaw": 3.1416
+          },
+          {
+            "kind": "bench",
+            "x": 0.5,
+            "z": 7.35,
+            "yaw": -1.5708
+          },
+          {
+            "kind": "bench",
+            "x": 9.95,
+            "z": 8.4,
+            "yaw": -1.5708
+          },
+          {
+            "kind": "bench",
+            "x": 17.55,
+            "z": 5.85,
+            "yaw": 3.1416
+          },
+          {
+            "kind": "bench",
+            "x": 25.25,
+            "z": 7.15,
+            "yaw": 1.5708
+          },
+          {
+            "kind": "bench",
+            "x": 13.6,
+            "z": 17.7,
+            "yaw": 0
+          }
+        ],
+        "plants": [
+          {
+            "x": 0.62,
+            "z": 5.65,
+            "kind": "tall"
+          },
+          {
+            "x": 0.6,
+            "z": 9,
+            "kind": "small"
+          },
+          {
+            "x": 12.85,
+            "z": 4.28,
+            "kind": "small"
+          }
+        ]
+      },
+      "node": "room_atrium",
+      "leds": "leds_atrium",
+      "strips": [
+        {
+          "a": [
+            13.6,
+            0.783,
+            7.35
+          ],
+          "b": [
+            13.6,
+            0.783,
+            7.35
+          ],
+          "emit": [
+            0,
+            1,
+            0
+          ],
+          "kind": "ring"
+        },
+        {
+          "a": [
+            12.94,
+            1.794,
+            0.415
+          ],
+          "b": [
+            13.86,
+            1.794,
+            0.415
+          ],
+          "emit": [
+            0,
+            -0.9119,
+            0.4104
+          ],
+          "kind": "shelf"
+        }
+      ],
+      "triangles": 3004
     }
   },
   "materials": {
-    "textured": [
+    "all": [
+      "solid",
+      "leaf",
       "oak",
       "walnut",
       "floor",
       "fabric",
-      "rug"
-    ],
-    "vertexColour": [
-      "solid",
-      "leaf"
-    ],
-    "decal": [
-      "decal"
+      "rug",
+      "decal",
+      "cap",
+      "skirting",
+      "wall_research",
+      "led",
+      "design_wood",
+      "design_backing",
+      "design_credenza",
+      "wall_design",
+      "wall_office",
+      "upholstery",
+      "concrete",
+      "closet_floor",
+      "closet_wall",
+      "plaza",
+      "plinth",
+      "plinth_edge",
+      "slab",
+      "wall_atrium"
     ],
     "themed": [
       "cap",
       "skirting",
+      "wall_research",
       "wall_design",
-      "wall_office"
+      "wall_office",
+      "wall_atrium",
+      "concrete",
+      "slab",
+      "plinth",
+      "plinth_edge",
+      "plaza",
+      "closet_wall",
+      "closet_floor",
+      "design_backing",
+      "design_credenza",
+      "fabric",
+      "upholstery",
+      "rug"
+    ],
+    "themedTex": [
+      "design_wood"
+    ],
+    "decal": [
+      "decal"
+    ],
+    "canvas": [
+      "concrete"
     ],
     "unlit": [
       "led"
     ]
   },
   "build": {
-    "at": "2026-10-17T10:15:31.063Z",
-    "blender": "Blender 5.2.1 LTS",
-    "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
-    "size": 3072,
-    "samples": 1024,
-    "blenderSeconds": 117.6,
-    "phases": {
-      "model": 0.13,
-      "textures": 0.48,
-      "uv": 6.44,
-      "bake_day": 40.98,
-      "bake_evening": 60.86,
-      "export": 0.75
-    },
-    "script": "scripts/blender/build-office.py",
-    "library": "scripts/blender/office_lib.py",
     "light": {
       "day": {
         "sun": 2.6,
@@ -495,13 +1457,36 @@
         "lamp": 25
       }
     },
-    "totalSeconds": 126.8
+    "density": 100,
+    "script": "scripts/blender/build-office.py",
+    "library": "scripts/blender/office_lib.py",
+    "last": {
+      "units": [
+        "research",
+        "design",
+        "office",
+        "atrium"
+      ],
+      "full": true,
+      "at": "2026-10-17T11:12:07.500Z",
+      "seconds": 261.8,
+      "blender": "Blender 5.2.1 LTS"
+    },
+    "blender": "Blender 5.2.1 LTS",
+    "full": {
+      "at": "2026-10-17T11:12:07.500Z",
+      "seconds": 261.8,
+      "units": [
+        "research",
+        "design",
+        "office",
+        "atrium"
+      ]
+    }
   },
   "sizes": {
     "total": {
-      "bytes": 2762611,
-      "gzip": 1928818,
-      "brotli": 1832358
+      "bytes": 6877262
     },
     "budgetBytes": 10000000
   }

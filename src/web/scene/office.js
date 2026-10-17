@@ -21,11 +21,11 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 import { PALETTE } from '../config/palette.js';
 import { makeMonitorTexture } from './monitor.js';
-import { computeLayout, pointAt, pathLength, bakedRoomSpec, FLOOR, WALL_H, CORE_R } from './layout.js';
+import { computeLayout, pointAt, pathLength, bakedRoomSpec, bakedOrigin, areaOf, FLOOR, WALL_H, CORE_R } from './layout.js';
 import { buildRooms } from './rooms.js';
 import { woodTexture, tileTexture, glowTexture, atlasTexture, GLOW_UV } from './textures.js';
 import { SKIN, HAIR, TROUSERS, hash, shirtColours } from './looks.js';   // people's looks (R2; shirts off the skin range, E5)
-import { loadBakedOffice, loadFloorTexture } from './baked.js';   // R3a: the baked rooms (default; ?scene=procedural turns them off)
+import { loadBakedOffice, loadFloorTexture } from './baked.js';   // R3a, R3b: the baked areas (default; ?scene=procedural turns them off)
 
 const DEG = Math.PI / 180;
 const PITCH = 35 * DEG, YAW = 45 * DEG;
@@ -247,25 +247,27 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   let L = null, data = null, structureKey = null, selectedId = null;
   let statics = [], inst = {}, screens = [], workers = [], lines = [], terminals = [], pickables = [];
   const dummy = new THREE.Object3D();
-  // R3a: the baked rooms (Design and Office), drawn by default (?scene=procedural turns them off). Each is used only
-  // while its spec matches the live layout (layout.js bakedRoomSpec), otherwise that room is drawn procedurally.
+  // R3a, R3b: the baked areas (the three rooms, the lounge and the atrium), drawn by default (?scene=procedural turns
+  // them off). Each is used only while its spec matches the live layout (layout.js bakedRoomSpec), otherwise that area
+  // is drawn procedurally.
   const baked = { want: options.scene !== 'procedural', office: null, active: new Set(), failed: null, warned: new Set() };
   // when it arrives after the first snapshot, the normal data path rebuilds the office with it (statuses, screens, lines)
-  if (baked.want) loadBakedOffice({ decalMap: TX.atlas }).then((o) => { baked.office = o; if (data) { structureKey = null; setData(data); } invalidate(2); })
+  if (baked.want) loadBakedOffice({ decalMap: TX.atlas, concreteMap: TX.tile }).then((o) => { baked.office = o; if (data) { structureKey = null; setData(data); } invalidate(2); })
     .catch((e) => { baked.failed = String(e && e.message || e); console.warn('office: the baked rooms did not load; drawing the procedural rooms:', baked.failed); invalidate(1); });
-  // R3a: each baked room is used only while its spec matches the live layout (layout.js bakedRoomSpec); a stale room
-  // falls back to the procedural one, with a console warning, and the other rooms stay baked
+  // R3a: each baked area is used only while its spec matches the live layout (layout.js bakedRoomSpec); a stale area
+  // falls back to the procedural one, with a console warning, and the others stay baked. R3b: with every area baked
+  // nothing real-time receives the sun's shadow, so the shadow map is turned off (people keep their blob shadows)
   function updateBaked() {
     baked.active = new Set();
-    if (!baked.office || !L) return;
-    for (const [key, br] of Object.entries(baked.office.rooms)) {
-      const r = L.rooms.find((x) => x.key === key), ok = !!r && JSON.stringify(br.spec) === JSON.stringify(bakedRoomSpec(L, key));
-      if (!ok && !baked.warned.has(key)) { baked.warned.add(key); console.warn('office: the baked ' + key + ' room does not match the live layout; drawing the procedural room'); }
+    if (baked.office && L) for (const [key, br] of Object.entries(baked.office.rooms)) {
+      const o = bakedOrigin(L, key), ok = !!o && JSON.stringify(br.spec) === JSON.stringify(bakedRoomSpec(L, key));
+      if (!ok && !baked.warned.has(key)) { baked.warned.add(key); console.warn('office: the baked ' + key + ' area does not match the live layout; drawing it procedurally'); }
       const g = br.group;
-      if (ok) { baked.active.add(key); g.position.set(r.x0, 0, r.z0); if (!g.parent) world.add(g); g.updateMatrixWorld(true); }
+      if (ok) { baked.active.add(key); g.position.set(o.x, 0, o.z); if (!g.parent) world.add(g); g.updateMatrixWorld(true); }
       else if (g.parent) world.remove(g);
     }
     if (baked.active.size) baked.office.setTheme(theme);
+    sun.castShadow = !(L && [...L.rooms.map((r) => r.key), 'lounge', 'atrium'].every((k) => baked.active.has(k)));
   }
   const bakedRooms = () => (baked.office ? [...baked.active].map((k) => baked.office.rooms[k]) : []);
 
@@ -369,7 +371,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const wp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.9)); pickRoot.add(wp); pickables.push({ object: wp, kind: 'agent', id: agentId }); workers[workers.length - 1].pick = wp;
     });
     // plants
-    const inSkip = (p) => skipRooms.some((r) => p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1);   // baked rooms have their own plants
+    const inSkip = (p) => baked.active.has(areaOf(L, p));   // baked areas have their own plants
     const tall = L.plants.filter((p) => p.kind === 'tall' && !inSkip(p)), small = L.plants.filter((p) => p.kind !== 'tall' && !inSkip(p));
     const potT = makeInst('potTall', G.potTall, M.potTall, tall.length), leafT = makeInst('leafTall', G.leavesTall, M.leafTall, tall.length);
     const potS = makeInst('potSmall', G.potSmall, M.potSmall, small.length), leafS = makeInst('leafSmall', G.leavesSmall, M.leafSmall, small.length);

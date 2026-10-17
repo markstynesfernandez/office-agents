@@ -33,7 +33,9 @@ export const LOUNGE = { w: 7.6, d: 7.6 };
 // server closet at the back of the gap, against the open right side of the back-left room: a low partition on its
 // left, the cabinets in a row along z facing +x (towards the core), far enough from the right room's wall that it
 // hides none of them
-const CLOSET = { pitch: 0.8, margin: 0.3, w: 1.5, inset: 0.1 };
+// R3b: the closet is always long enough for five cabinets (slots), so the engine view (five services) and the legacy
+// fixtures view (four) have the same closet and share one baked atrium; the cabinets themselves stay real-time
+const CLOSET = { pitch: 0.8, margin: 0.3, w: 1.5, inset: 0.1, slots: 5 };
 
 const kindOf = (key) => (SLOT_KINDS.includes(key) ? key : 'office');
 
@@ -47,7 +49,7 @@ export function computeLayout(departments, services = []) {
   });
   const bySlot = (s) => rooms.find((r) => r.slot === s);
   const back = bySlot('back'), right = bySlot('right'), left = bySlot('left');
-  const closetLen = Math.max(2.6, WALL_T + services.length * CLOSET.pitch + 2 * CLOSET.margin);
+  const closetLen = Math.max(2.6, WALL_T + Math.max(services.length, CLOSET.slots) * CLOSET.pitch + 2 * CLOSET.margin);
   // shared column widths and row depths
   const leftW = Math.max(back ? back.w : 0, left ? left.w : 0, 8);
   const rightW = Math.max(right ? right.w : 0, LOUNGE.w);
@@ -198,10 +200,32 @@ export function computeLayout(departments, services = []) {
   return { rooms, closet, lounge, base, core, atrium, ring, paths, walls, plants, props, dropped: departments.slice(3).map((d) => d.key) };
 }
 
+// a wall end is joined when another wall continues it or meets it there (otherwise it is a dollhouse cut, capped)
+export function wallJoined(walls, w, e) {
+  return walls.some((o) => o !== w && ((o.axis === w.axis && Math.abs(o.at - w.at) < 1e-6 && (Math.abs(o.from - e) < 1e-6 || Math.abs(o.to - e) < 1e-6)) || (o.axis !== w.axis && Math.abs(o.at - e) < 1e-6 && o.from - 1e-6 <= w.at && w.at <= o.to + 1e-6)));
+}
+
+// which baked area a floor point belongs to (R3b): a department room's key, 'lounge', or 'atrium' (the rest of the slab,
+// the closet included)
+export function areaOf(L, p) {
+  const r = L.rooms.find((q) => p.x > q.x0 && p.x < q.x1 && p.z > q.z0 && p.z < q.z1); if (r) return r.key;
+  const g = L.lounge; return p.x > g.x0 && p.x < g.x1 && p.z > g.z0 && p.z < g.z1 ? 'lounge' : 'atrium';
+}
+// where a baked area's own frame sits on the floor plan: a room and the lounge at their back-left corner, the atrium at
+// the slab's (it covers the whole slab, under the rooms too)
+export function bakedOrigin(L, key) {
+  const r = L.rooms.find((x) => x.key === key), o = r || (key === 'lounge' ? L.lounge : key === 'atrium' ? L.base : null);
+  return o ? { x: o.x0, z: o.z0 } : null;
+}
+
 // R3 spike: everything a baked room must match, in the room's own frame (x from its -x wall, z from its -z wall; y is
 // world height). The Blender build (scripts/build-office.mjs, R3a) writes this per room into the manifest; the page uses
 // a baked room only while the live layout gives the same spec, so the labels, desks and seats still line up.
+// R3b: also the lounge (furniture, seats with their cushions, plants) and the atrium (the slab, its floor outside the
+// rooms and the lounge, the core plinth, the atrium and closet walls, props and plants), each in its own frame.
 export function bakedRoomSpec(L, key = 'design') {
+  if (key === 'lounge') return loungeSpec(L);
+  if (key === 'atrium') return atriumSpec(L);
   const r = L.rooms.find((x) => x.key === key); if (!r) return null;
   const q = (v) => Math.round(v * 1e4) / 1e4, loc = (p) => ({ x: q(p.x - r.x0), z: q(p.z - r.z0) });
   const inside = (p) => p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1;
@@ -212,6 +236,47 @@ export function bakedRoomSpec(L, key = 'design') {
     props: L.props.filter(inside).map((p) => ({ kind: p.kind, ...loc(p), yaw: q(p.yaw) })),
     walls: L.walls.filter((w) => w.owner === key).map((w) => ({ axis: w.axis, at: q(w.at - (w.axis === 'x' ? r.x0 : r.z0)), from: q(w.from - (w.axis === 'x' ? r.z0 : r.x0)), to: q(w.to - (w.axis === 'x' ? r.z0 : r.x0)), h: w.h })),
     openFront: r.z1 < L.base.z1 - 0.01, openRight: r.x1 < L.base.x1 - 0.01
+  };
+}
+
+const q4 = (v) => Math.round(v * 1e4) / 1e4;
+const rectIn = (o, r) => ({ x0: q4(r.x0 - o.x0), x1: q4(r.x1 - o.x0), z0: q4(r.z0 - o.z0), z1: q4(r.z1 - o.z0) });
+function loungeSpec(L) {
+  const g = L.lounge, f = g.furniture, loc = (p) => ({ x: q4(p.x - g.x0), z: q4(p.z - g.z0) });
+  const item = (o, extra = {}) => ({ ...loc(o), yaw: q4(o.yaw || 0), ...extra });
+  return {
+    key: 'lounge', kind: 'lounge', w: q4(g.w), d: q4(g.d), floor: FLOOR, sofa: { ...SOFA }, armchair: { ...ARMCHAIR },
+    furniture: { sofaA: item(f.sofaA, { len: f.sofaA.len }), sofaB: item(f.sofaB, { len: f.sofaB.len }), chair1: item(f.chair1), chair2: item(f.chair2), table: { ...loc(f.table), w: f.table.w, d: f.table.d }, lamp: loc(f.lamp), rug: rectIn(g, f.rug) },
+    seats: g.seats.map((s) => ({ ...loc(s), yaw: q4(s.yaw), cushion: { ...rectIn(g, s.cushion), top: q4(s.cushion.top) } })),
+    plants: L.plants.filter((p) => areaOf(L, p) === 'lounge').map((p) => ({ ...loc(p), kind: p.kind }))
+  };
+}
+function atriumSpec(L) {
+  const b = L.base, loc = (p) => ({ x: q4(p.x - b.x0), z: q4(p.z - b.z0) });
+  // the atrium's own floor: the slab minus the rooms and the lounge, as rectangles (a grid on every room edge, cells
+  // merged along x); the closet's floor sits on it
+  const cut = [...L.rooms, L.lounge];
+  const grid = (k0, k1) => [...new Set([b[k0], b[k1], ...cut.flatMap((r) => [r[k0], r[k1]])].map(q4))].sort((a, c) => a - c);
+  const xs = grid('x0', 'x1'), zs = grid('z0', 'z1'), floorRects = [];
+  for (let j = 0; j + 1 < zs.length; j++) {
+    let run = null;
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const c = { x: (xs[i] + xs[i + 1]) / 2, z: (zs[j] + zs[j + 1]) / 2 }, free = !cut.some((r) => c.x > r.x0 && c.x < r.x1 && c.z > r.z0 && c.z < r.z1);
+      if (free && run) run.x1 = xs[i + 1]; else if (free) run = { x0: xs[i], x1: xs[i + 1], z0: zs[j], z1: zs[j + 1] }; else if (run) { floorRects.push(run); run = null; }
+    }
+    if (run) floorRects.push(run);
+  }
+  const mine = L.walls.filter((w) => w.owner === 'atrium' || w.owner === 'closet');
+  const wall = (w) => { const o = w.axis === 'x' ? b.x0 : b.z0, a = w.axis === 'x' ? b.z0 : b.x0; return { axis: w.axis, at: q4(w.at - o), from: q4(w.from - a), to: q4(w.to - a), h: w.h, owner: w.owner, open: [!wallJoined(L.walls, w, w.from), !wallJoined(L.walls, w, w.to)] }; };
+  return {
+    key: 'atrium', kind: 'atrium', w: q4(b.w), d: q4(b.d), floor: FLOOR, wallH: WALL_H, wallT: WALL_T, coreR: CORE_R, core: loc(L.core),
+    floorRects: floorRects.map((r) => rectIn(b, r)),
+    walls: mine.map(wall),
+    // the rooms' walls round the atrium: bake-only occluders (they shade the atrium floor in the day bake)
+    occluders: L.walls.filter((w) => !mine.includes(w)).map((w) => { const { open, owner, ...x } = wall(w); return x; }),
+    closet: rectIn(b, L.closet),
+    props: L.props.filter((p) => areaOf(L, p) === 'atrium').map((p) => ({ kind: p.kind, ...loc(p), yaw: q4(p.yaw) })),
+    plants: L.plants.filter((p) => areaOf(L, p) === 'atrium').map((p) => ({ ...loc(p), kind: p.kind }))
   };
 }
 

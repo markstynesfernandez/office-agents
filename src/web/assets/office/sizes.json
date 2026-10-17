@@ -1,40 +1,112 @@
 {
   "files": [
     {
-      "file": "lightmap-day.webp",
-      "bytes": 920872,
-      "gzip": 919487,
-      "brotli": 920877
+      "file": "atrium.bin",
+      "bytes": 596708,
+      "gzip": 187944,
+      "brotli": 133566
     },
     {
-      "file": "lightmap-evening.webp",
-      "bytes": 496944,
-      "gzip": 495142,
-      "brotli": 496949
+      "file": "atrium.gltf",
+      "bytes": 38426,
+      "gzip": 4456,
+      "brotli": 3493
+    },
+    {
+      "file": "design.bin",
+      "bytes": 414004,
+      "gzip": 111762,
+      "brotli": 78479
+    },
+    {
+      "file": "design.gltf",
+      "bytes": 24544,
+      "gzip": 3037,
+      "brotli": 2466
+    },
+    {
+      "file": "lightmap-atrium-day.webp",
+      "bytes": 511164,
+      "gzip": 507461,
+      "brotli": 506656
+    },
+    {
+      "file": "lightmap-atrium-evening.webp",
+      "bytes": 642764,
+      "gzip": 639512,
+      "brotli": 642769
+    },
+    {
+      "file": "lightmap-design-day.webp",
+      "bytes": 396572,
+      "gzip": 396225,
+      "brotli": 396577
+    },
+    {
+      "file": "lightmap-design-evening.webp",
+      "bytes": 209366,
+      "gzip": 208929,
+      "brotli": 209371
+    },
+    {
+      "file": "lightmap-office-day.webp",
+      "bytes": 491292,
+      "gzip": 490999,
+      "brotli": 491297
+    },
+    {
+      "file": "lightmap-office-evening.webp",
+      "bytes": 312246,
+      "gzip": 311927,
+      "brotli": 312251
+    },
+    {
+      "file": "lightmap-research-day.webp",
+      "bytes": 858918,
+      "gzip": 858367,
+      "brotli": 858923
+    },
+    {
+      "file": "lightmap-research-evening.webp",
+      "bytes": 480236,
+      "gzip": 479725,
+      "brotli": 480241
     },
     {
       "file": "manifest.json",
-      "bytes": 9082,
-      "gzip": 1643,
-      "brotli": 1410
+      "bytes": 29206,
+      "gzip": 3925,
+      "brotli": 3255
     },
     {
       "file": "office.bin",
-      "bytes": 1059752,
-      "gzip": 272935,
-      "brotli": 175830
+      "bytes": 645952,
+      "gzip": 162653,
+      "brotli": 110807
     },
     {
       "file": "office.gltf",
-      "bytes": 37658,
-      "gzip": 4127,
-      "brotli": 3270
+      "bytes": 21089,
+      "gzip": 2688,
+      "brotli": 2171
+    },
+    {
+      "file": "research.bin",
+      "bytes": 904000,
+      "gzip": 230686,
+      "brotli": 164735
+    },
+    {
+      "file": "research.gltf",
+      "bytes": 21253,
+      "gzip": 2712,
+      "brotli": 2197
     },
     {
       "file": "textures/fabric.jpg",
-      "bytes": 32104,
-      "gzip": 31139,
-      "brotli": 30999
+      "bytes": 73749,
+      "gzip": 73518,
+      "brotli": 73018
     },
     {
       "file": "textures/floor.jpg",
@@ -50,9 +122,9 @@
     },
     {
       "file": "textures/rug.jpg",
-      "bytes": 95383,
-      "gzip": 95232,
-      "brotli": 95388
+      "bytes": 94930,
+      "gzip": 94784,
+      "brotli": 94935
     },
     {
       "file": "textures/walnut.jpg",
@@ -62,9 +134,9 @@
     }
   ],
   "total": {
-    "bytes": 2762638,
-    "gzip": 1928827,
-    "brotli": 1832367
+    "bytes": 6877262,
+    "gzip": 4880432,
+    "brotli": 4674851
   },
   "budgetBytes": 10000000,
   "budgetNote": "10 MB (10,000,000 bytes) for the whole baked office, compressed (owner, R3a); checked against bytes as served",

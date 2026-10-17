@@ -14,7 +14,7 @@ import { createOfficeServer, ROOT } from '../src/server/index.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 import { launch, outJail, settle, W, H } from './screenshots.mjs';
 import { computeLayout, FLOOR, WALL_H } from '../src/web/scene/layout.js';
-import { BAKED_ROOMS } from '../src/web/scene/bakedlook.js';
+const BAKED_ROOMS = ['design', 'office'];   // R3a's two rooms (since R3b every area is baked: scripts/screenshots-r3b.mjs)
 import { sizesOf, BUDGET_BYTES } from './build-office.mjs';
 
 const argv = process.argv.slice(2), headed = argv.includes('--headed');
@@ -79,7 +79,7 @@ async function shoot({ file, query, cam, fps = true, note = '' }) {
     await settle(page); await page.waitForTimeout(250);
     const b = await page.evaluate(() => window.__office.baked());
     const procedural = query.includes('scene=procedural');
-    if (!procedural && JSON.stringify(b.rooms) !== JSON.stringify(BAKED_ROOMS)) problems.push((file || query) + ': baked rooms ' + JSON.stringify(b));
+    if (!procedural && !BAKED_ROOMS.every((k) => b.rooms.includes(k))) problems.push((file || query) + ': baked rooms ' + JSON.stringify(b));
     if (procedural && b.want) problems.push(query + ': ?scene=procedural still wants the bake');
     const png = await page.screenshot({ type: 'png' });
     if (file) { fs.writeFileSync(outJail(path.join(outDir, file)), png); console.log('wrote', path.join(outDir, file)); log.written(path.join(outDir, file)); }

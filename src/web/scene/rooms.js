@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { FLOOR, WALL_H, WALL_T, CORE_R, SOFA, ARMCHAIR } from './layout.js';
+import { FLOOR, WALL_H, WALL_T, CORE_R, wallJoined, areaOf } from './layout.js';
 import { rng, ATLAS, atlasUV, GLOW_UV } from './textures.js';
 import { FLOOR_OAK } from './bakedlook.js';
 
@@ -47,16 +47,19 @@ const local = (o, lx, ly, lz, extra = 0, rx = 0, rz = 0) => { const c = Math.cos
 
 // opts.skipRooms (R3a): department keys whose rooms are drawn elsewhere (the baked rooms): their walls, floors,
 // furniture, decals and the props inside them are left out; their open-edge floor LEDs and washes stay (real-time glow).
+// R3b: also 'lounge' and 'atrium'. A baked atrium leaves out the slab, its floor, the core plinth, the atrium walls and
+// what hangs on them, its props and the closet's floor, partition and cable tray; the slab's edge LEDs, the core's
+// floor glow and the closet's LEDs (status colours) stay real-time.
 // Floors: one oak texture for the whole office at the baked rooms' scale (bakedlook.js FLOOR_OAK).
 export function buildRooms(L, p, accents, opts = {}) {
-  const skips = L.rooms.filter((r) => (opts.skipRooms || []).includes(r.key));
-  const inSkip = (q) => skips.some((s) => q.x > s.x0 && q.x < s.x1 && q.z > s.z0 && q.z < s.z1);
+  const skipKeys = opts.skipRooms || [], skips = L.rooms.filter((r) => skipKeys.includes(r.key));
+  const skipAtrium = skipKeys.includes('atrium'), skipLounge = skipKeys.includes('lounge');
   const out = { statics: [], wood: null, tile: null, decals: null, emissive: null, glow: null };
   const wood = bucket({ uv: true }), tile = bucket({ uv: true }), decals = bucket({ uv: true }), em = bucket({ color: true }), glow = bucket({ uv: true, color: true });
   const ledC = p.led, glowC = col(p.ledGlowColour).multiplyScalar(p.ledGlow);
   const r0 = rng(101);
   // a wall end is open (a dollhouse cut, edged in the cap colour) unless another wall continues it or meets it there
-  const joined = (w, e) => L.walls.some((o) => o !== w && ((o.axis === w.axis && Math.abs(o.at - w.at) < 1e-6 && (Math.abs(o.from - e) < 1e-6 || Math.abs(o.to - e) < 1e-6)) || (o.axis !== w.axis && Math.abs(o.at - e) < 1e-6 && o.from - 1e-6 <= w.at && w.at <= o.to + 1e-6)));
+  const joined = (w, e) => wallJoined(L.walls, w, e);
 
   // ---- glow helpers (additive quads, dark mode)
   function wash(m, w, h, strength = 1) { const g = regionUV(new THREE.PlaneGeometry(w, h), GLOW_UV.wash); glow.add(g, m, glowC.clone().multiplyScalar(strength)); }
@@ -234,34 +237,32 @@ export function buildRooms(L, p, accents, opts = {}) {
 
   // ---- the slab and the atrium (one static mesh)
   const A = bucket({ color: true }), b = L.base;
-  A.add(box(b.w, FLOOR - 0.005, b.d), mat4(b.cx, (FLOOR - 0.005) / 2, b.cz), p.slabEdge);
-  A.add(box(b.w + 0.06, 0.05, b.d + 0.06), mat4(b.cx, 0.025, b.cz), p.slabFoot);
-  tile.add(planarUV(new THREE.PlaneGeometry(b.w, b.d).rotateX(-Math.PI / 2).translate(b.cx, FLOOR, b.cz), 6.4));
   edgeLED('+z', b.z1, b.x0, b.x1, FLOOR - 0.06, 0.012, 1.6, 1.0);
   edgeLED('+x', b.x1, b.z0, b.z1, FLOOR - 0.06, 0.012, 1.6, 1.0);
-  // core plinth (octagon), pedestal and an inlay ring on the floor; R2: the plaza disc and the glow pool are about half
-  // the R1 radius
-  A.add(cyl(CORE_R - 0.1, CORE_R, 0.32, 8), mat4(0, FLOOR + 0.16, 0, Math.PI / 8), p.plinthEdge);
-  A.add(cyl(CORE_R - 0.35, CORE_R - 0.27, 0.12, 8), mat4(0, FLOOR + 0.38, 0, Math.PI / 8), p.plinth);
-  A.add(cyl(0.46, 0.6, 0.5, 6), mat4(0, FLOOR + 0.66, 0), p.plinthEdge);
-  A.add(new THREE.CircleGeometry(CORE_R + 0.75, 48).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.002, 0), p.plaza);
-  A.add(new THREE.RingGeometry(CORE_R + 0.2, CORE_R + 0.27, 48).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.004, 0), p.inlay);
-  em.add(new THREE.RingGeometry(CORE_R - 0.02, CORE_R + 0.02, 8, 1, Math.PI / 8).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.322, 0), ledC);
   pool(0, FLOOR + 0.01, 0, CORE_R + 0.55, 0.7, p.hubCore);
-  // atrium walls (outer back edge between the rooms), with caps and baseboards, and what hangs on them
-  for (const w of L.walls) {
-    if (w.owner === 'closet') continue;
-    const S = w.owner === 'atrium' ? A : null; if (!S) continue;
-    wallRun(S, w, p.wall);
-  }
-  {
+  if (!skipAtrium) {
+    A.add(box(b.w, FLOOR - 0.005, b.d), mat4(b.cx, (FLOOR - 0.005) / 2, b.cz), p.slabEdge);
+    A.add(box(b.w + 0.06, 0.05, b.d + 0.06), mat4(b.cx, 0.025, b.cz), p.slabFoot);
+    tile.add(planarUV(new THREE.PlaneGeometry(b.w, b.d).rotateX(-Math.PI / 2).translate(b.cx, FLOOR, b.cz), 6.4));
+    // core plinth (octagon), pedestal and an inlay ring on the floor; R2: the plaza disc and the glow pool are about half
+    // the R1 radius
+    A.add(cyl(CORE_R - 0.1, CORE_R, 0.32, 8), mat4(0, FLOOR + 0.16, 0, Math.PI / 8), p.plinthEdge);
+    A.add(cyl(CORE_R - 0.35, CORE_R - 0.27, 0.12, 8), mat4(0, FLOOR + 0.38, 0, Math.PI / 8), p.plinth);
+    A.add(cyl(0.46, 0.6, 0.5, 6), mat4(0, FLOOR + 0.66, 0), p.plinthEdge);
+    A.add(new THREE.CircleGeometry(CORE_R + 0.75, 48).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.002, 0), p.plaza);
+    A.add(new THREE.RingGeometry(CORE_R + 0.2, CORE_R + 0.27, 48).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.004, 0), p.inlay);
+    em.add(new THREE.RingGeometry(CORE_R - 0.02, CORE_R + 0.02, 8, 1, Math.PI / 8).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.322, 0), ledC);
+    // atrium walls (outer back edge between the rooms), with caps and baseboards, and what hangs on them
+    for (const w of L.walls) if (w.owner === 'atrium') wallRun(A, w, p.wall);
     const printerP = L.props.find((q) => q.kind === 'printer'), coolerP = L.props.find((q) => q.kind === 'cooler');
     if (printerP) { frame(A, 'z', b.z0, printerP.x, FLOOR + 2.08, 0.72, 0.5, ATLAS.art[4]); wallShelf(A, 'z', b.z0, printerP.x, 1.0, FLOOR + 1.36, 67); }
     if (coolerP) clock(A, 'z', b.z0, coolerP.x + 0.05, FLOOR + 2.05);
     const leftW = L.walls.find((w) => w.owner === 'atrium' && w.axis === 'x');
     if (leftW) { const um = (leftW.from + leftW.to) / 2; frame(A, 'x', leftW.at, um - 0.25, FLOOR + 1.6, 1.1, 0.75, ATLAS.art[5]); clock(A, 'x', leftW.at, um + 0.95, FLOOR + 1.95); }
   }
-  for (const q of L.props) if (!inSkip(q)) ({ bench, printer, cooler, meeting, easel })[q.kind](A, q);
+  // props go into the atrium mesh wherever they stand (the meeting table and the easel are in rooms); a baked area's are
+  // in its glTF
+  for (const q of L.props) if (!skipKeys.includes(areaOf(L, q))) ({ bench, printer, cooler, meeting, easel })[q.kind](A, q);
   out.statics.push({ key: 'atrium', geo: A.merge() });
 
   function wallRun(S, w, wallColour) {
@@ -332,7 +333,7 @@ export function buildRooms(L, p, accents, opts = {}) {
   }
 
   // ---- lounge: wood floor, rug, two sofas, two armchairs, coffee table, arc lamp
-  {
+  if (!skipLounge) {
     const S = bucket({ color: true }), lg = L.lounge, f = lg.furniture;
     wood.add(planarUV(box(lg.w, 0.02, lg.d).translate(lg.cx, FLOOR + 0.01, lg.cz), FLOOR_OAK.tile));
     rug(S, f.rug.x0, f.rug.x1, f.rug.z0, f.rug.z1, p.loungeRug, p.loungeRugBorder);
@@ -351,10 +352,12 @@ export function buildRooms(L, p, accents, opts = {}) {
   // instanced: status). R2: the cabinets stand in a row along z and face +x, towards the core.
   {
     const S = bucket({ color: true }), c = L.closet, cx = c.x0 + WALL_T + 0.45;
-    S.add(box(c.w - 0.1, 0.012, c.d - WALL_T - 0.05), mat4(c.cx + 0.05, FLOOR + 0.006, c.cz + WALL_T / 2), p.closetFloor);
-    wallRun(S, L.walls.find((w) => w.owner === 'closet'), p.closetWall);
-    S.add(box(0.3, 0.06, c.d - WALL_T - 0.3), mat4(cx - 0.05, FLOOR + 2.35, c.cz + WALL_T / 2), p.metal);   // cable tray
-    for (let k = 0; k < 4; k++) S.add(box(0.025, 0.4, 0.025), mat4(cx - 0.05, FLOOR + 2.55, c.z0 + WALL_T + 0.3 + k * (c.d - WALL_T - 0.6) / 3), p.metal);
+    if (!skipAtrium) {
+      S.add(box(c.w - 0.1, 0.012, c.d - WALL_T - 0.05), mat4(c.cx + 0.05, FLOOR + 0.006, c.cz + WALL_T / 2), p.closetFloor);
+      wallRun(S, L.walls.find((w) => w.owner === 'closet'), p.closetWall);
+      S.add(box(0.3, 0.06, c.d - WALL_T - 0.3), mat4(cx - 0.05, FLOOR + 2.35, c.cz + WALL_T / 2), p.metal);   // cable tray
+      for (let k = 0; k < 4; k++) S.add(box(0.025, 0.4, 0.025), mat4(cx - 0.05, FLOOR + 2.55, c.z0 + WALL_T + 0.3 + k * (c.d - WALL_T - 0.6) / 3), p.metal);
+    }
     em.add(box(0.012, 0.012, c.d - WALL_T - 0.4), mat4(cx + 0.12, FLOOR + 2.31, c.cz + WALL_T / 2), p.closetLED);
     for (const cab of c.cabinets) pool(cab.x + 0.75, FLOOR + 0.02, cab.z, 0.55, 0.45, p.closetLED);
     // a block of tiny LEDs on each cabinet front (they do not blink: the scene renders on demand)
