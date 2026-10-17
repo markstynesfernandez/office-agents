@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -23,10 +23,35 @@ Last updated: 17/10/2026 (E6 readiness: the owner's decisions recorded, prices a
 | **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026), with the importer label fix (`db18e5a`). The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
 | **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions") and **approved by the owner** (17/10/2026). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
 | E6 readiness | Done (17/10/2026). The owner's decisions on Q1 (verbal), Q2 caps, prices, image models, keys and scout sources recorded; the guard prices Haiku's long-prompt tier and cache reads and writes; the scout run cap. Mock only, $0. See below. |
-| E6 First real job | Not started. The owner's decisions are in; the live providers are not built yet. The plan, step by step, is under "Exact next step". |
+| E6 First real job | In progress. **a0** (live Anthropic text provider) and **a** (one Haiku smoke call, USD 0.000005) done 17/10/2026; **b0** next, on the owner's go-ahead. Web and images not built yet. The plan, step by step, is under "Exact next step". |
 | E7 Routines and cut-over | Not started |
 
-Everything so far ran on the mock provider: $0, with no API keys read.
+Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
+(USD 0.000005, below).
+
+### E6 steps a0 and a: live Anthropic text provider, one Haiku smoke call (17/10/2026)
+
+DECISIONS.md, "E6 step a0 build record" (with the owner's answers). Nothing was written to Virtual-workers; no key
+value was read, printed, logged or copied.
+
+- **a0** (`cbb2388`): `@anthropic-ai/sdk` **0.131.0**, pinned exactly (published 30/09/2026, MIT; ASSETS.md). The live
+  text provider `src/engine/providers/anthropic.mjs`, built only with STATION_PROVIDER=live in the process's own
+  environment, never in demo mode, with the key from the environment only and redacted from every message; models from
+  config only; SDK retries off. `guardedTextCall` (runtime.mjs) reserves before every attempt, retries 429, 5xx and
+  network errors per `live` in config/engine.json (approved by the owner as set), and settles from the usage with the
+  request id on the ledger row. Web and images on the live provider refuse with "not built". `npm test` 295/295
+  (new: `live-anthropic` 14/14, SDK stubbed, fake key); port drift: none.
+- **a** (the owner's go-ahead, 17/10/2026): with the Station server stopped,
+  `$env:STATION_PROVIDER='live'; npm run smoke:live; Remove-Item Env:STATION_PROVIDER` made **one** call:
+  `claude-haiku-5-5`, max_tokens 32, thinking disabled (smoke call only), retries 0, run cap USD 0.01.
+  - Reply **"ready"** (`end_turn`), request `req_011Cg7xU6wxApdmaNh1rw2VC`, message `msg_011Cg7xU8FbQ1sJefDToA4Pj`.
+  - 31 input and 4 output tokens, no cache: (31 x 0.10 + 4 x 0.50) / 1,000,000 = USD 0.0000051, settled **USD
+    0.000005** (standard tier), reserved USD 0.000022.
+  - Ledger row `98d912b8-b733-4643-8c8a-92dd85e3b7b0` (run `smoke_20261017142049`, no job), `estimated: false`;
+    today's ledger total USD 0.000005 over 5 rows (the other 4 are mock, USD 0); no pending reservation left.
+  - Checks: `.env` unchanged (same modified time and size), ignored and untracked; a fresh shell has no
+    STATION_PROVIDER; the engine default is still `mock`; no key-shaped string in `logs/` or the ledger; the engine
+    lock released. To do: match the request id against the Console for the station workspace (owner).
 
 ### E6 readiness: owner decisions (17/10/2026)
 
@@ -355,7 +380,7 @@ Also needed before a real job on the product (added here; not in the owner's lis
 | 15 | Designer token use (legacy item 12: a compact brief extract, under 30k tokens per image) | **open** | Not built; proposal in DECISIONS.md. Measurable only on a real run. |
 | 16 | Buttons on the page for the owner's actions | **open** (not blocking) | The routes exist; `npm run owner` works today with the server stopped. |
 | 17 | Genre-scout sources | **decided** (17/10/2026); one prompt line **open** (before step b) | v1: Anthropic web search over public articles and chart write-ups only; no scraping; no Twitch, Steam or itch.io APIs. Twitch and YouTube official APIs in a later phase, after the owner's terms check, keeping derived conclusions only. TREND-SCOUT's prompt still mentions reading store charts: change proposed in step b. The routine stays disabled. |
-| 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **open**: not built | `providers/index.mjs` refuses every mode but the mock (`ProviderLocked`). No SDK or HTTP client is installed or written. Built in three slices, a0, b0 and c0 under "Exact next step", each tested against a stub with no network. |
+| 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **partly done**: Anthropic text built and smoke-tested (17/10/2026); web (b0) and images (c0) **open** | `@anthropic-ai/sdk` 0.131.0; `providers/anthropic.mjs` (step a0, `cbb2388`); one Haiku smoke call, USD 0.000005 (step a). On the live provider, web and images refuse with "not built". |
 | 19 | Per-run cap | **open** (owner; before step c) | `perRunUsd` is USD 1.00 (StarNet era) and was not part of the Q2 answer. One legacy DESIGNER pass cost about USD 0.92. |
 | 20 | Image token estimate in reservations | **open** (before step c) | `image_analyze` sends base64, and the runtime counts it as text (length ÷ 3). A 1 MB PNG reserves about USD 1.1 on Sonnet, over the per-run cap. Fix proposed in DECISIONS.md. |
 
@@ -636,6 +661,8 @@ The post-E3 re-port changed:
    Q1 confirmation to be recorded when it arrives. Next lounge re-bake: a ninth seat.
 1. Done and approved by the owner (17/10/2026): R3a, R3b, the importer label fix, the port batch before E6, the
    genre-trend scouting line and the scouting decisions.
+2. **E6 a0 and a done (17/10/2026). Next: b0** (live web backend and the v1 source rule; no spend), only on the
+   owner's go-ahead. Owner to-do: match request `req_011Cg7xU6wxApdmaNh1rw2VC` in the Console.
 
 ### E6 plan: the first real run (each step stops for the owner's go-ahead)
 
@@ -651,7 +678,7 @@ Rules for every step:
 - Keys are read from the environment by the provider only. They never reach a log, the ledger, an event, the page or
   the repository.
 
-**a0. Build: live text provider (no spend; go-ahead needed).**
+**a0. Build: live text provider (no spend; go-ahead needed).** **Done 17/10/2026 (`cbb2388`).**
 - `providers/index.mjs`: `live` mode gets an Anthropic text provider, with the key read from `ANTHROPIC_API_KEY` when
   it is created. Web and images stay locked: they refuse with "not built". `usage` is settled through the guard
   (tiers and cache prices as tested), and the agents' effort maps to the request.
@@ -665,7 +692,8 @@ Rules for every step:
 - Tests against a stubbed client (no network): the key appears in no log, ledger row or event; usage is priced; a
   missing key is refused before any reservation.
 
-**a. One smoke call (go-ahead 1).**
+**a. One smoke call (go-ahead 1).** **Done 17/10/2026:** "ready", USD 0.000005, one ledger row (see "E6 steps a0
+and a" above). As built: max_tokens 32 and thinking disabled (owner), not 16.
 - Run `$env:STATION_PROVIDER='live'; npm run smoke:live; Remove-Item Env:STATION_PROVIDER`.
 - Expected cost: about 40 input and at most 16 output tokens on Haiku, about USD 0.00001; the reservation is below
   USD 0.001.
@@ -675,7 +703,7 @@ Rules for every step:
   - no key in `logs/`.
 - Stop and report.
 
-**b0. Build: live web backend and the v1 source rule (no spend; go-ahead needed).**
+**b0. Build: live web backend and the v1 source rule (no spend; go-ahead needed).** **Next.**
 - `providers.web`: each `web_search` or `web_fetch` becomes one Anthropic call (Haiku) with the server-side tool,
   limited to one search a call. The results come back to TREND-SCOUT as data.
 - Ledger: USD 0.01 for each search the response reports, plus that call's tokens at Haiku's prices. The web

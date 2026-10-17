@@ -846,12 +846,15 @@ client, with a fake key; no key value was read, printed, logged or copied; nothi
   refuses while the server runs), makes one call through `guardedTextCall` with 0 retries and a run cap of USD 0.01,
   and prints the reply, the request id, the usage, the USD, the ledger row and today's total.
 
-### For the owner (open; nothing decided here)
+### The owner's answers (17/10/2026)
 
-- **Live settings** (new `live` block in config/engine.json; engine settings, not caps): `timeoutMs` 300000 per
-  attempt, `retries` 2, `backoffMs` 2000 doubling, `backoffMaxMs` 30000 (a server `retry-after` is used within it).
-  Change them if you want fewer retries or a shorter timeout.
-- **408 and 409** are not retried (the brief lists 429, 5xx and network only; the SDK would retry them).
-- **Thinking on Haiku 5.5** is on by default (adaptive). The smoke call sends no `thinking` setting, as specified; with
-  `max_tokens` 32 a long think could use the allowance before the word "ready" (the reply would then be empty with
-  `stop_reason` `max_tokens`, at a cost of a few hundredths of a cent).
+- **Live settings approved as set** (owner, 17/10/2026): `timeoutMs` 300000 per attempt, `retries` 2, `backoffMs`
+  2000 doubling, `backoffMaxMs` 30000 (a server `retry-after` is used within it). Engine settings, not caps.
+- **Smoke call only:** thinking explicitly off. Per the claude-api reference, Claude Haiku 5.5 accepts
+  `thinking: {type: "disabled"}` at effort `high` or below, and its default effort is `medium`; the smoke call sends
+  no effort, so `disabled` is valid. The engine default is unchanged (no `thinking` sent, so adaptive); per-agent
+  thinking is decided in c0.
+- **Smoke call only:** retries 0 and a run cap of USD 0.01, overriding the engine defaults (`live.retries` 2 and
+  `perRunUsd` 1.00). The script already did this in a0; it now also prints one line before the call with the model,
+  max_tokens, thinking setting, retries and run cap.
+- **408 and 409** stay unretried (no change asked).
