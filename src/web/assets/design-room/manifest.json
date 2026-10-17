@@ -197,28 +197,28 @@
     ]
   },
   "build": {
-    "at": "2026-10-17T09:14:00.458Z",
-    "blender": "Blender 5.2.1 LTS\r",
+    "at": "2026-10-17T09:20:01.171Z",
+    "blender": "Blender 5.2.1 LTS",
     "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
     "size": 2048,
     "samples": 1024,
-    "blenderSeconds": 37.3,
+    "blenderSeconds": 37.1,
     "phases": {
       "model": 0.03,
       "textures": 0.38,
-      "uv": 5.55,
-      "bake_day": 8.53,
-      "bake_evening": 15.71,
-      "export": 0.49
+      "uv": 5.52,
+      "bake_day": 8.04,
+      "bake_evening": 16.06,
+      "export": 0.51
     },
     "triangles": 4676,
     "script": "scripts/blender/build-design-room.py"
   },
   "sizes": {
     "total": {
-      "bytes": 1478434,
-      "gzip": 1099758,
-      "brotli": 1053949
+      "bytes": 1478332,
+      "gzip": 1099727,
+      "brotli": 1053847
     },
     "budgetBytes": 6291456
   }

@@ -2,6 +2,7 @@
 // same camera as Redesign R2's 04-design-room (legacy fixtures view, zoom 2.3), plus fps rows and the asset sizes.
 //   node scripts/screenshots-r3.mjs            -> headless (a quick look; fps on the headless GPU)
 //   node scripts/screenshots-r3.mjs --headed   -> Google Chrome, headed: fps-headed.json (the budget figure)
+//   ... --headed --channel chromium --expect-gpu intel   -> Playwright's Chromium, headed, checked to be on the Intel iGPU
 // Starts its own Station server on a random port (fixtures, mock data) and opens only that page. Playwright launches
 // the browser with a fresh temporary profile (no persistent context). Every file goes through outJail()
 // (screenshots/ only): screenshots/r3-spike/.
@@ -22,8 +23,10 @@ const { server } = createOfficeServer({ fixtures: true, log });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + server.address().port;
 console.log('station server for R3 captures:', base, '(legacy fixtures view)');
-const { browser, label: browserLabel, gl } = await launch({ headed });
+const channel = arg('--channel', null), expectGpu = arg('--expect-gpu', null);   // e.g. --channel chromium --expect-gpu intel
+const { browser, label: browserLabel, gl } = await launch({ headed, channel });
 const problems = [], fpsRows = [];
+if (expectGpu && !String(gl).toLowerCase().includes(expectGpu.toLowerCase())) problems.push('GL renderer is ' + gl + ', expected ' + expectGpu + ': fps rows are not the budget figure');
 const view = makeViewer({ browser, base, outDir, log, problems, fpsRows, benchMs });
 
 // the R2 04-design-room camera: focus the Design room at zoom 2.3, aimed a little behind its centre

@@ -49,7 +49,7 @@ async function main() {
   const blender = process.env.BLENDER_EXE || DEFAULT_BLENDER;
   if (!fs.existsSync(blender)) throw new Error('Blender not found at ' + blender + ' (set BLENDER_EXE)');
   const ver = spawnSync(blender, ['--version'], { encoding: 'utf8' });
-  const version = ((ver.stdout || '').match(/Blender\s+(\d+\.\d+\.\d+)[^\n]*/) || [])[0] || 'unknown';
+  const version = (((ver.stdout || '').match(/Blender\s+(\d+\.\d+\.\d+)[^\r\n]*/) || [])[0] || 'unknown').trim();
   console.log('[build] blender:', version, '|', blender);
   if (!version.includes(' ' + BLENDER_PIN + '.') && !has('--any-blender')) throw new Error('Blender ' + BLENDER_PIN + '.x is pinned (ASSETS.md); found ' + version + ' (pass --any-blender to override)');
 
@@ -82,7 +82,7 @@ async function main() {
   fs.writeFileSync(assetJail('manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(assetJail('sizes.json'), JSON.stringify(sizes, null, 2) + '\n');
   fs.rmSync(assetJail('.build'), { recursive: true, force: true });
-  console.log('[build] done in', blenderSeconds.toFixed(1) + ' s (Blender) |', (sizes.total.bytes / 1048576).toFixed(2) + ' MB as served |', sizes.total.bytes <= BUDGET_BYTES ? 'within' : 'OVER', 'the 6 MB budget');
+  console.log('[build] done in', blenderSeconds.toFixed(1) + ' s (Blender) |', (sizes.total.bytes / 1048576).toFixed(2) + ' MiB as served |', sizes.total.bytes <= BUDGET_BYTES ? 'within' : 'OVER', 'the 6 MB budget');
   for (const r of sizes.files) console.log('   ', r.file.padEnd(26), (r.bytes / 1024).toFixed(0).padStart(6) + ' KB');
 }
 

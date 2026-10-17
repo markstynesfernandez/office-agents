@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (R3 spike: baked Design room behind `?scene=baked`, for the owner's decision; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -17,10 +17,41 @@ Last updated: 17/10/2026 (pre-E6 housekeeping; E4, R1, R2 and E5 approved by the
 | **Redesign R2** Office look, people, UI polish | Done (17/10/2026), **approved by the owner** (17/10/2026). Follow-ups done at the start of E5 (below). Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
 | **E5** Live UI | Done (17/10/2026), **approved by the owner** (17/10/2026). Task box, scheduler, approval queue, desk and job controls, E-STOP with typed resume, live spend vs caps; every write same-origin, token, idempotency key and expectedVersion. Mock provider only. Screenshots in `screenshots/e5/`. See below. |
 | Pre-E6 housekeeping | Done (17/10/2026). Line endings fixed; port drift measured (not ported); port-step items planned; E6 readiness checklist below. |
+| **R3 spike** Baked lighting, Design room only | Done (17/10/2026), **waiting for the owner's decision** on rolling it out to the whole office. Behind `?scene=baked`; the default scene is unchanged. 71+ fps full quality on the Intel iGPU in every measured view, walking included (headed Chromium; see below), 1.41 MiB of assets, 41 s rebuild. Screenshots in `screenshots/r3-spike/`. See below. |
 | E6 First real job | Not started. Blocked: see the E6 readiness checklist below. |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### R3 spike: baked Design room (17/10/2026) — for the owner's decision, nothing rolled out
+
+A spike only. `?scene=baked` swaps the Design room for a baked one; without the flag the office is exactly as before
+(the default Design room view differs from R2's capture in 0.05% of pixels: monitor text and the clock). Mock data only.
+
+- **Tooling.** Blender **5.2.1 LTS** (installed by the owner; 5.2.2 is the latest 5.2 patch, so 5.2.1 is what is pinned in ASSETS.md). `npm run build-design-room` (`scripts/build-design-room.mjs`) runs `scripts/blender/build-design-room.py` headless: it models the room from the layout spec, bakes a day and an evening lightmap in Cycles on the RTX 5060 (OptiX), exports `src/web/assets/design-room/design-room.glb` (second UV set for the lightmap), turns the lightmaps into WebP and writes `manifest.json` and `sizes.json`. Writes are jailed to that folder (`assetJail`), Blender's too.
+- **Rebuild time:** 41.4 s wall clock for the full build (2048 px lightmaps, 1024 samples): 37.1 s inside Blender (UVs 5.5 s, day bake 8.0 s, evening bake 16.1 s, export 0.5 s; the rest is Blender start-up and the device check). `--quick` (1024 px, 128 samples): about 15 s.
+- **Reproducible:** the glb is byte-identical on every rebuild. The lightmaps differ only by GPU path-tracing noise between runs (mean 0.002/255 day and 0.024/255 evening; at most 9/255 and 19/255 on isolated texels; 0.006% and 0.17% of channels differ by more than 2/255).
+- **Assets:** CC0 only: five Poly Haven 1k diffuse textures (oak and walnut veneer, wood floor, herringbone wool, hessian), with source URLs, dates, authors, MD5s and the CC0 legal text in `assets-src/`. Everything else is modelled in the script (4,676 triangles). `design-refs/05.png` was mood only.
+- **The room:** dark walls, a warm oak slat panel behind the desks, three oak shelves with binders (blank label patches) and LED strips under them, ten fabric wall pads (muted rust), an oatmeal hessian rug, two walnut desks with drawer pedestals (the first L-shaped, as before), two ergonomic chairs, desk lamps, a fiddle-leaf fig, a small pot plant, the easel, and warm cove LEDs along the floor edge of both walls. Same footprint (9.7 x 5.2), desk positions, chairs and seats as the live layout: the page uses the bake only while `bakedRoomSpec` of the live layout equals the manifest's spec, otherwise it draws the procedural room and logs a warning. Labels, status lights, monitors, keyboards and people are unchanged and real-time.
+- **Lighting:** unlit `MeshBasicMaterial` (albedo x lightmap) on every baked surface, so the room costs no real-time lights or PBR; day lightmap in light mode, evening lightmap in dark mode, swapped on the theme toggle. LED strips and lamp bulbs stay real-time (unlit; bright HDR in dark mode). A half-resolution glow on the strips in dark mode only: threshold, 2x2 downsample, 9-tap blur each way, additive; it costs about 0.9 ms a frame and is kept. `?glow=0` turns it off, `?bakedao=0` leaves the baked room out of the GTAO pre-pass (for comparison only).
+- **Size:** 1,478,332 bytes as served (1.41 MiB; glb 727 KB with JPEG textures, day lightmap 470 KB, evening 281 KB), against the 6 MB budget. With brotli on top: 1.05 MB.
+- **fps** (`screenshots/r3-spike/fps-headed.json`; **headed Playwright Chromium on the Intel UHD iGPU**, renderer checked, 1600x1000, full quality = camera still, AO on; legacy fixtures view). Measured back to back on the same build:
+
+| View | Camera moving | Full quality | Frame avg / p95 | Draw calls |
+|---|---|---|---|---|
+| Design room, current, light | 80.7 | 80.4 | 12.31 / 14.0 ms | 49 |
+| Design room, baked, light | 80.1 | 77.8 | 12.75 / 14.4 ms | 57 |
+| Design room, current, dark | 80.4 | 80.5 | 12.38 / 13.8 ms | 52 |
+| Design room, baked, dark (glow on) | 73.7 | 71.8 | 13.82 / 15.6 ms | 64 |
+| Design room, baked, dark, glow off | 79.5 | 77.1 | 12.88 / 14.3 ms | 60 |
+| Overview, current, dark | 80.3 | 81.8 | 12.14 / 13.7 ms | 61 |
+| Overview, baked, dark | 72.1 | 74.5 | 13.37 / 14.9 ms | 73 |
+| Overview, baked, light | 84.1 | 81.8 | 12.15 / 14.0 ms | 66 |
+| Walk: overview, dark, baked, 5 agents walking | 71.1 | 71.1 | 14.09 / 15.5 ms | 73 |
+
+- **Why Chromium, not Chrome:** Windows' per-app graphics preference now has `chrome.exe` on "High performance" (`GpuPreference=2` under `HKCU\Software\Microsoft\DirectX\UserGpuPreferences`), so headed Google Chrome runs on the RTX 5060 (its run, vsync-capped at about 165 fps everywhere, is kept as `fps-headed-chrome-nvidia.json`; it is not the budget figure). The setting was not changed. Playwright's Chromium has no per-app preference, so Windows gives it the Intel iGPU; same ANGLE/D3D11 path. `scripts/screenshots-r3.mjs --headed --channel chromium --expect-gpu intel` records a problem if the renderer is not Intel. Browsers were launched by Playwright with fresh temporary profiles; only the script's own server on a random port was opened.
+- **Captures** (`screenshots/r3-spike/`, git-ignored as before): `01-design-current-light.png`, `02-design-baked-light.png`, `03-design-current-dark.png`, `04-design-baked-dark.png` (same camera as R2's 04-design-room), plus `side-by-side-light.png` and `side-by-side-dark.png` (current | baked), `fps-headed.json`, `fps-headed-chrome-nvidia.json`, `asset-sizes.json`, `build.json`. Problems: none.
+- **Files:** new `scripts/blender/build-design-room.py`, `scripts/build-design-room.mjs`, `scripts/screenshots-r3.mjs`, `src/web/scene/baked.js`, `src/web/assets/design-room/*`, `assets-src/`, `tests/baked-room.test.mjs`; changed `src/web/scene/layout.js` (`bakedRoomSpec`), `rooms.js` (`skipRoom`), `office.js` (loader, instance hiding, glow pass), `src/web/main.js` (flag), `src/server/index.mjs` (MIME for .glb, .webp, .jpg), `scripts/screenshots.mjs` (`launch({ channel })`), `tests/write-guard.test.mjs` (two new script jails), `package.json` (`build-design-room`, `screenshots-r3`), `ASSETS.md`, `DECISIONS.md`, `PROGRESS.md`.
 
 ### Pre-E6 housekeeping (17/10/2026)
 
@@ -259,7 +290,9 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `4f3e076`, `286be16`: E5 milestones 1 and 2 (engine and server write path; the page's controls)
 - `6181a87`: E5 live UI (fixes from the captures, line endings, docs)
 - `39b48c8`: Normalise line endings (`.gitattributes`)
-- The next commit: "Pre-E6 housekeeping" (E5 approval, drift list, port-step items, E6 readiness checklist)
+- `f51ec46`: Pre-E6 housekeeping (E5 approval, drift list, port-step items, E6 readiness checklist)
+- `96c23b2`: R3 milestone (Blender build and the baked Design room behind `?scene=baked`)
+- The next commit: "R3 spike: baked Design room" (the headed captures' fixes, the Chromium channel, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -278,7 +311,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **198 passed, 0 failed**, after E5 (17/10/2026); new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **204 passed, 0 failed**, after the R3 spike (17/10/2026); new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -327,6 +360,7 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
+0. **R3 spike: the owner decides** whether to bake the whole office (DECISIONS.md, "R3 spike build record", lists what a roll-out would involve). Until then `?scene=baked` stays a flag and nothing else changes. Also for the owner: `chrome.exe` is set to "High performance" in Windows graphics settings (so headed Chrome uses the RTX 5060); set it back to "Let Windows decide" or "Power saving" if future fps runs should use headed Chrome on the iGPU again.
 1. **Wait for the owner's legacy job** `2026-10-16--pngtuber-cosy-desk-props-r2` to finish.
 2. **Port step, one batch:** run `npm run port-drift` again, read the "To port to office-agents" log in Virtual-workers (read only), port the drifted files and the logged fixes at a new moment in PORTED.md, and build the three planned items (ENGINE-PLAN.md §9, "Port step before E6"). Mock only.
 3. **E6** starts when every row of the E6 readiness checklist above is done.
