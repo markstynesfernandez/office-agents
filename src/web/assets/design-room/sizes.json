@@ -1,0 +1,29 @@
+{
+  "files": [
+    {
+      "file": "design-room.glb",
+      "bytes": 727396,
+      "gzip": 350814,
+      "brotli": 302901
+    },
+    {
+      "file": "lightmap-day.webp",
+      "bytes": 470124,
+      "gzip": 469009,
+      "brotli": 470129
+    },
+    {
+      "file": "lightmap-evening.webp",
+      "bytes": 280914,
+      "gzip": 279935,
+      "brotli": 280919
+    }
+  ],
+  "total": {
+    "bytes": 1478434,
+    "gzip": 1099758,
+    "brotli": 1053949
+  },
+  "budgetBytes": 6291456,
+  "note": "bytes = as served (glb with JPEG textures, WebP lightmaps: already compressed formats); gzip/brotli = what HTTP compression would add on top"
+}

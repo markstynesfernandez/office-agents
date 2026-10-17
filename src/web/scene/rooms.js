@@ -44,7 +44,11 @@ const onWall = (axis, at, u, y, v) => (axis === 'z' ? mat4(u, y, at + WALL_T + v
 // placement in a furniture item's own frame (it faces local -z; yaw as in layout.js)
 const local = (o, lx, ly, lz, extra = 0, rx = 0, rz = 0) => { const c = Math.cos(o.yaw || 0), s = Math.sin(o.yaw || 0); return mat4(o.x + lx * c + lz * s, ly, o.z - lx * s + lz * c, (o.yaw || 0) + extra, rx, rz); };
 
-export function buildRooms(L, p, accents) {
+// opts.skipRoom (R3 spike): a department key whose room is drawn elsewhere (the baked Design room): its walls, floor,
+// furniture, decals and the props inside it are left out; its open-front floor LED and wash stay (real-time glow).
+export function buildRooms(L, p, accents, opts = {}) {
+  const skip = opts.skipRoom ? L.rooms.find((r) => r.key === opts.skipRoom) : null;
+  const inSkip = (q) => !!skip && q.x > skip.x0 && q.x < skip.x1 && q.z > skip.z0 && q.z < skip.z1;
   const out = { statics: [], wood: null, tile: null, decals: null, emissive: null, glow: null };
   const wood = bucket({ uv: true }), tile = bucket({ uv: true }), decals = bucket({ uv: true }), em = bucket({ color: true }), glow = bucket({ uv: true, color: true });
   const ledC = p.led, glowC = col(p.ledGlowColour).multiplyScalar(p.ledGlow);
@@ -255,7 +259,7 @@ export function buildRooms(L, p, accents) {
     const leftW = L.walls.find((w) => w.owner === 'atrium' && w.axis === 'x');
     if (leftW) { const um = (leftW.from + leftW.to) / 2; frame(A, 'x', leftW.at, um - 0.25, FLOOR + 1.6, 1.1, 0.75, ATLAS.art[5]); clock(A, 'x', leftW.at, um + 0.95, FLOOR + 1.95); }
   }
-  for (const q of L.props) ({ bench, printer, cooler, meeting, easel })[q.kind](A, q);
+  for (const q of L.props) if (!inSkip(q)) ({ bench, printer, cooler, meeting, easel })[q.kind](A, q);
   out.statics.push({ key: 'atrium', geo: A.merge() });
 
   function wallRun(S, w, wallColour) {
@@ -278,13 +282,14 @@ export function buildRooms(L, p, accents) {
 
   // ---- department rooms
   for (const r of L.rooms) {
+    // LED along the room's open floor edges inside the slab (the slab's own edge has its LED)
+    if (r.z1 < b.z1 - 0.01) edgeLED('+z', r.z1, r.x0, r.x1, FLOOR + 0.01, FLOOR + 0.004, 0.7, 0.5);
+    if (r.x1 < b.x1 - 0.01) edgeLED('+x', r.x1, r.z0, r.z1, FLOOR + 0.01, FLOOR + 0.004, 0.7, 0.5);
+    if (r === skip) continue;
     const S = bucket({ color: true }), accent = accents[r.key] || accents.default;
     const wallC = mix(p.wall, accent, p.wallTint);
     wood.add(planarUV(box(r.w, 0.02, r.d).translate(r.cx, FLOOR + 0.01, r.cz), 3.6));
     for (const w of L.walls) if (w.owner === r.key) wallRun(S, w, wallC);
-    // LED along the room's open floor edges inside the slab (the slab's own edge has its LED)
-    if (r.z1 < b.z1 - 0.01) edgeLED('+z', r.z1, r.x0, r.x1, FLOOR + 0.01, FLOOR + 0.004, 0.7, 0.5);
-    if (r.x1 < b.x1 - 0.01) edgeLED('+x', r.x1, r.z0, r.z1, FLOOR + 0.01, FLOOR + 0.004, 0.7, 0.5);
     for (const c of r.clusters) rug(S, c.x0, c.x1, c.z0, c.z1, p.rug, p.rugBorder);
     const zA = r.z0, xA = r.x0;                     // wall 'z' at zA (back right on screen), wall 'x' at xA (back left)
     const deskU0 = r.desks.length ? Math.min(...r.desks.map((d) => d.x)) - 1.05 : r.x0 + r.pad.left, deskU1 = r.desks.length ? Math.max(...r.desks.map((d) => d.x)) + 1.05 : r.x1 - r.pad.right;

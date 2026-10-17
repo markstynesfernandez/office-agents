@@ -19,7 +19,9 @@
     "port-drift": "node scripts/port-drift.mjs",
     "demo": "node scripts/demo.mjs",
     "demo:record": "node scripts/demo-record.mjs",
-    "import-legacy": "node scripts/import-legacy.mjs"
+    "import-legacy": "node scripts/import-legacy.mjs",
+    "build-design-room": "node scripts/build-design-room.mjs",
+    "screenshots-r3": "node scripts/screenshots-r3.mjs"
   },
   "dependencies": {
     "croner": "10.0.1",

@@ -19,7 +19,7 @@ const WEB = path.join(ROOT, 'src', 'web');
 const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
 const FIXTURES_DIR = path.join(ROOT, 'fixtures');
 const FIXTURES = path.join(FIXTURES_DIR, 'station-root');
-export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.map': 'application/json' };
+export const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.map': 'application/json', '.glb': 'model/gltf-binary', '.webp': 'image/webp', '.jpg': 'image/jpeg' };
 export const LEGACY_PORT = 8787;
 
 // ---- shared HTTP helpers (also used by the engine server)

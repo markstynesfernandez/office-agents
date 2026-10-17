@@ -21,10 +21,11 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 import { PALETTE } from '../config/palette.js';
 import { makeMonitorTexture } from './monitor.js';
-import { computeLayout, pointAt, pathLength, FLOOR, WALL_H, CORE_R } from './layout.js';
+import { computeLayout, pointAt, pathLength, bakedRoomSpec, FLOOR, WALL_H, CORE_R } from './layout.js';
 import { buildRooms } from './rooms.js';
 import { woodTexture, tileTexture, glowTexture, atlasTexture, GLOW_UV } from './textures.js';
 import { SKIN, HAIR, TROUSERS, hash, shirtColours } from './looks.js';   // people's looks (R2; shirts off the skin range, E5)
+import { loadBakedRoom } from './baked.js';   // R3 spike: the baked Design room (?scene=baked)
 
 const DEG = Math.PI / 180;
 const PITCH = 35 * DEG, YAW = 45 * DEG;
@@ -83,6 +84,41 @@ class HalfResGTAOPass extends GTAOPass {
     this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
     this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
     this._renderPass(renderer, this.blendMaterial, readBuffer);
+  }
+}
+
+// R3 spike: a cheap glow on the baked room's LED strips (dark mode only). The strips are drawn above 1.0 (HDR, not tone
+// mapped; nothing else in the scene is), so a threshold + 2x2 downsample to half resolution, a 9-tap blur each way at
+// half resolution and an additive blend back onto the frame pick them out without a second scene render.
+class HalfResGlowPass extends Pass {
+  constructor() {
+    super(); this.needsSwap = false; this.enabled = false; this.strength = 0.85;
+    const rt = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
+    this.a = rt(); this.b = rt(); this.full = new THREE.Vector2(1, 1);
+    const vertexShader = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+    const mat = (uniforms, fragmentShader, extra = {}) => new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, depthTest: false, depthWrite: false, ...extra });
+    this.bright = mat({ tDiffuse: { value: null }, texel: { value: new THREE.Vector2() }, threshold: { value: 1.15 } },
+      'uniform sampler2D tDiffuse; uniform vec2 texel; uniform float threshold; varying vec2 vUv; vec3 pick(vec2 o) { return max(texture2D(tDiffuse, vUv + o).rgb - threshold, 0.0); } void main() { gl_FragColor = vec4(0.25 * (pick(-texel) + pick(vec2(texel.x, -texel.y)) + pick(vec2(-texel.x, texel.y)) + pick(texel)), 1.0); }');
+    this.blur = mat({ tDiffuse: { value: null }, dir: { value: new THREE.Vector2() } },
+      'uniform sampler2D tDiffuse; uniform vec2 dir; varying vec2 vUv; void main() { vec3 s = texture2D(tDiffuse, vUv).rgb * 0.227027; s += (texture2D(tDiffuse, vUv + dir * 1.384615).rgb + texture2D(tDiffuse, vUv - dir * 1.384615).rgb) * 0.316216; s += (texture2D(tDiffuse, vUv + dir * 3.230769).rgb + texture2D(tDiffuse, vUv - dir * 3.230769).rgb) * 0.070270; gl_FragColor = vec4(s, 1.0); }');
+    this.add = mat({ tDiffuse: { value: null }, strength: { value: this.strength } },
+      'uniform sampler2D tDiffuse; uniform float strength; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb * strength, 1.0); }',
+      { transparent: true, blending: THREE.AdditiveBlending });
+    this.quad = new FullScreenQuad(null);
+  }
+  setSize(w, h) { this.full.set(w, h); const hw = Math.max(1, Math.round(w / 2)), hh = Math.max(1, Math.round(h / 2)); this.a.setSize(hw, hh); this.b.setSize(hw, hh); }
+  render(renderer, writeBuffer, readBuffer) {
+    const auto = renderer.autoClear; renderer.autoClear = false;
+    const hw = this.a.width, hh = this.a.height;
+    this.bright.uniforms.tDiffuse.value = readBuffer.texture; this.bright.uniforms.texel.value.set(0.5 / this.full.x, 0.5 / this.full.y);
+    this.quad.material = this.bright; renderer.setRenderTarget(this.a); this.quad.render(renderer);
+    this.blur.uniforms.tDiffuse.value = this.a.texture; this.blur.uniforms.dir.value.set(1 / hw, 0);
+    this.quad.material = this.blur; renderer.setRenderTarget(this.b); this.quad.render(renderer);
+    this.blur.uniforms.tDiffuse.value = this.b.texture; this.blur.uniforms.dir.value.set(0, 1 / hh);
+    renderer.setRenderTarget(this.a); this.quad.render(renderer);
+    this.add.uniforms.tDiffuse.value = this.a.texture; this.add.uniforms.strength.value = this.strength;
+    this.quad.material = this.add; renderer.setRenderTarget(readBuffer); this.quad.render(renderer);
+    renderer.autoClear = auto;
   }
 }
 
@@ -207,6 +243,23 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   let L = null, data = null, structureKey = null, selectedId = null;
   let statics = [], inst = {}, screens = [], workers = [], lines = [], terminals = [], pickables = [];
   const dummy = new THREE.Object3D();
+  // R3 spike: the baked Design room. Loaded only behind ?scene=baked; used only while its spec matches the live layout
+  // (layout.js bakedRoomSpec), otherwise the procedural room stays. Everything else in the office is unchanged.
+  const baked = { want: options.scene === 'baked', room: null, active: false, failed: null, warned: false };
+  const BAKED_KEY = 'design';
+  // when it arrives after the first snapshot, the normal data path rebuilds the office with it (statuses, screens, lines)
+  if (baked.want) loadBakedRoom().then((room) => { baked.room = room; if (data) { structureKey = null; setData(data); } invalidate(2); })
+    .catch((e) => { baked.failed = String(e && e.message || e); console.warn('office: the baked Design room did not load; drawing the procedural room:', baked.failed); invalidate(1); });
+  function updateBaked() {
+    if (!baked.room || !L) { baked.active = false; return; }
+    const r = L.rooms.find((x) => x.key === BAKED_KEY);
+    baked.active = !!r && JSON.stringify(baked.room.manifest.spec) === JSON.stringify(bakedRoomSpec(L, BAKED_KEY));
+    if (!baked.active && !baked.warned) { baked.warned = true; console.warn('office: the baked Design room does not match the live layout; drawing the procedural room'); }
+    const g = baked.room.group;
+    if (baked.active) { g.position.set(r.x0, 0, r.z0); if (!g.parent) world.add(g); baked.room.setTheme(theme); g.updateMatrixWorld(true); }
+    else if (g.parent) world.remove(g);
+  }
+  const skippedRoom = () => (baked.active ? L.rooms.find((x) => x.key === BAKED_KEY) : null);
 
   // ---- the memory core: crystal on its pedestal, accent ring, soft glow sprite that pulses on a new ledger row
   const hub = new THREE.Group(); world.add(hub);
@@ -225,7 +278,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (gtao) gtao.aoDirty = true;   // the cached AO (R2) follows the static scene
     for (const s of statics) { world.remove(s); s.geometry.dispose(); }
     statics = []; glowMesh = null;
-    const R = buildRooms(L, P(), PALETTE.departments);
+    const R = buildRooms(L, P(), PALETTE.departments, { skipRoom: baked.active ? BAKED_KEY : null });
     const add = (geo, mat, { cast = true, receive = true, order = 0, name } = {}) => { if (!geo) return null; const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = receive; m.renderOrder = order; m.name = name || ''; world.add(m); statics.push(m); return m; };
     for (const s of R.statics) add(s.geo, M.static, { name: 'room:' + s.key });
     add(R.tile, M.tile, { cast: false, name: 'tile' });
@@ -272,13 +325,17 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     let li = 0;
     const deskY = PT + 0.73, onTop = deskY + 0.03;
     const shirts = shirtColours(desks.map((d) => ({ id: d.agentId, color: d.a.color })));
-    desks.forEach(({ a, x, z, lshape, chair: ch, agentId }, i) => {
-      setInst(top, i, x, deskY, z); setInst(frame, i, x, PT, z);
-      if (lshape) { setInst(ret, li, x + 0.75, deskY, z + 0.95); setInst(retFrame, li, x + 0.75, PT, z + 1.3); li++; }
+    const skip = skippedRoom();
+    desks.forEach(({ a, x, z, lshape, chair: ch, agentId, room }, i) => {
+      // in the baked room (R3 spike) the desk, its drawers, lamp and chair are in the glb: their instances get scale 0;
+      // the monitor, keyboard, screen glow, status light and the person stay real-time
+      const s = room === skip ? 0 : 1;
+      setInst(top, i, x, deskY, z, 0, 0, s); setInst(frame, i, x, PT, z, 0, 0, s);
+      if (lshape) { setInst(ret, li, x + 0.75, deskY, z + 0.95, 0, 0, s); setInst(retFrame, li, x + 0.75, PT, z + 1.3, 0, 0, s); li++; }
       setInst(mon, i, x, onTop, z - 0.24, MON_YAW); setInst(kb, i, x - 0.05, onTop + 0.012, z + 0.14);
-      setInst(lamp, i, x - 0.82, onTop, z - 0.12, -0.5); setInst(bulb, i, x - 0.82 + 0.17 * Math.sin(-0.5) * -1, onTop + 0.46, z - 0.12 - 0.17 * Math.cos(-0.5));
-      setInst(lampPool, i, x - 0.72, onTop + 0.004, z - 0.02, 0, 0, 1.0); setInst(screenPool, i, x + 0.12, onTop + 0.006, z + 0.12, MON_YAW, 0, 1.2);
-      setInst(chair, i, ch.x, PT, ch.z);
+      setInst(lamp, i, x - 0.82, onTop, z - 0.12, -0.5, 0, s); setInst(bulb, i, x - 0.82 + 0.17 * Math.sin(-0.5) * -1, onTop + 0.46, z - 0.12 - 0.17 * Math.cos(-0.5), 0, 0, s);
+      setInst(lampPool, i, x - 0.72, onTop + 0.004, z - 0.02, 0, 0, 1.0 * s); setInst(screenPool, i, x + 0.12, onTop + 0.006, z + 0.12, MON_YAW, 0, 1.2);
+      setInst(chair, i, ch.x, PT, ch.z, 0, 0, s);
       // looks: the shirt takes the agent's colour unless it is skin-like or too close to another shirt (looks.js); skin,
       // hair, hair style and trousers are picked from the agent id
       const shirt = new THREE.Color(shirts[agentId] || '#4f7cc4').lerp(new THREE.Color('#ffffff'), 0.12), skin = new THREE.Color(SKIN[hash(agentId + ':skin') % SKIN.length]);
@@ -304,7 +361,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const wp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.9)); pickRoot.add(wp); pickables.push({ object: wp, kind: 'agent', id: agentId }); workers[workers.length - 1].pick = wp;
     });
     // plants
-    const tall = L.plants.filter((p) => p.kind === 'tall'), small = L.plants.filter((p) => p.kind !== 'tall');
+    const inSkip = (p) => !!skip && p.x > skip.x0 && p.x < skip.x1 && p.z > skip.z0 && p.z < skip.z1;   // the baked room has its own plants
+    const tall = L.plants.filter((p) => p.kind === 'tall' && !inSkip(p)), small = L.plants.filter((p) => p.kind !== 'tall' && !inSkip(p));
     const potT = makeInst('potTall', G.potTall, M.potTall, tall.length), leafT = makeInst('leafTall', G.leavesTall, M.leafTall, tall.length);
     const potS = makeInst('potSmall', G.potSmall, M.potSmall, small.length), leafS = makeInst('leafSmall', G.leavesSmall, M.leafSmall, small.length);
     tall.forEach((p, i) => { setInst(potT, i, p.x, PT + 0.25, p.z); setInst(leafT, i, p.x, PT, p.z, i * 1.3); });
@@ -464,6 +522,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const depts = snap.departments.map((d) => ({ key: d.key, agents: d.agents.map((id) => snap.agents.find((a) => a.id === id)).filter(Boolean).sort((a, b) => (a.desk && b.desk ? (a.desk.y - b.desk.y) || (a.desk.x - b.desk.x) : 0)).map((a) => a.id) }));
       L = computeLayout(depts, snap.services);
       if (L.dropped.length) console.warn('office: only three department rooms are drawn; not drawn:', L.dropped.join(', '));
+      updateBaked();
       buildStatic(); buildFurniture(snap); buildServices(snap.services);
       const b = L.base; drop.scale.set(b.w * 1.2, 1, b.d * 1.2); drop.position.set(b.cx - 0.6, 0.004, b.cz + 0.2);
       renderer.shadowMap.needsUpdate = true;
@@ -498,6 +557,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (inst.screenPool) inst.screenPool.visible = lit;
     if (inst.bulb) { for (let i = 0; i < inst.bulb.count; i++) inst.bulb.setColorAt(i, new THREE.Color(p.bulb)); if (inst.bulb.instanceColor) inst.bulb.instanceColor.needsUpdate = true; }
     if (gtao) gtao.blendIntensity = p.aoBlend;
+    if (baked.room && baked.active) baked.room.setTheme(theme);
+    if (glowPass) glowPass.enabled = baked.active && theme === 'dark';
     colourServices(); updateScreens(); paintBackdrop(); setHubGlow(0);
     for (const s of screens) if (s.textured) { const a = data && data.agents.find((x) => x.id === s.agentId); if (a) s.tex.draw(a, theme); }
     if (gtao) gtao.aoDirty = true;
@@ -520,7 +581,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
 
   // ---- post-processing: MSAA target + half-resolution GTAO + output (ACES + sRGB)
   const size = new THREE.Vector2();
-  let composer = null, gtao = null;
+  let composer = null, gtao = null, glowPass = null;
   function setupComposer(w, h) {
     const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
     composer = new EffectComposer(renderer, rt);
@@ -536,10 +597,11 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
         gtao.blendIntensity = P().aoBlend;
         // left out of the AO pre-pass: overlays (they would make halos) and small details that gain nothing from AO
         // R2: the people are left out too (small, they move, and they have blob shadows): 15 fewer draws in the pre-pass
-        gtao.hideDuringAO = () => [...PEOPLE_PARTS.map((n) => inst[n]), crystal, coreRing, glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
+        gtao.hideDuringAO = () => [...PEOPLE_PARTS.map((n) => inst[n]), ...(baked.room ? baked.room.ledMeshes : []), ...(baked.room && options.bakedAO === false ? [baked.room.group] : []), crystal, coreRing, glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
         composer.addPass(gtao);
       } catch (e) { console.warn('GTAO unavailable, continuing without AO', e); gtao = null; }
     }
+    if (baked.want && options.glow !== false) { glowPass = new HalfResGlowPass(); glowPass.setSize(w, h); composer.addPass(glowPass); }
     composer.addPass(new OutputPass());
   }
 
@@ -647,7 +709,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     return { rendered: true, cameraChanged };
   }
   const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
-  function getStats() { return { fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
+  function bakedState() { return { want: baked.want, loaded: !!baked.room, active: baked.active, failed: baked.failed, glow: !!(glowPass && glowPass.enabled) }; }
+  function getStats() { return { baked: baked.want ? (baked.active ? 'design' : baked.failed ? 'failed' : baked.room ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
   // continuous rendering for `ms` (as if the camera were moving every frame): average fps and frame times
   // (the page's own loop keeps calling tick(); while benchUntil is in the future every tick renders)
   // move: true orbits the target a little every frame (the real camera-motion path: AO off while moving)
@@ -674,5 +737,5 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   function people() { return workers.map((w) => ({ agentId: w.agentId, status: w.status, place: w.walk ? 'walking' : w.place, seat: w.seat ? L.lounge.seats.indexOf(w.seat) : null })); }
 
   resize(); updateCamera(0); paintBackdrop();
-  return { renderer, scene, camera, setData, setTheme, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, people, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
+  return { renderer, scene, camera, setData, setTheme, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
 }

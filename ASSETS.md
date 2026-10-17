@@ -6,7 +6,7 @@ starnetos.com. The StarNet name, logo, artwork and sprites are not licensed and 
 
 ## 3D assets
 
-All geometry is generated procedurally in Three.js at runtime and every texture is drawn with the 2D canvas API at
+Up to Redesign R2, all geometry is generated procedurally in Three.js at runtime and every texture is drawn with the 2D canvas API at
 start-up (`src/web/scene/`). No model files, image textures or sprite sheets are bundled, so there is no third-party
 asset licence file to ship. Kenney's CC0 kits remain an allowed option; Redesign R1 did not use them (procedural gave
 the control over instancing and merging that the frame budget needed, and no download or archive was involved). If a
@@ -48,6 +48,32 @@ for this project; licence: this project. `design-refs/02.png` was used for mood 
 | Atrium floor: polished concrete (replaces the R1 stone tiles) | `CanvasTexture`: soft clouding, fine specks, thin saw-cut joints, from a seeded generator | `scene/textures.js` |
 | Top-bar service glyphs: a spark, a route, an upscale arrow, a shop bag, a dashed ring | inline SVG paths written for this project (generic shapes, not any company's logo) | `src/web/main.js` |
 
+**R3 spike: baked Design room (17/10/2026), behind `?scene=baked` only.** The first non-procedural assets. The room is
+modelled in code by `scripts/blender/build-design-room.py` (no model file, kit or download is used for geometry), lit and
+baked in Blender, and exported to glTF. Blender's outputs are this project's own (licence: this project); the five
+photo textures inside them are CC0 (below). `design-refs/05.png` was used for mood only (dark walls, warm wood): no
+layout, model, artwork or texture was traced or copied.
+
+| Asset | Made with | Where |
+|-------|-----------|-------|
+| Design room shell (floor, two walls, caps, skirting), wood slat wall panel, three oak shelves with binders (blank label patches, no text) and vases, ten fabric wall pads, a rug, two walnut desks with drawer pedestals (the first L-shaped), two ergonomic chairs, two desk lamps, a fiddle-leaf fig, a small pot plant, an easel with an abstract picture (coloured blocks), LED strips under the shelves and along the floor edge of both walls | Python in Blender 5.2.1 (boxes, cylinders, low-poly spheres, polygon leaves), seeded; sizes and positions from `layout.js` `bakedRoomSpec` | `src/web/assets/design-room/design-room.glb` (710 KB; 4,676 triangles; JPEG textures at 512 px) |
+| Day and evening lightmaps | Cycles bake (diffuse, direct + indirect, no colour), OptiX on the GPU, 2048 px, 1024 samples, scaled and stored 8-bit sRGB | `src/web/assets/design-room/lightmap-day.webp`, `lightmap-evening.webp` (WebP via sharp, quality 90) |
+| Manifest (spec, lightmap scales, LED strips, build info) and sizes | `scripts/build-design-room.mjs` | `src/web/assets/design-room/manifest.json`, `sizes.json` |
+
+**Third-party textures (CC0 1.0, Poly Haven).** Five 1k diffuse JPGs, downloaded 17/10/2026 from the Poly Haven API
+and checked against its MD5: `assets-src/polyhaven/` (source URLs, publication dates, authors and MD5s in
+`assets-src/polyhaven/SOURCES.md`). Licence text: `assets-src/licences/CC0-1.0.txt` (CC0 1.0 Universal legal code, from
+https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt; sha256 a2010f34…0499). Poly Haven licence page:
+https://polyhaven.com/license.
+
+| File | Source | Published | Licence | Used for |
+|------|--------|-----------|---------|----------|
+| `oak_veneer_01_diff_1k.jpg` | https://polyhaven.com/a/oak_veneer_01 | 2024-03-08 | CC0 1.0 | slats, shelves, easel |
+| `walnut_veneer_diff_1k.jpg` | https://polyhaven.com/a/walnut_veneer | 2026-08-11 | CC0 1.0 | desk tops, drawer fronts |
+| `wood_floor_diff_1k.jpg` | https://polyhaven.com/a/wood_floor | 2023-10-24 | CC0 1.0 | floor (shifted a little deeper) |
+| `poly_wool_herringbone_diff_1k.jpg` | https://polyhaven.com/a/poly_wool_herringbone | 2025-09-05 | CC0 1.0 | wall pads (shifted to a muted rust), chair upholstery (charcoal) |
+| `hessian_230_diff_1k.jpg` | https://polyhaven.com/a/hessian_230 | 2025-09-05 | CC0 1.0 | rug (oatmeal) |
+
 Palette: `src/web/config/palette.js` (own choice; one accent per department used as a soft wall tint and on the cards;
 light and dark themes; one warm accent in dark mode, shared with the UI's `--accent` in `src/web/styles.css`).
 
@@ -67,7 +93,7 @@ and the system monospace stack (`Cascadia Code`, `Consolas`, `ui-monospace`). No
 
 | Package | Version | Licence | Use | Where |
 |---------|---------|---------|-----|-------|
-| three | 0.186.1 | MIT | renderer, geometry, post-processing (`EffectComposer`, `RenderPass`, `GTAOPass`, `OutputPass`, `Pass`/`FullScreenQuad`, `CopyShader`, `RoundedBoxGeometry`, `BufferGeometryUtils`) | `dependencies`; served to the browser from `node_modules/three/build` and `examples/jsm` only |
+| three | 0.186.1 | MIT | renderer, geometry, post-processing (`EffectComposer`, `RenderPass`, `GTAOPass`, `OutputPass`, `Pass`/`FullScreenQuad`, `CopyShader`, `RoundedBoxGeometry`, `BufferGeometryUtils`); R3 spike: `GLTFLoader` (loads the baked Design room) | `dependencies`; served to the browser from `node_modules/three/build` and `examples/jsm` only |
 | sharp | 0.34.5 | Apache-2.0 | downscales design and print PNGs into thumbnails: `scripts/snapshot-fixtures.mjs` now; the server's `.cache/thumbs/` in Phase 2 (decision 9). Same version the owner's station already uses. | `dependencies` |
 | @img/sharp-win32-x64 | 0.34.5 | Apache-2.0 AND LGPL-3.0-or-later | sharp's prebuilt binary; bundles libvips 8.17.3 (LGPL-3.0-or-later, dynamically linked, unmodified) | transitive (optional, platform-specific) |
 | @img/colour | 1.1.0 | MIT | sharp dependency | transitive |
@@ -79,6 +105,12 @@ and the system monospace stack (`Cascadia Code`, `Consolas`, `ui-monospace`). No
 | Chromium (downloaded by `npx playwright install chromium`, build 1248) | per Playwright | BSD-3-Clause (Chromium) | headless screenshot browser; not redistributed with this project | `~/AppData/Local/ms-playwright` |
 | Google Chrome (already installed on this PC) | system | Google Chrome Terms of Service | only for `node scripts/screenshots.mjs --headed` (fps as seen in headed Chrome) and `npm run demo:record` (headed recording); not redistributed | system install |
 | ffmpeg, Playwright build 1013 (downloaded with Playwright's browsers) | pinned by playwright-core 1.64.1 (`browsers.json`) | LGPL-2.1 (`COPYING.LGPLv2.1` in its folder) | Playwright's own video capture for `npm run demo:record` (WebM, VP8/VP9). `demo-record.mjs` also runs it to read the WebM's duration and probes it for MP4 output: it has no MP4 muxer or H.264/MPEG-4 encoder, so no .mp4 is made. A system ffmpeg on PATH (GPL-3.0 "full" build on this PC) is never used: it is not pinned or licence-checked here. | `~/AppData/Local/ms-playwright/ffmpeg-1013` |
+
+## Tools (not shipped)
+
+| Tool | Version (pinned) | Licence | Use | Where |
+|------|------------------|---------|-----|-------|
+| Blender | **5.2.1 LTS** (build 9e2066aef7ef, 2026-08-25; series 5.2 LTS, supported to July 2028). The owner installed it from https://www.blender.org/download/lts/5-2/. `scripts/build-design-room.mjs` refuses any version outside 5.2.x unless `--any-blender` is given. | GPL-2.0-or-later (the program). Files made with it are not covered by the GPL: the glb, lightmaps and manifest are this project's own (Blender licence FAQ). | headless modelling, Cycles bake and glTF export for the R3 spike (`npm run build-design-room`); bundled add-on: glTF 2.0 I/O 5.2.40 (Apache-2.0) | `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe` (or `BLENDER_EXE`) |
 
 npm reports an install script for sharp that is not run (`allowScripts`); it is not needed because the prebuilt
 binary package is used.

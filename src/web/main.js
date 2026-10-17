@@ -22,7 +22,7 @@ const store = { get: (k) => { try { return localStorage.getItem(k); } catch (_) 
 let theme = q.get('theme') || store.get('office-theme') || 'light';
 document.body.dataset.theme = theme;
 
-const office = createOffice({ canvas: $('#scene'), theme, onPick: handlePick, options: { ao: q.get('ao') !== '0', animate: q.get('anim') !== '0', msaa: q.get('msaa') !== '0', msaaSamples: Number(q.get('msaa')) || 4, aoQuality: q.get('aoq') ? Object.fromEntries(['samples', 'pdSamples', 'rings'].map((k, i) => [k, Number(q.get('aoq').split(',')[i])])) : null } });
+const office = createOffice({ canvas: $('#scene'), theme, onPick: handlePick, options: { ao: q.get('ao') !== '0', animate: q.get('anim') !== '0', msaa: q.get('msaa') !== '0', msaaSamples: Number(q.get('msaa')) || 4, aoQuality: q.get('aoq') ? Object.fromEntries(['samples', 'pdSamples', 'rings'].map((k, i) => [k, Number(q.get('aoq').split(',')[i])])) : null, scene: q.get('scene') === 'baked' ? 'baked' : 'default', glow: q.get('glow') !== '0', bakedAO: q.get('bakedao') !== '0' } });   // R3 spike: ?scene=baked swaps in the baked Design room
 const ctl = createControls({ root: $('#dialogs'), toastRoot: $('#toasts'), onRefresh: (fresh) => { load(!!fresh).catch(() => {}); } });
 const labels = createLabels({ container: $('#labels'), office, onDept: focusDept, onHub: openLedger });
 const sidepanel = createSidePanel({ root: $('#sidepanel'), onOpenJob: openJob, onOpenAgent: openAgent, onClose: () => { office.setSelected(null); labelsDirty = true; }, getNow: () => (snap ? snap.generatedAt : Date.now()), getSnap: () => snap, ctl });
@@ -244,5 +244,5 @@ $('#estop').addEventListener('click', async () => {
 // test hooks for the screenshot script (read-only helpers)
 window.__office = {
   ready: () => ready, reload: () => load(true), ctl, taskpanel, sidepanel, board, presenter, setPresenter, presenterOn: () => presenterOn, closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap,
-  setAnimate: (v) => office.setAnimate(v), bench: (ms, opts) => office.bench(ms, opts), stats: () => office.getStats(), togglePerf, settled: () => { const v = office.view; return v.target.distanceTo(v.wantTarget) < 0.002 && Math.abs(v.zoom - v.wantZoom) < 0.0005; }
+  setAnimate: (v) => office.setAnimate(v), bench: (ms, opts) => office.bench(ms, opts), stats: () => office.getStats(), togglePerf, settled: () => { const v = office.view, b = office.bakedState(); return (!b.want || b.loaded || !!b.failed) && v.target.distanceTo(v.wantTarget) < 0.002 && Math.abs(v.zoom - v.wantZoom) < 0.0005; }, baked: () => office.bakedState()
 };

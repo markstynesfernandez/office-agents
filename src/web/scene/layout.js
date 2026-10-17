@@ -198,6 +198,23 @@ export function computeLayout(departments, services = []) {
   return { rooms, closet, lounge, base, core, atrium, ring, paths, walls, plants, props, dropped: departments.slice(3).map((d) => d.key) };
 }
 
+// R3 spike: everything a baked room must match, in the room's own frame (x from its -x wall, z from its -z wall; y is
+// world height). The Blender build (scripts/build-design-room.mjs) writes this into the room's manifest; the page uses
+// the baked room only while the live layout gives the same spec, so the labels, desks and seats still line up.
+export function bakedRoomSpec(L, key = 'design') {
+  const r = L.rooms.find((x) => x.key === key); if (!r) return null;
+  const q = (v) => Math.round(v * 1e4) / 1e4, loc = (p) => ({ x: q(p.x - r.x0), z: q(p.z - r.z0) });
+  const inside = (p) => p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1;
+  return {
+    key, kind: r.kind, w: q(r.w), d: q(r.d), floor: FLOOR, wallH: WALL_H, wallT: WALL_T,
+    desks: r.desks.map((d) => ({ ...loc(d), lshape: d.lshape, chair: loc(d.chair) })),
+    plants: L.plants.filter(inside).map((p) => ({ ...loc(p), kind: p.kind })),
+    props: L.props.filter(inside).map((p) => ({ kind: p.kind, ...loc(p), yaw: q(p.yaw) })),
+    walls: L.walls.filter((w) => w.owner === key).map((w) => ({ axis: w.axis, at: q(w.at - (w.axis === 'x' ? r.x0 : r.z0)), from: q(w.from - (w.axis === 'x' ? r.z0 : r.x0)), to: q(w.to - (w.axis === 'x' ? r.z0 : r.x0)), h: w.h })),
+    openFront: r.z1 < L.base.z1 - 0.01, openRight: r.x1 < L.base.x1 - 0.01
+  };
+}
+
 // a point in a furniture item's own frame (it faces local -z, turned by yaw) in world x/z
 export function onFrame(o, lx, lz) { const c = Math.cos(o.yaw || 0), s = Math.sin(o.yaw || 0); return { x: o.x + lx * c + lz * s, z: o.z - lx * s + lz * c }; }
 
