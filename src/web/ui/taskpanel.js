@@ -1,8 +1,10 @@
-// ui/taskpanel.js — right-hand task panel: department dropdown + task input (preview only until E5, nothing is sent),
-// an "Active" chip (the default since R2: in progress + waiting for my OK + backlog + blocked), status chips whose
-// counts add up to All, scope toggle, and the task list. Active jobs (in progress / waiting) show a
-// progress %; blocked, rejected, done and backlog jobs show a status pill, and blocked/rejected show the status reason.
+// ui/taskpanel.js — right-hand task panel. The task box (E5, live in engine mode): "Research this" (text -> a research
+// job), "Start line on brief" (a verified brief from research/briefs/ -> a job on the Room 1 line), "Re-run listing" (a
+// QA-approved design -> LISTER again; the old listing moves to rerun-archive-*). The legacy view is read only.
+// Below it: an "Active" chip (the default since R2: in progress + waiting for my OK + backlog + blocked), status chips
+// whose counts add up to All, scope toggle, and the task list. Active jobs show a progress %; the others a status pill.
 import { esc, duration, jobStatusLabel, statusPill, synthTag } from './format.js';
+import { intentKey } from './controls.js';
 
 // every job has exactly one of these statuses, so the status chip counts add up to All; Active groups the open ones
 const ACTIVE = ['in_progress', 'waiting', 'backlog', 'blocked'];
@@ -16,12 +18,64 @@ export const matchesFilter = (j, f) => (SIDE[f] ? SIDE[f](j) : Object.values(SID
 // agent · department · stage, leaving out what is unknown (lane jobs show their stage as the pill instead)
 const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(Boolean).join(' · ') || j.id;
 
-export function createTaskPanel({ root, onOpenJob }) {
-  const sel = root.querySelector('#task-dept'), input = root.querySelector('#task-input'), submit = root.querySelector('#task-submit');
+export function createTaskPanel({ root, onOpenJob, ctl = null }) {
+  const sel = root.querySelector('#task-dept');
   const filtersEl = root.querySelector('#task-filters'), list = root.querySelector('#task-list');
-  const state = { filter: 'active', scope: 'office', dept: null, snap: null };
-  submit.addEventListener('click', (e) => { e.preventDefault(); });   // v1: UI only, no request is made
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) e.preventDefault(); });
+  const research = root.querySelector('#task-research'), briefSel = root.querySelector('#task-brief'), rerunSel = root.querySelector('#task-rerun');
+  const state = { filter: 'active', scope: 'office', dept: null, snap: null, tab: 'research', form: 1, busy: false };
+  const live = () => !!(state.snap && state.snap.controls && state.snap.controls.live);
+
+  // ---- the task box
+  function setTab(t) {
+    state.tab = t;
+    root.querySelectorAll('.tp-tabs .chip').forEach((b) => b.classList.toggle('chip-on', b.dataset.tab === t));
+    root.querySelectorAll('.tp-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== t));
+  }
+  root.querySelectorAll('.tp-tabs .chip').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  research.addEventListener('input', () => { state.form++; });   // a new text is a new request
+  async function go(kind) {
+    if (!ctl || !live() || state.busy) return;
+    const btn = root.querySelector('[data-go="' + kind + '"]');
+    state.busy = true; btn.disabled = true;
+    try {
+      if (kind === 'research') {
+        const text = research.value.trim(); if (text.length < 3) { ctl.toast('Describe what to research first.', 'err'); return; }
+        const r = await ctl.act('/api/tasks/research', { text }, { key: intentKey('research', text, state.form), ok: (x) => 'Research job ' + x.jobId + ' created and started' });
+        if (r) { research.value = ''; state.form++; }
+      } else if (kind === 'brief') {
+        const file = briefSel.value; if (!file) { ctl.toast('No verified brief is waiting.', 'err'); return; }
+        await ctl.act('/api/tasks/brief', { file }, { key: intentKey('brief', file), ok: (x) => 'Job ' + x.jobId + ' created and started on the line' });
+      } else if (kind === 'rerun') {
+        const j = (state.snap.jobs || []).find((x) => x.id === rerunSel.value); if (!j) { ctl.toast('No QA-approved design to re-list.', 'err'); return; }
+        const ok = await ctl.dialog({ title: 'Re-run the listing?', intro: '<b>' + esc(j.title) + '</b><br><span class="mono">' + esc(j.id) + '</span><br><br>The current listing, its QA-LISTING records and the package move to <span class="mono">jobs/' + esc(j.id) + '/rerun-archive-*</span> (nothing is deleted). LISTER and QA-LISTING run again on the approved design, within the caps.' + (j.queue && j.queue.status === 'pending' ? '<br><br>The job leaves the approval queue until the new package is ready.' : ''), confirm: 'Re-run listing' });
+        if (!ok) return;
+        await ctl.act('/api/tasks/rerun-listing', { jobId: j.id, expectedVersion: j.version }, { ok: 'Listing re-run started for ' + j.id });
+      }
+    } finally { state.busy = false; btn.disabled = !live(); }
+  }
+  root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); go(b.dataset.go); }));
+  research.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go('research'); } });
+
+  function renderBox() {
+    const s = state.snap, on = live();
+    root.querySelector('#task-mode').textContent = on ? (s.engine && s.engine.halted ? 'E-STOP on: nothing starts' : 'live · ' + (s.engine ? s.engine.provider : '') + ' provider') : 'legacy view · read only';
+    root.querySelectorAll('[data-go], #task-research, #task-brief, #task-rerun').forEach((el) => { el.disabled = !on || (s.engine && s.engine.halted && el.dataset.go !== undefined); });
+    research.placeholder = on ? 'What should DEMAND-RESEARCHER look into? e.g. cosy autumn sticker niches with steady demand' : 'The legacy view is read only: start the engine (npm start) to create tasks';
+    // verified briefs without a job yet
+    const briefs = (s.briefs || []).filter((b) => b.status === 'verified' && !b.jobId), cur = briefSel.value;
+    briefSel.innerHTML = briefs.length ? briefs.map((b) => '<option value="' + esc(b.file) + '">' + esc((b.niche || b.id || b.file) + (b.product ? ' · ' + b.product : '')) + '</option>').join('') : '<option value="">no verified brief waiting</option>';
+    if (briefs.some((b) => b.file === cur)) briefSel.value = cur;
+    const used = (s.briefs || []).filter((b) => b.jobId).length;
+    root.querySelector('#task-brief-note').textContent = briefs.length + ' verified brief' + (briefs.length === 1 ? '' : 's') + ' waiting' + (used ? ' · ' + used + ' already started' : '');
+    // QA-approved designs that can be re-listed
+    const rr = (s.jobs || []).filter((j) => j.controls && j.controls.rerunListing), cur2 = rerunSel.value;
+    rerunSel.innerHTML = rr.length ? rr.map((j) => '<option value="' + esc(j.id) + '">' + esc(j.title + ' · ' + (j.lane || jobStatusLabel[j.status] || j.status)) + '</option>').join('') : '<option value="">no QA-approved design to re-list</option>';
+    if (rr.some((j) => j.id === cur2)) rerunSel.value = cur2;
+    if (!briefs.length) root.querySelector('[data-go="brief"]').disabled = true;
+    if (!rr.length) root.querySelector('[data-go="rerun"]').disabled = true;
+  }
+
+  // ---- the list
   root.querySelectorAll('.scope .chip').forEach((b) => b.addEventListener('click', () => { state.scope = b.dataset.scope; root.querySelectorAll('.scope .chip').forEach((x) => x.classList.toggle('chip-on', x === b)); render(); }));
   sel.addEventListener('change', () => { state.dept = sel.value || null; render(); });
 
@@ -30,22 +84,23 @@ export function createTaskPanel({ root, onOpenJob }) {
     const cur = sel.value;
     sel.innerHTML = snap.departments.map((d) => '<option value="' + esc(d.key) + '">' + esc(d.name) + '</option>').join('');
     if (cur && snap.departments.some((d) => d.key === cur)) sel.value = cur; state.dept = sel.value || null;
-    render();
+    renderBox(); render();
   }
   function setDept(key) { if (state.snap && state.snap.departments.some((d) => d.key === key)) { sel.value = key; state.dept = key; render(); } }
   const scoped = () => { const s = state.snap; return state.scope === 'dept' && state.dept ? s.jobs.filter((j) => j.dept === state.dept) : s.jobs; };
-  const matches = matchesFilter;
-  function counts() { const base = scoped(); return Object.fromEntries(FILTERS.map(([k]) => [k, base.filter((j) => matches(j, k)).length])); }
+  function counts() { const base = scoped(); return Object.fromEntries(FILTERS.map(([k]) => [k, base.filter((j) => matchesFilter(j, k)).length])); }
   function render() {
     if (!state.snap) return;
     const c = counts();
-    filtersEl.innerHTML = FILTERS.map(([k, l]) => '<button class="chip ' + (state.filter === k ? 'chip-on' : '') + (c[k] === 0 && k !== 'all' && k !== 'active' ? ' chip-zero' : '') + (k === 'active' ? ' chip-active' : '') + (SIDE[k] ? ' chip-side' : '') + '" data-f="' + k + '">' + l + '<b>' + c[k] + '</b></button>').join('');
+    // the Legacy and Archived chips only where there is something under them (the legacy view has neither)
+    const shown = FILTERS.filter(([k]) => !SIDE[k] || c[k] > 0 || state.filter === k);
+    filtersEl.innerHTML = shown.map(([k, l]) => '<button class="chip ' + (state.filter === k ? 'chip-on' : '') + (c[k] === 0 && k !== 'all' && k !== 'active' ? ' chip-zero' : '') + (k === 'active' ? ' chip-active' : '') + (SIDE[k] ? ' chip-side' : '') + '" data-f="' + k + '">' + l + '<b>' + c[k] + '</b></button>').join('');
     filtersEl.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => { state.filter = b.dataset.f; render(); }));
-    const jobs = scoped().filter((j) => matches(j, state.filter));
+    const jobs = scoped().filter((j) => matchesFilter(j, state.filter));
     list.innerHTML = jobs.length ? jobs.map((j) => {
       const active = j.progress != null;
       const left = active ? '<div class="pct">' + j.progress + '%</div>' : '<div class="pct">' + statusPill(j) + '</div>';
-      const reason = (j.lane || j.flag === 'error') && j.statusReason ? '<div class="reason" title="' + esc(j.statusReason) + '">' + esc(j.statusReason) + '</div>' : '';
+      const reason = (j.lane || j.flag === 'error' || j.waitingFor || j.state === 'archived') && j.statusReason ? '<div class="reason" title="' + esc(j.statusReason) + '">' + esc(j.statusReason) + '</div>' : '';
       const warn = j.warnings && j.warnings.length ? '<span class="warn-dot" title="' + esc(j.warnings.join('\n')) + '">⚠</span>' : '';
       return '<div class="task st-' + j.status + (j.lane ? ' lane-' + j.lane : '') + '" data-id="' + esc(j.id) + '">'
         + left
@@ -56,5 +111,5 @@ export function createTaskPanel({ root, onOpenJob }) {
     }).join('') : '<div class="muted" style="padding:10px">No tasks match this filter.</div>';
     list.querySelectorAll('.task').forEach((el) => el.addEventListener('click', () => onOpenJob(el.dataset.id)));
   }
-  return { setSnapshot, setDept, render };
+  return { setSnapshot, setDept, render, setTab, setFilter: (f) => { state.filter = f; render(); } };
 }

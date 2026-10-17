@@ -3,7 +3,7 @@
 // both. Read-only. Prompts, keys and provider responses never reach the snapshot.
 import fs from 'node:fs';
 import path from 'node:path';
-import { dublinDay, dublinDayStart, dmyOfDay } from '../engine/time.mjs';
+import { dublinDay, dublinDayStart, dmyOfDay, dublinDateTime } from '../engine/time.mjs';
 import { nextRuns } from '../engine/scheduler.mjs';
 import { cronWords } from './model.mjs';
 import { latestSet } from '../engine/lib/digital-prep.mjs';
@@ -172,7 +172,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   spend.legacy = LEG ? { rows: LEG.ledger.length, usd: LEG.ledgerUsd, source: 'data/legacy/ledger.jsonl (imported ' + (LEG.importedAt || '?') + ')', note: 'legacy station spend; not counted in the engine caps' } : null;
   const legacyConflicts = jobs.filter((j) => j.kind === 'legacy' && j.warnings.length).length;
   if (legacyConflicts) warnings.push(legacyConflicts + ' legacy job' + (legacyConflicts > 1 ? 's have' : ' has') + ' sources that disagree (tracker vs rejected/), imported as they are; open a job for details');
-  if (halted) warnings.unshift('E-STOP ON since ' + new Date(halt.state.at || now).toISOString() + ' (by ' + (halt.state.by || 'unknown') + '): no call can start');
+  if (halted) warnings.unshift('E-STOP ON since ' + dublinDateTime(halt.state.at || now) + ' (by ' + (halt.state.by || 'unknown') + '): no call can start');
 
   // ---- routines and the calendar (one entry per job, on the day of its latest stage change)
   const routines = store.listRoutines().map((r) => { const up = r.enabled ? nextRuns(r.schedule, 6, new Date(now)) : []; return { id: r.id, name: r.name, prompt: String(r.input || '').slice(0, 200), input: String(r.input || '').slice(0, 2000), target: r.target, maxRunsPerDay: r.max_runs_per_day, perRunCapUsd: r.per_run_cap_usd, legacy: r.legacy, runnable: !r.legacy && (engine.routineTargets || []).some((t) => t.id === r.target), schedule: r.schedule, scheduleWords: cronWords(r.schedule) + ' (Dublin)', scheduleDisplay: r.schedule, agentId: r.target, agentName: r.legacy && /^legacy:agent:/.test(r.target) ? (nameOf[r.target.slice(13)] || r.target.slice(13)) + ' (legacy)' : r.target, dept: null, enabled: r.enabled, state: r.enabled ? 'scheduled' : 'paused', needsOk: !r.enabled, nextRun: up[0] || null, nextRunIsProjection: false, upcoming: up, ghostRuns: r.enabled ? [] : nextRuns(r.schedule, 6, new Date(now)), lastRunAt: r.last_fire_at, lastStatus: r.last_status, lastUsd: 0, live: false, version: r.version, source: 'engine routines' }; });
@@ -200,7 +200,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   return {
     generatedAt: now, warnings, errors: [], sourcesRead: 0,
     source: { mode: 'engine', root: 'data/', snapshotAt: null, synthetic: [], legacy: false },
-    engine: { state: halted ? 'halted' : 'running', label: halted ? 'E-STOP ON' : 'engine · ' + (mock ? 'mock provider' : 'live'), detail: halted ? 'every call is refused until you resume (typed confirmation)' : 'Station engine, data root ' + J.dataRoot + '; provider ' + providers.mode, halted, haltedBy: halted ? halt.state.by || null : null, provider: providers.mode, inFlight: g.inFlight, seq: engine.bus.seq, overridden: !!cfg.overridden },
+    engine: { state: halted ? 'halted' : 'running', label: halted ? 'E-STOP ON' : 'engine · ' + (mock ? 'mock provider' : 'live'), detail: halted ? 'every call is refused until you resume (typed confirmation)' : 'Station engine, data root ' + J.dataRoot + '; provider ' + providers.mode, halted, haltedBy: halted ? halt.state.by || null : null, haltedAt: halted ? halt.state.at || null : null, provider: providers.mode, inFlight: g.inFlight, seq: engine.bus.seq, overridden: !!cfg.overridden },
     station: { name: 'Station', runtime: 'Station engine (Node ' + process.version + ')', host: host.label || null, provider: providers.mode },
     services, departments, agents, hub, jobs, board, stages: columns.filter((c) => !['brief', 'approval-queue', 'done'].includes(c.key)), columns, routines, events, spend,
     // E5: what the page's controls may offer (the server checks every action again)

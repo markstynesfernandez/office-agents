@@ -22,6 +22,7 @@
     <span id="services" class="tb-services"></span>
     <span class="tb-fill"></span>
     <span id="spend-today" class="tb-spend"></span>
+    <span id="cap-warn" class="badge badge-warn hidden"></span>
     <span class="tb-sep"></span>
     <button id="estop" class="btn-estop hidden" title="E-stop: abort every model and image call now">E-STOP</button>
     <span id="clock" class="tb-clock">--:--</span>
@@ -39,17 +40,28 @@
     <div id="warnings" class="warnings hidden"></div>
     <div id="perf" class="perf hidden"></div>
     <div id="caption" class="caption hidden" aria-live="polite"></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>
 
   <aside id="taskpanel">
     <section class="tp-new">
-      <div class="tp-head"><span>New task</span><span class="badge badge-preview">preview · not connected</span></div>
-      <select id="task-dept"></select>
-      <textarea id="task-input" rows="3" placeholder="Describe a task for this department… (v1: nothing is sent)"></textarea>
-      <div class="tp-row"><label class="chk"><input type="checkbox" checked disabled> needs my OK</label><button id="task-submit" class="btn" disabled>Create (disabled in v1)</button></div>
+      <div class="tp-head"><span>New task</span><span id="task-mode" class="muted small"></span></div>
+      <div class="tp-tabs" role="tablist"><button class="chip chip-on" data-tab="research" role="tab">Research this</button><button class="chip" data-tab="brief" role="tab">Start line on brief</button><button class="chip" data-tab="rerun" role="tab">Re-run listing</button></div>
+      <div class="tp-pane" data-pane="research">
+        <textarea id="task-research" rows="3" maxlength="2000" placeholder="What should DEMAND-RESEARCHER look into? e.g. cosy autumn sticker niches with steady demand"></textarea>
+        <div class="tp-row"><span class="tp-note">a research job on the research line</span><button class="btn btn-primary" data-go="research">Research this</button></div>
+      </div>
+      <div class="tp-pane hidden" data-pane="brief">
+        <select id="task-brief"></select>
+        <div class="tp-row"><span class="tp-note" id="task-brief-note">verified briefs in research/briefs/</span><button class="btn btn-primary" data-go="brief">Start line</button></div>
+      </div>
+      <div class="tp-pane hidden" data-pane="rerun">
+        <select id="task-rerun"></select>
+        <div class="tp-row"><span class="tp-note">the old listing moves to rerun-archive-*</span><button class="btn btn-primary" data-go="rerun">Re-run listing</button></div>
+      </div>
     </section>
     <section class="tp-filters">
-      <div class="tp-head"><span>Tasks</span><span class="scope"><button class="chip chip-on" data-scope="office">whole office</button><button class="chip" data-scope="dept">this department</button></span></div>
+      <div class="tp-head"><span>Tasks</span><span class="scope"><select id="task-dept" title="department for 'this department'"></select><button class="chip chip-on" data-scope="office">whole office</button><button class="chip" data-scope="dept">this department</button></span></div>
       <div id="task-filters" class="filters"></div>
     </section>
     <section id="task-list" class="tp-list"></section>
@@ -63,6 +75,7 @@
 
   <footer id="hints"><span><b>B</b> board</span><span><b>C</b> calendar</span><span><b>T</b> today</span><span><b>←↑↓→</b> move</span><span><b>+ −</b> zoom</span><span id="hint-reset"><b>R</b> reset</span><span id="hint-demo" class="hidden"><b>Space</b> pause <b>1 2 4</b> speed <b>R</b> restart</span><span><b>P</b> presenter</span><span><b>D</b> dark</span><span><b>F</b> fps</span><span><b>Esc</b> close</span><span id="hint-status" class="muted"></span></footer>
 </div>
+<div id="dialogs"></div>
 <script type="module" src="/main.js"></script>
 </body>
 </html>

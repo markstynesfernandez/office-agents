@@ -25,7 +25,7 @@ const code = files.filter((f) => !rel(f).startsWith('tests/'));
 export const FS_WRITE_RE = /\b(writeFileSync|writeFile|appendFileSync|appendFile|mkdirSync|mkdir|rmSync|rm|rmdirSync|rmdir|renameSync|rename|copyFileSync|copyFile|cpSync|cp|unlinkSync|unlink|createWriteStream|truncateSync|truncate|chmodSync|symlinkSync|symlink|linkSync|utimesSync|utimes|futimesSync|openSync|writeSync|fsyncSync|toFile|DatabaseSync|Database)\s*\(|screenshot\s*\(\s*\{[^}]*\bpath\s*:/g;
 // The jail module itself, and the two scripts that write outside the data root through their own jails.
 const JAIL_MODULE = 'src/engine/store/jail.mjs';
-const OWN_JAILS = { 'scripts/snapshot-fixtures.mjs': 'jail(', 'scripts/screenshots.mjs': 'outJail(', 'scripts/dry-run.mjs': 'outJail(', 'scripts/demo-record.mjs': 'outJail(' };
+const OWN_JAILS = { 'scripts/snapshot-fixtures.mjs': 'jail(', 'scripts/screenshots.mjs': 'outJail(', 'scripts/dry-run.mjs': 'outJail(', 'scripts/demo-record.mjs': 'outJail(', 'scripts/screenshots-e5.mjs': 'outJail(' };
 const WRITE_ONE = new RegExp(FS_WRITE_RE.source);
 const LEGACY_NAME_RE = /Virtual-workers|station-workspace|STATION_LEGACY_ROOT|legacyRoot/;
 

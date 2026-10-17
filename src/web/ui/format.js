@@ -29,12 +29,12 @@ export function ago(ms, now = Date.now()) {
 export const when = (ms, now = Date.now()) => (ok(ms) ? dateTime(ms) + ' (' + ago(ms, now) + ')' : '—');
 export function duration(ms) { if (ms == null) return '—'; const s = Math.round(ms / 1000); if (s < 60) return s + 's'; const m = Math.floor(s / 60); if (m < 60) return m + 'm ' + (s % 60) + 's'; const h = Math.floor(m / 60); if (h < 48) return h + 'h ' + (m % 60) + 'm'; return Math.floor(h / 24) + 'd ' + (h % 24) + 'h'; }
 export const statusLabel = { idle: 'idle', working: 'working', waiting: 'waiting for approval', error: 'error' };
-export const jobStatusLabel = { backlog: 'backlog', in_progress: 'in progress', waiting: 'waiting for my approval', done: 'done', blocked: 'blocked', rejected: 'rejected', parked: 'parked', legacy: 'unfinished' };
+export const jobStatusLabel = { backlog: 'backlog', in_progress: 'in progress', waiting: 'waiting for my approval', done: 'done', blocked: 'blocked', rejected: 'rejected', parked: 'parked', legacy: 'unfinished', archived: 'archived' };
 export const deptColour = (key, palette) => (palette.departments[key] || palette.departments.default);
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // a status pill (blocked / rejected / done / waiting / backlog) used wherever a job shows instead of a progress %
-export const statusPill = (j) => '<span class="pill pill-' + esc(j.lane || j.status) + '">' + esc(j.lane || jobStatusLabel[j.status] || j.status) + '</span>';
+export const statusPill = (j) => '<span class="pill pill-' + esc(j.lane || j.status) + '">' + esc(j.flag === 'stopped' ? 'stopped' : j.lane || jobStatusLabel[j.status] || j.status) + '</span>';
 // imported from the legacy station (E4): read-only history, never engine work
 export const legacyTag = (o) => (o && o.kind === 'legacy' ? '<span class="leg" title="imported from the legacy station (read only)">legacy</span>' : '');
 export const synthTag = (o) => (o && o.synthetic ? '<span class="syn" title="' + esc('synthetic test state: ' + (o.syntheticWhat || '')) + '">synthetic</span>' : '');

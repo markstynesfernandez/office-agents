@@ -138,6 +138,7 @@ function routineAdmin(engine) {
   const emit = (id, what, r) => { bus.emit('routine.changed', { data: { routineId: id, what, name: r ? r.name : null, enabled: r ? r.enabled : false } }); log.info('routine ' + what, { id, name: r && r.name }); };
   const needVersion = (v) => { if (v == null || !Number.isInteger(v)) throw new Error('expectedVersion is required'); };
   const notLegacy = (r) => { if (r.legacy) throw new Error('an imported legacy routine is read only (a re-import would bring it back)'); };
+  const named = (r, fn) => { try { return fn(); } catch (e) { if (e.code === 'STALE') e.message = e.message.replace('routine ' + r.id, 'the routine "' + r.name + '"'); throw e; } };
   return {
     // created disabled, always (ENGINE-PLAN.md §5.4)
     create(b) {
@@ -148,7 +149,7 @@ function routineAdmin(engine) {
     update(id, b, { expectedVersion } = {}) {
       needVersion(expectedVersion);
       const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id); notLegacy(cur);
-      const out = store.updateRoutine(id, clean(b, cur), { expectedVersion });
+      const out = named(cur, () => store.updateRoutine(id, clean(b, cur), { expectedVersion }));
       scheduler.refresh(id); emit(id, 'edited (left disabled: enable it again to approve the change)', out); return out;
     },
     // enabling is the only approval; a legacy or unsupported routine cannot be enabled
@@ -156,13 +157,13 @@ function routineAdmin(engine) {
       needVersion(expectedVersion);
       const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id);
       if (enabled) { notLegacy(cur); if (!engine.routineTargets.some((t) => t.id === cur.target)) throw new Error('this routine\'s target cannot run: ' + cur.target); }
-      const out = store.setRoutineEnabled(id, !!enabled, { expectedVersion });
+      const out = named(cur, () => store.setRoutineEnabled(id, !!enabled, { expectedVersion }));
       scheduler.refresh(id); emit(id, enabled ? 'enabled' : 'disabled', out); return out;
     },
     remove(id, { expectedVersion } = {}) {
       needVersion(expectedVersion);
       const cur = store.getRoutine(id); if (!cur) throw new Error('no such routine: ' + id); notLegacy(cur);
-      store.deleteRoutine(id, { expectedVersion });
+      named(cur, () => store.deleteRoutine(id, { expectedVersion }));
       scheduler.refresh(id); emit(id, 'deleted', null); return { id, deleted: true };
     }
   };

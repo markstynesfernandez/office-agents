@@ -1,11 +1,14 @@
 // ui/calendar.js — week/month calendar (W/M). One entry per job, on the day of its latest stage change, with a stage
 // chip; clicking it opens the job. Routines come only from cron.jobs.json: enabled ones are projected forward; paused ones
 // (enabled:false) are listed as "paused · waits for my OK" and appear on the grid only, ghosted, when the owner turns on
-// "show where paused routines would run". The day popover is a PREVIEW ONLY in v1: it sends nothing.
+// "show where paused routines would run".
+// E5 (engine mode): the routine list is the scheduler. "New routine" (or a click on a day) creates one, always
+// disabled; Enable is the approval (a confirmation says what will run, when and within which caps); Edit leaves it
+// disabled again; Delete asks first. Imported legacy routines are read only. Caps are set in config only.
 import { esc, hhmm, when, ymd, dmy, MONTHS, DOW, money } from './format.js';
 import { PALETTE } from '../config/palette.js';
 
-export function createCalendar({ root, onOpenJob }) {
+export function createCalendar({ root, onOpenJob, ctl = null }) {
   const body = root.querySelector('#calendar-body');
   const state = { mode: 'month', cursor: null, dept: null, routines: true, ghosts: false, done: true, q: '', snap: null, popover: null };
   const startOfWeek = (d) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const dow = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dow); return x; };
@@ -46,13 +49,16 @@ export function createCalendar({ root, onOpenJob }) {
     }
     const chips = s.departments.map((d) => '<button class="ctl chip ' + (state.dept === d.key ? 'chip-on' : '') + '" data-dept="' + esc(d.key) + '" style="border-color:' + (PALETTE.departments[d.key] || '#ccc') + '">' + esc(d.name) + '</button>').join('');
     const paused = s.routines.filter((r) => !r.enabled), enabled = s.routines.filter((r) => r.enabled);
-    const routineHtml = (r) => '<div class="routine' + (r.enabled ? '' : ' paused') + '"><div class="n" title="' + esc(r.name) + '">' + (r.live ? '● ' : '↻ ') + esc(r.name) + '</div>'
+    const live = !!(ctl && s.controls && s.controls.live);
+    const rbtns = (r) => (!live ? '' : r.legacy ? '<div class="m"><span class="badge badge-muted">legacy · read only</span></div>' : '<div class="rbtns">' + (r.enabled ? '<button class="btn btn-mini" data-rt="disable" data-id="' + esc(r.id) + '">Disable</button>' : '<button class="btn btn-mini btn-ok" data-rt="enable" data-id="' + esc(r.id) + '"' + (r.runnable ? '' : ' disabled') + '>Enable…</button>') + '<button class="btn btn-mini" data-rt="edit" data-id="' + esc(r.id) + '">Edit…</button><button class="btn btn-mini btn-danger" data-rt="delete" data-id="' + esc(r.id) + '">Delete…</button></div>');
+    const routineHtml = (r) => '<div class="routine' + (r.enabled ? '' : ' paused') + '" data-routine="' + esc(r.id) + '"><div class="n" title="' + esc(r.name) + '">' + (r.live ? '● ' : '↻ ') + esc(r.name) + '</div>'
       + '<div class="m">' + esc(r.scheduleWords) + ' · ' + esc(r.agentName) + '</div>'
       + (r.enabled ? '<div class="m">next: ' + (r.nextRun ? esc(when(r.nextRun, nowMs)) + (r.nextRunIsProjection ? ' · projected from the cron expression' : '') : '—') + '</div><div class="m"><span class="badge badge-on">enabled</span></div>'
         : '<div class="m"><span class="badge badge-warn">paused · waits for my OK</span></div><div class="m">not scheduled: it will not run until it is enabled</div>')
-      + (r.lastRunAt ? '<div class="m">last run ' + esc(when(r.lastRunAt, nowMs)) + ' · ' + money(r.lastUsd) + '</div>' : '<div class="m">never run</div>') + '</div>';
-    const side = '<aside class="cal-side"><h3>Routines (' + s.routines.length + ')</h3>'
-      + (s.routines.length ? enabled.map(routineHtml).join('') + paused.map(routineHtml).join('') : '<div class="muted">No routines in cron.jobs.json.</div>')
+      + (r.lastRunAt ? '<div class="m">last run ' + esc(when(r.lastRunAt, nowMs)) + (r.lastStatus ? ' · ' + esc(r.lastStatus) : '') + '</div>' : '<div class="m">never run</div>') + rbtns(r) + '</div>';
+    const side = '<aside class="cal-side"><h3>Routines (' + s.routines.length + ')' + (live ? '<button class="btn btn-mini btn-primary" data-rt="new">+ New routine</button>' : '') + '</h3>'
+      + (live ? '<div class="srcnote" style="margin:0 0 8px">created disabled · <b>Enable = your approval</b>, then it runs unattended within the caps</div>' : '')
+      + (s.routines.length ? enabled.map(routineHtml).join('') + paused.map(routineHtml).join('') : '<div class="muted">No routines yet.</div>')
       + (paused.length ? '<label class="ghost-toggle"><input type="checkbox" data-ghosts ' + (state.ghosts ? 'checked' : '') + '> show where paused routines would run</label>' : '')
       + '<div class="srcnote">source: ' + esc((s.routines[0] && s.routines[0].source) || 'routines') + ' · "waits for my OK" = enabled:false</div></aside>';
     body.innerHTML = '<div class="cal-wrap">' + side
@@ -61,7 +67,7 @@ export function createCalendar({ root, onOpenJob }) {
       + '<span class="grp"><button class="ctl chip ' + (state.mode === 'week' ? 'chip-on' : '') + '" data-mode="week" title="W">Week</button><button class="ctl chip ' + (state.mode === 'month' ? 'chip-on' : '') + '" data-mode="month" title="M">Month</button></span>'
       + '<span class="grp">' + chips + '</span><span class="grp"><button class="ctl chip ' + (state.routines ? 'chip-on' : '') + '" data-toggle="routines">routines</button><button class="ctl chip ' + (state.done ? 'chip-on' : '') + '" data-toggle="done">finished</button></span>'
       + '<input class="ctl" type="search" placeholder="search jobs, agents…" value="' + esc(state.q) + '"></div>'
-      + gridHtml + '<div class="cal-foot muted">one entry per job, on the day of its latest stage change · click a day to draft a schedule (preview only, nothing is sent) · Esc to close</div></div></div>';
+      + gridHtml + '<div class="cal-foot muted">one entry per job, on the day of its latest stage change · ' + (live ? 'click a day to create a weekly routine on that weekday (created disabled)' : 'the legacy view is read only') + ' · Esc to close</div></div></div>';
     body.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => { const n = Number(b.dataset.nav); if (n === 0) state.cursor = new Date(nowMs); else if (state.mode === 'month') state.cursor = new Date(c.getFullYear(), c.getMonth() + n, 1); else state.cursor = new Date(c.getFullYear(), c.getMonth(), c.getDate() + 7 * n); render(); }));
     body.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { state.mode = b.dataset.mode; render(); }));
     body.querySelectorAll('[data-dept]').forEach((b) => b.addEventListener('click', () => { state.dept = state.dept === b.dataset.dept ? null : b.dataset.dept; render(); }));
@@ -69,29 +75,53 @@ export function createCalendar({ root, onOpenJob }) {
     body.querySelector('[data-ghosts]')?.addEventListener('change', (e) => { state.ghosts = e.target.checked; render(); });
     const search = body.querySelector('input[type=search]'); search.addEventListener('input', () => { state.q = search.value; const pos = search.selectionStart; render(); const s2 = body.querySelector('input[type=search]'); s2.focus(); s2.setSelectionRange(pos, pos); });
     body.querySelectorAll('.ev[data-job]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); onOpenJob(el.dataset.job); }));
-    body.querySelectorAll('.day').forEach((el) => el.addEventListener('click', (e) => openPopover(el, el.dataset.date, e)));
+    body.querySelectorAll('.day').forEach((el) => el.addEventListener('click', () => { if (live) routineDialog(null, el.dataset.date); }));
+    body.querySelectorAll('[data-rt]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); routineAction(el.dataset.rt, el.dataset.id); }));
   }
 
-  function openPopover(dayEl, dateStr) {
-    closePopover();
-    const s = state.snap; const pop = document.createElement('div'); pop.className = 'popover';
-    const depts = s.departments.map((d) => '<option value="' + esc(d.key) + '">' + esc(d.name) + '</option>').join('');
-    const [y, m, d] = dateStr.split('-');
-    pop.innerHTML = '<h3>Schedule for ' + esc(d + '/' + m + '/' + y) + '<span class="badge badge-preview">preview · not connected</span></h3>'
-      + '<label>Department</label><select>' + depts + '</select>'
-      + '<label>Time (24h)</label><input type="time" value="09:00">'
-      + '<label>Model</label><select><option>claude-haiku-5-5 (cheap tier)</option><option>claude-sonnet-5-5 (strong tier)</option></select>'
-      + '<label>Task</label><textarea rows="3" placeholder="What should the department do? (nothing is sent in v1)"></textarea>'
-      + '<label>Repeat</label><select><option>once</option><option>daily</option><option>weekly (same weekday)</option><option>monthly</option></select>'
-      + '<div class="foot"><label class="chk" style="margin:0"><input type="checkbox" checked disabled> needs my OK</label><button class="btn" disabled>Schedule (disabled in v1)</button></div>';
-    const r = dayEl.getBoundingClientRect(), host = root.getBoundingClientRect();
-    pop.style.left = Math.min(r.left - host.left + 10, host.width - 340) + 'px'; pop.style.top = Math.min(r.top - host.top + 10, host.height - 330) + 'px';
-    pop.addEventListener('click', (e) => e.stopPropagation());
-    root.appendChild(pop); state.popover = pop;
-    setTimeout(() => document.addEventListener('click', closePopover, { once: true }), 0);
+  // ---- the scheduler (engine mode)
+  const PRESETS = [['0 9 * * 1-5', 'weekdays at 09:00'], ['0 9 * * *', 'every day at 09:00'], ['0 7 * * 1', 'Mondays at 07:00'], ['30 13 * * *', 'every day at 13:30']];
+  async function routineDialog(r, dateStr) {
+    const s = state.snap, c = s.controls;
+    let schedule = r ? r.schedule : '0 9 * * 1-5';
+    if (!r && dateStr) { const d = new Date(dateStr + 'T12:00:00'); schedule = '0 9 * * ' + d.getDay(); }
+    const v = await ctl.dialog({
+      title: r ? 'Edit routine' : 'New routine',
+      intro: r ? 'Saving leaves it <b>disabled</b>: enable it again to approve the change.' : 'Created <b>disabled</b>. Nothing runs until you enable it; enabling is your approval.',
+      fields: [
+        { name: 'name', label: 'Name', required: true, value: r ? r.name : '', placeholder: 'e.g. Weekday research batch' },
+        { name: 'target', label: 'Runs', type: 'select', value: r ? r.target : (c.routineTargets[0] || {}).id, options: c.routineTargets.map((t) => ({ value: t.id, label: t.label })) },
+        { name: 'schedule', label: 'Schedule (cron, Europe/Dublin)', required: true, value: schedule, placeholder: '0 9 * * 1-5', hint: 'minute hour day month weekday · e.g. ' + PRESETS.map((p) => p[0] + ' = ' + p[1]).join(' · ') },
+        { name: 'input', label: 'Instructions for the run (optional)', type: 'textarea', rows: 2, value: r ? r.input || '' : '', placeholder: 'research line: what to look into this batch' },
+        { name: 'maxRunsPerDay', label: 'Max runs a day', type: 'number', min: 1, max: 24, step: 1, value: r ? r.maxRunsPerDay : 1 },
+        { name: 'perRunCapUsd', label: 'Per-run cap, USD (optional)', type: 'number', min: 0.01, max: c.perRunCapUsd, step: 0.01, value: r && r.perRunCapUsd != null ? r.perRunCapUsd : '', hint: 'at most the engine cap of ' + c.perRunCapUsd.toFixed(2) + ' (caps are raised in config only)' }
+      ],
+      confirm: r ? 'Save (stays disabled)' : 'Create (disabled)'
+    });
+    if (!v) return;
+    const body = { name: v.name.trim(), target: v.target, schedule: v.schedule.trim(), input: v.input, maxRunsPerDay: Number(v.maxRunsPerDay || 1), perRunCapUsd: v.perRunCapUsd === '' ? null : Number(v.perRunCapUsd) };
+    if (r) await ctl.act('/api/routines/update', { id: r.id, expectedVersion: r.version, ...body }, { ok: 'Routine saved, disabled: ' + body.name });
+    else await ctl.act('/api/routines/create', body, { ok: 'Routine created, disabled: ' + body.name });
+  }
+  async function routineAction(k, id) {
+    if (k === 'new') return routineDialog(null);
+    const s = state.snap, r = s.routines.find((x) => x.id === id); if (!r) return;
+    if (k === 'edit') return routineDialog(r);
+    if (k === 'disable') return ctl.act('/api/routines/enable', { id, enabled: false, expectedVersion: r.version }, { ok: 'Disabled: ' + r.name });
+    if (k === 'delete') { const ok = await ctl.dialog({ title: 'Delete this routine?', intro: '<b>' + esc(r.name) + '</b><br>' + esc(r.scheduleWords) + '<br><br>Jobs it already started are kept.', confirm: 'Delete', danger: true }); if (ok) await ctl.act('/api/routines/delete', { id, expectedVersion: r.version }, { ok: 'Deleted: ' + r.name }); return; }
+    if (k === 'enable') {
+      const caps = s.spend.caps, next = (r.ghostRuns || [])[0];
+      const ok = await ctl.dialog({
+        title: 'Enable this routine?',
+        intro: '<b>' + esc(r.name) + '</b> · ' + esc(r.target) + '<br>' + esc(r.scheduleWords) + (next ? ' · first run ' + esc(when(next, s.generatedAt)) : '') + '<br><br><b>Enabling is your approval.</b> From then on it runs unattended, up to ' + r.maxRunsPerDay + ' time' + (r.maxRunsPerDay === 1 ? '' : 's') + ' a day, within the caps: '
+          + money(caps.perDay) + ' a day for the station, ' + money(r.perRunCapUsd != null ? Math.min(r.perRunCapUsd, caps.perRun) : caps.perRun) + ' a run, ' + money(caps.perJob) + ' a job. It skips (and logs why) while the e-stop is on, a cap is reached, its last run is still going or its agent is off duty.',
+        confirm: 'Enable (approve)'
+      });
+      if (ok) await ctl.act('/api/routines/enable', { id, enabled: true, expectedVersion: r.version }, { ok: 'Enabled: ' + r.name });
+    }
   }
   function closePopover() { if (state.popover) { state.popover.remove(); state.popover = null; } }
   function toggleMode(m) { state.mode = m; render(); }
   function today() { state.cursor = new Date(state.snap ? state.snap.generatedAt : Date.now()); render(); }
-  return { render, show: () => { root.classList.remove('hidden'); render(); }, hide: () => { closePopover(); root.classList.add('hidden'); }, isOpen: () => !root.classList.contains('hidden'), toggleMode, today, closePopover, hasPopover: () => !!state.popover, setGhosts: (v) => { state.ghosts = v; render(); } };
+  return { routineDialog, routineAction, render, show: () => { root.classList.remove('hidden'); render(); }, hide: () => { closePopover(); root.classList.add('hidden'); }, isOpen: () => !root.classList.contains('hidden'), toggleMode, today, closePopover, hasPopover: () => !!state.popover, setGhosts: (v) => { state.ghosts = v; render(); } };
 }

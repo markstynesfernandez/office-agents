@@ -65,7 +65,7 @@ test('a stale tab\'s write is refused with "changed since you loaded it", and no
   const before = rowsOf(engine, 'routines');
   const a = await post('/api/routines/enable', { id: c.json.result.id, expectedVersion: loaded, enabled: true });   // tab A, stale
   assert.equal(a.status, 409);
-  assert.match(a.json.error, /changed since you loaded it/);
+  assert.match(a.json.error, /^Not saved: the routine "Weekday research \(tab B\)" changed since you loaded it\. The page has been refreshed/);
   assert.equal(a.json.code, 'STALE');
   assert.equal(rowsOf(engine, 'routines'), before, 'the stale write changed nothing');
   assert.equal(engine.store.getRoutine(c.json.result.id).enabled, false);
@@ -316,4 +316,21 @@ test('Stop aborts a running job mid-call; Restart runs it again from the stopped
   // a legacy job takes no control
   engine.store.upsertLegacyJob({ id: '2026-01-01--legacy-x', line: 'room1', state: 'blocked', created_at: 1, updated_at: 1 });
   assert.equal((await post('/api/jobs/restart', { jobId: '2026-01-01--legacy-x', expectedVersion: 1 })).status, 400);
+});
+
+test('the top bar\'s live spend: each cap with its use, a warning from 80% and "reached" at 100%', async (t) => {
+  const { engine, snap } = await boot(t, { tag: 'caps' });
+  const row = (usd, n) => engine.ledger.append({ entryId: 'test-cap-' + n, ts: Date.now(), jobId: null, runId: 'run_cap_' + n, agentKey: 'designer', line: 'room1-digital', provider: 'test', model: 'cheap-model', kind: 'text', usd, estimated: false, priceSource: 'test row' });
+  let s = await snap();
+  assert.deepEqual(s.spend.capStatus.map((c) => c.level), s.spend.capStatus.map(() => 'ok'));
+  assert.ok(s.spend.capStatus.some((c) => c.cap === 'perDay' && c.limit === engine.cfg.engine.caps.perDayUsd), 'the day cap comes from config');
+  row(8.5, 1);
+  s = await snap();
+  const day = s.spend.capStatus.find((c) => c.cap === 'perDay');
+  assert.equal(day.level, 'warn'); assert.equal(day.pct, 85);
+  assert.ok(s.warnings.some((w) => /^Cap warning: station day 8\.50 of 10\.00 USD \(85%\)/.test(w)), s.warnings.join(' | '));
+  row(1.5, 2);
+  s = await snap();
+  assert.equal(s.spend.capStatus.find((c) => c.cap === 'perDay').level, 'hit');
+  assert.ok(s.warnings.some((w) => /^CAP REACHED: station day/.test(w)));
 });

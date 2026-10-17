@@ -16,3 +16,6 @@ export function dublinDayStart(ms = Date.now()) {
 
 // dd/mm/yyyy (the owner's date format) of a Dublin day key
 export const dmyOfDay = (day) => day.slice(8, 10) + '/' + day.slice(5, 7) + '/' + day.slice(0, 4);
+// dd/mm/yyyy HH:MM on the Dublin clock (the owner's one date format)
+const HM_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+export const dublinDateTime = (ms = Date.now()) => dmyOfDay(dublinDay(ms)) + ' ' + HM_FMT.format(new Date(ms));
