@@ -300,14 +300,18 @@ test('Stop aborts a running job mid-call; Restart runs it again from the stopped
   const { engine, post, job, settled } = await boot(t, { mockDelayMs: 150, tag: 'stop' });
   assert.equal((await post('/api/tasks/brief', { file: JOB_A + '.md' })).status, 200);
   await until(() => job(JOB_A).state === 'running' && engine.store.runsOf({ jobId: JOB_A }).some((x) => x.status === 'running'), { timeout: 10000 });
-  await sleep(60);
-  const st = await post('/api/jobs/stop', { jobId: JOB_A, expectedVersion: job(JOB_A).version });
+  // the page loaded the job one step ago: a running job's version moves on, and Stop is still accepted
+  const loaded = job(JOB_A).version;
+  await until(() => job(JOB_A).version > loaded, { timeout: 10000 });
+  const st = await post('/api/jobs/stop', { jobId: JOB_A, expectedVersion: loaded });
   assert.equal(st.status, 200, st.text);
   const stopped = await settled(JOB_A);
   assert.equal(stopped.state, 'stopped'); assert.match(stopped.reason, /stopped by the owner/);
   const calls = engine.providers.text.calls, rows = engine.ledger.totals.rows;
   await sleep(400);
   assert.equal(engine.providers.text.calls, calls, 'no further provider call'); assert.equal(engine.ledger.totals.rows, rows, 'no further ledger row');
+  // once it is no longer running, an old version is stale again
+  assert.equal((await post('/api/jobs/stop', { jobId: JOB_A, expectedVersion: loaded })).status, 409);
   const step = stopped.step;
   const rs = await post('/api/jobs/restart', { jobId: JOB_A, expectedVersion: stopped.version });
   assert.equal(rs.status, 200, rs.text); assert.equal(rs.json.result.step, step);

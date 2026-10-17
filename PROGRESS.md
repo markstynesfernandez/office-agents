@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (E5 in progress; E4, R1 and R2 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (E5 Live UI done, awaiting the owner's review; E4, R1 and R2 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -15,11 +15,52 @@ Last updated: 17/10/2026 (E5 in progress; E4, R1 and R2 approved by the owner). 
 | **E4** Legacy import | Done (16/10/2026), **approved by the owner** (17/10/2026). `npm run import-legacy`; the legacy history imported into `data/` and reconciled with the source ($8.5000719, 162 ledger rows); a second run changes nothing. Legacy jobs on the board (Blocked, Rejected, Parked lanes), in the job panel and the calendar; legacy notebooks and ledger in the memory-core viewer. Screenshots in `screenshots/e4/`. See below. |
 | **Redesign R1** Office scene look | Done (16/10/2026), **approved by the owner** (17/10/2026). Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
 | **Redesign R2** Office look, people, UI polish | Done (17/10/2026), **approved by the owner** (17/10/2026). Follow-ups done at the start of E5 (below). Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
-| E5 Live UI | In progress (17/10/2026). Item 0 (R2 follow-ups) done. |
+| **E5** Live UI | Done (17/10/2026), awaiting the owner's review. Task box, scheduler, approval queue, desk and job controls, E-STOP with typed resume, live spend vs caps; every write same-origin, token, idempotency key and expectedVersion. Mock provider only. Screenshots in `screenshots/e5/`. See below. |
 | E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### E5 Live UI (17/10/2026)
+
+The office's controls are live (ENGINE-PLAN.md §6), on the mock provider: $0, no API key read. Every write goes through the server into `data/` through `dataJail`. Choices for the owner are in DECISIONS.md, "E5 build record".
+
+**Controls built**
+- **Task box:** "Research this" (text -> a research job on the research line), "Start line on brief" (a verified brief from `research/briefs/` that has no job yet -> a job on the Room 1 line), "Re-run listing" (a QA-approved design -> LISTER and QA-LISTING again; the old listing, its QA records and the package move to `rerun-archive-*`). The "preview · not connected" label is gone; the legacy view says "read only".
+- **Scheduler** (the calendar's routine list): New routine (or click a day), Edit, Enable (a confirmation that says what runs, when and within which caps), Disable, Delete. Created disabled; an edit disables it again; enabling is the only approval. Legacy routines read only.
+- **Approval queue** (job panel and board cards): Approve (sends nothing anywhere), Reject (reason required), Mark published (date + Etsy URL); the package path with a copy button.
+- **Desk panels:** on/off duty, tier and effort from the lists in `config/engine.json`; applies at the next run with no restart. Off duty: the agent's steps wait and its line's routines skip.
+- **Job panel and board:** Stop job (aborts this job's call in flight), Restart (from the stopped or blocked step, within the caps), Archive (files moved to `jobs/<id>/rerun-archive-*`, never deleted).
+- **Top bar:** E-STOP with a confirmation; resume needs the typed word `RESUME` and the current e-stop state; live spend against the day cap with a meter; a cap chip and notices from 80% of any cap and at 100%.
+- **Unchanged:** prompts are not editable in the page, and caps are config only.
+
+**Write safety on every request:** same-origin check, per-launch action token, idempotency key (required header; a repeat returns the first answer), expectedVersion on every existing record (a stale tab gets "Not saved: ... changed since you loaded it. The page has been refreshed; check it and try again." and nothing is written). Every write and every refusal is logged and emitted (`action.done`, `action.refused`). Exceptions, both safety actions: the E-STOP press never checks a version, and Stop accepts an older version while that job is still running (DECISIONS.md).
+
+**Tests** (`tests/live-ui.test.mjs`, 9 tests, through the real HTTP server on a temp data root, mock provider, dry-run fixtures):
+- a stale tab's write is refused (409, the message, the routine row unchanged; also for an agent and the e-stop resume);
+- a double click creates one job (same key sent twice at once: one research job, one line job, one `job.created`);
+- a cross-origin request, no Origin, another local port, a missing or wrong token, a missing idempotency key and a non-JSON body are all refused, and nothing is created;
+- while the E-STOP is on no job starts (research, brief, restart: 423) and no routine fires (`e-stop is on`; scheduler disarmed), and an agent put back on duty starts nothing; resume needs the typed word;
+- routines are created disabled whatever the request says; an edit disables; caps above config, unknown targets and bad cron are refused; legacy routines cannot be enabled or deleted;
+- approve, reject and mark published write only the approvals and tracker rows (every other table and every file under the data root, except the event log, fingerprinted before and after);
+- every control end to end on the mock provider (research, start on brief, reject, re-run listing back to the queue, approve, publish, archive, tier/effort at the next run, off duty waits and on duty resumes, routine create/enable/fire, e-stop and resume), with every file-system write the process makes recorded: none lands outside the data root (or the logs folder);
+- Stop aborts a running job mid-call (no further provider call or ledger row) and Restart runs it again from that step;
+- the top bar's spend: each cap's use, a warning from 80%, "reached" at 100%.
+
+Also: `tests/people-looks.test.mjs` (2, item 0c) and the Legacy-lane check in `tests/import-legacy.test.mjs` (item 0b).
+
+**Captures** (`node scripts/screenshots-e5.mjs`, headed Chrome, 1600x1000, `screenshots/e5/`): 01–03 the task box (Research this, Start line on brief, Re-run listing); 04 scheduler create; 05 the enable confirmation; 06 enabled; 07 the approval queue on the board with its buttons; 08 the job panel's approval box; 09 the reject-with-reason dialog; 10 desk panel controls (DESIGNER effort set to medium); 11 job panel with Stop while LISTER works; 12 Restart after the stop; 13 E-STOP on (the job it stopped, Restart refused until resume); 14 the typed resume confirmation; 15 the stale-tab refusal; 16–17 the overview in light and dark on the station's own data root. All engine states are real (a fresh mock data root for 01–15; nothing set on the page only).
+
+**fps** (`screenshots/e5/fps-headed.json`; headed Chrome, Intel UHD iGPU, 1600x1000, engine mode on the station data root):
+
+| View | Camera moving | Full quality | Frame avg / p95 |
+|---|---|---|---|
+| 16-overview-light | 73.5 | 73.2 | 13.55 / 15.3 ms |
+| 17-overview-dark | 71.6 | 71.2 | 13.95 / 16.2 ms |
+
+**Found and fixed while capturing:** a Stop sent from a page one step behind a running job was refused as stale (now accepted while the job runs); an open panel could miss its last refresh, or reopen after being closed, when refreshes resolved out of order; a stopped job's pill said "blocked"; the e-stop notice printed a UTC ISO time (now dd/mm/yyyy HH:MM, Dublin). Line endings: Python edits had written CRLF into LF files (whole-file diffs in the "R2 follow-ups" and E5 milestone commits); normalised back to LF in the "E5 live UI" commit.
+
+**Files changed in E5:** `src/engine/{bus,engine,orchestrator,runtime,scheduler,time}.mjs`, `src/engine/store/db.mjs`; `src/server/{engine-model,engine-server}.mjs`; `src/web/index.html`, `main.js`, `styles.css`, `ui/{board,calendar,format,sidepanel,taskpanel}.js`, new `ui/controls.js`; new `scripts/screenshots-e5.mjs`; new `tests/live-ui.test.mjs`; `tests/{engine-server,demo,write-guard}.test.mjs`; `DECISIONS.md`, `PROGRESS.md`. Item 0: `src/web/scene/{office.js,looks.js (new)}`, `scripts/screenshots.mjs`, `tests/{import-legacy,people-looks (new)}.test.mjs`.
 
 ### R2 follow-ups (E5 item 0, 17/10/2026)
 
@@ -164,7 +205,10 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `cd74ce6`: R1 milestone: cutaway rooms, lounge walking, warm dark mode
 - `7cf2865`: Redesign R1
 - `ca7eca4`, `39ab7a2`, `91734ae`: R2 milestones 1 to 3 (layout and light mode, people, UI polish and cached AO)
-- The next commit: "Redesign R2" (captures, docs)
+- `5ea8cc9`: Redesign R2
+- `e357600`: R2 follow-ups (E5 item 0)
+- `4f3e076`, `286be16`: E5 milestones 1 and 2 (engine and server write path; the page's controls)
+- The next commit: "E5 live UI" (fixes from the captures, line endings, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -174,9 +218,8 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 - **Packaged digital products** fail closed. Only the read side of `digital-build` is ported. The clean-up (now including the enclosed-background step), Real-ESRGAN and the zip build are not, and `src/` allows no child process. This affects `pngtuber-prop-pack`, and fixing it needs an owner decision.
 - **Style-reference workflow** fails closed. Only `styleRefProblems` is ported; there is no first-file run mode and no `reference_image` in `image_generate`.
-- **Approve and reject** exist in `orchestrator.decide()`, but no server route or page button calls them. The server's only write actions are halt and resume (E5).
-- **The page's "New task" box** is disabled, and jobs start only from code or the dry run (E5).
-- **Routines**: `engine.runRoutine` supports only `line:research`. The research line config exists, but no test or dry run covers it.
+- **Routines** run `line:research` and `line:room1-digital` (E5). With the mock replies the research line ends "no drafts" (the fixture script has no researcher replies), so no test runs a research batch that verifies a brief; the demo's script does.
+- **The package folder** cannot be opened from the page (the server starts no process); the page shows its path with a copy button.
 - **Live providers** are locked (`ProviderLocked`). The Anthropic SDK is not installed and the effort mapping is not written (E6).
 - **Web search and fetch** return canned text in the mock, and the `anthropic-web` price is unset, so a live web call would be refused (E6).
 - **Legacy archive** (Q10): the transcripts and task briefs are imported to `data/legacy/archive/`, but no page shows them yet (E5, if wanted).
@@ -184,7 +227,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **187 passed, 0 failed**, after Redesign R2 (17/10/2026); new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **198 passed, 0 failed**, after E5 (17/10/2026); new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -233,8 +276,8 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-1. **The owner reviews Redesign R2**: `screenshots/redesign-r2/`, the demo video, and the choices in DECISIONS.md under "Redesign R2 build record" (closet turned, where props go, role labels from the agent name, capture modes, the AO cache). R1 and E4 are also still awaiting review (DECISIONS.md, "Redesign R1 build record" and "E4 build record").
-2. **E5 Live UI**, after the owner's go-ahead.
+1. **The owner reviews E5**: `screenshots/e5/` and the choices in DECISIONS.md under "E5 build record" (the Legacy lane, the two version exceptions for E-STOP and Stop, an edit disabling a routine, Re-run listing and Archive moves, the line routine target).
+2. **Port drift:** 5 legacy files changed on 17/10/2026 (packaged products, style reference, station.config); not ported in E5. Port them when the owner says (DECISIONS.md, E5 build record).
 3. E6 stays blocked on Q1 (billing), Q2 (caps) and Q3/§4.3 (products).
 
 Re-run `npm run import-legacy` at any time to pick up legacy deltas; it backs up first and changes nothing when there is nothing new.

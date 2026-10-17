@@ -140,7 +140,6 @@ async function main() {
     await shot('12-job-panel-restart.png');
     await page.click('#sidepanel [data-jobact="restart"]');
     await until(() => ['running', 'queued'].includes(job(JOB_A).state));
-    await page.evaluate(() => window.__office.closePanel());
 
     // 13-14 E-STOP on (stops job A again), and the typed resume confirmation
     await until(() => engine.orchestrator.isActive(JOB_A));
@@ -148,6 +147,7 @@ async function main() {
     await page.click('#estop'); await page.waitForSelector('.dlg'); await page.click('.dlg [data-ok]');
     await until(() => engine.halt.isHalted() && job(JOB_A).state === 'stopped');
     await fresh(); await settle(page);
+    await page.waitForSelector('#sidepanel [data-jobact="restart"]');   // the job panel shows the job the E-STOP stopped
     await shot('13-estop-on.png', page, { keepToasts: true });
     await page.click('#estop'); await page.waitForSelector('.dlg #dlg-typed');
     await page.fill('#dlg-typed', 'RESUME');

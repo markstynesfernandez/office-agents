@@ -360,11 +360,16 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     };
   }
 
-  // Stop: a running job's call in flight is aborted (this job only); a queued job is stopped at once
+  // Stop: a running job's call in flight is aborted (this job only); a queued job is stopped at once. A running job's
+  // version moves at every step, so a Stop sent with an older version is still accepted while that job is running
+  // (stopping overwrites nothing); once it has finished or changed state, an old version is refused as stale.
   function stopJob(id, { expectedVersion, by = 'owner' } = {}) {
-    const j = ownJob(id); checkVersion(j, expectedVersion);
-    if (isActive(id) && stops.has(id)) {
-      store.updateJob(id, { data: { stopRequested: Date.now() } }, { expectedVersion });
+    const j = ownJob(id);
+    const running = isActive(id) && stops.has(id);
+    if (!(running && Number.isInteger(expectedVersion) && expectedVersion <= j.version)) checkVersion(j, expectedVersion);
+    if (running) {
+      if (expectedVersion !== j.version) log.info('stop sent with an older version of a running job: accepted', { jobId: id, had: expectedVersion, now: j.version });
+      store.updateJob(id, { data: { stopRequested: Date.now() } });
       stops.get(id).abort(Object.assign(new Error('stopped by the owner'), { code: 'STOPPED' }));
       log.warn('job stop requested', { jobId: id, step: j.step, by });
       return { jobId: id, stopping: true };
