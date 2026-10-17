@@ -21,14 +21,14 @@ references only and ignored by git. Nothing was traced or copied from them: no l
 |-------|-----------|-------|
 | Floor plan: three cutaway department rooms, lounge, server closet, atrium | own layout (`computeLayout`) | `scene/layout.js` |
 | Floor slab, back walls with caps, baseboards and cut ends, low closet partition | `BoxGeometry`, merged per room into one vertex-coloured mesh | `scene/rooms.js` |
-| Wood plank floors, atrium stone tiles | `CanvasTexture`s drawn from a seeded generator, planar UVs | `scene/textures.js` |
+| Wood plank floors, atrium stone tiles (stone replaced by polished concrete in R2) | `CanvasTexture`s drawn from a seeded generator, planar UVs | `scene/textures.js` |
 | Library wall (bookcase, books, binders with blank label patches, flat stacks) | boxes; sizes and colours from a seeded generator; no text or titles | `scene/rooms.js` |
 | Mood board, whiteboard, framed pictures | one canvas atlas: seeded abstract compositions (circles, bands, blocks, arcs), colour swatches, wavy lines in place of writing; no text; not copies of any artwork | `scene/textures.js` |
 | Reading nook (armchair, arc lamp, side table), credenza, lockers, wall shelves with objects | boxes, `RoundedBoxGeometry`, cylinders, cones | `scene/rooms.js` |
 | Lounge: two sofas, two armchairs, coffee table, rug, arc lamp | `RoundedBoxGeometry`, boxes, cylinders | `scene/rooms.js` |
 | LED strips (emissive lines) and their soft glow (additive quads), lamp light pools | boxes; a canvas glow atlas (radial pool, vertical wash) | `scene/rooms.js`, `scene/textures.js` |
 | Desks (wood top, dark metal frame, L-shaped return), monitors, keyboards, desk lamps, office chairs | `RoundedBoxGeometry` (one bevel segment), cylinders, cones; instanced (`InstancedMesh`) | `scene/office.js` |
-| People (body, head, arms, legs), soft blob shadows | `CapsuleGeometry`, `SphereGeometry`, `RoundedBoxGeometry`, a radial canvas texture; instanced | `scene/office.js` |
+| People (body, head, arms, legs; replaced by the R2 figures below), soft blob shadows | `CapsuleGeometry`, `SphereGeometry`, `RoundedBoxGeometry`, a radial canvas texture; instanced | `scene/office.js` |
 | Plants (tall and small) | cylinders + merged `IcosahedronGeometry` leaves; instanced | `scene/office.js` |
 | Server cabinets with status lights and LED blocks | `RoundedBoxGeometry`, planes, spheres; instanced | `scene/office.js`, `scene/rooms.js` |
 | Memory core | `OctahedronGeometry` crystal, `TorusGeometry` ring, radial-gradient glow sprite, octagonal plinth | `scene/office.js`, `scene/rooms.js` |
@@ -36,6 +36,17 @@ references only and ignored by git. Nothing was traced or copied from them: no l
 | Slab drop shadow | a blurred rounded rectangle on a canvas | `scene/office.js` |
 | Backdrop | a CSS linear gradient behind the transparent canvas (colours from the palette) | `scene/office.js` |
 | Activity lines | `QuadraticBezierCurve3` + `LineDashedMaterial` | `scene/office.js` |
+
+**Redesign R2 (17/10/2026).** Still no kit, model file, image file or font: everything below is procedural and made
+for this project; licence: this project. `design-refs/02.png` was used for mood only (light-mode contrast).
+
+| Asset | Made with | Where |
+|-------|-----------|-------|
+| People: head with neck, nose and ears; hair in four styles (short crop, bob, bun, curls); torso; upper arms and forearms; hands; thighs and shins; shoes; per-agent shirt (the agent's colour), skin tone, hair colour and trousers | `SphereGeometry` (head, partial spheres for hair), `IcosahedronGeometry` (curls), `RoundedBoxGeometry` (torso, pelvis), six-sided `CylinderGeometry` limbs, `BoxGeometry` hands and shoes; one instanced mesh per part; poses from joint angles | `scene/office.js` |
+| Props: printer, water cooler, five benches, a round meeting table with two stools, an easel with a picture, two wall clocks (no time or text), a wall shelf above the printer | boxes, `RoundedBoxGeometry`, cylinders; merged into the atrium mesh | `scene/rooms.js`, positions in `scene/layout.js` |
+| Trailing shelf plants (the third plant type, beside the tall leafy plant and the small pot plant) | `IcosahedronGeometry` leaves hanging from a small pot | `scene/rooms.js` |
+| Atrium floor: polished concrete (replaces the R1 stone tiles) | `CanvasTexture`: soft clouding, fine specks, thin saw-cut joints, from a seeded generator | `scene/textures.js` |
+| Top-bar service glyphs: a spark, a route, an upscale arrow, a shop bag, a dashed ring | inline SVG paths written for this project (generic shapes, not any company's logo) | `src/web/main.js` |
 
 Palette: `src/web/config/palette.js` (own choice; one accent per department used as a soft wall tint and on the cards;
 light and dark themes; one warm accent in dark mode, shared with the UI's `--accent` in `src/web/styles.css`).

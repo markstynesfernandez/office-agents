@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 16/10/2026, about 22:10 Irish time (Redesign R1 done, awaiting review). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (Redesign R2 done, awaiting review). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -14,12 +14,38 @@ Last updated: 16/10/2026, about 22:10 Irish time (Redesign R1 done, awaiting rev
 | Demo mode | Done (16/10/2026). `npm run demo`, presenter view, `npm run demo:record`. Demo hardening done at the start of E4 (see below). |
 | **E4** Legacy import | Done (16/10/2026), awaiting the owner's review. `npm run import-legacy`; the legacy history imported into `data/` and reconciled with the source ($8.5000719, 162 ledger rows); a second run changes nothing. Legacy jobs on the board (Blocked, Rejected, Parked lanes), in the job panel and the calendar; legacy notebooks and ledger in the memory-core viewer. Screenshots in `screenshots/e4/`. See below. |
 | **Redesign R1** Office scene look | Done (16/10/2026), awaiting the owner's review. Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
-| **Redesign R2** Office look, people, UI polish | In progress (17/10/2026): milestone 1 done (atrium about 40% smaller, props, polished concrete, smaller core glow, light-mode contrast); milestone 2 done (low-poly people with hair, hands and poses; lounge seats on the cushions, tested); milestone 3 done (UI polish, cached AO); captures, docs next. |
+| **Redesign R2** Office look, people, UI polish | Done (17/10/2026), awaiting the owner's review. Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
 | E5 Live UI | Not started |
 | E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### Redesign R2: look, people, UI polish (17/10/2026)
+
+- **Layout** (`src/web/scene/layout.js`): the atrium is about 40% smaller (band 6.8 -> 4.3 deep, gap 9.3 -> 5.4 wide; open floor 316 -> 180 square units). The server closet turned a quarter turn so its cabinets face the core. Props: printer, water cooler, five benches, a meeting table with stools, an easel, two clocks, art and a shelf on bare walls, trailing shelf plants (third plant type), plants in every room, the lounge and the atrium. Walkers go straight to the lounge when the line is clear, else round the core.
+- **Atrium floor**: polished concrete (dark grey in dark mode). Core plinth, plaza disc, glow pool and glow sprite about half their R1 size.
+- **Light mode** (`src/web/config/palette.js`, `office.js`): stronger department wall tint, warmer wood, dark rugs, a lower and stronger sun with a weaker sky fill, softer shadow edges.
+- **People** (`office.js`): low-poly figures with four hair styles, hands, two-part arms and legs, shoes; shirt in the agent's colour. Typing at the desk, relaxed on the sofa, walking. Lounge seats sit on the cushion centres; `tests/scene-layout.test.mjs` asserts hips and knees are on the cushion, at cushion height, facing the coffee table.
+- **UI**: prompt-like roles (starting "You are", or over 80 characters) become "department · duty" in both views and the desk panel (`src/web/ui/role.js`); an "Active" chip first and default; the Rejected lane shows its count and the 3 most recent with "show all"; the Research card says "verified"; top-bar services show a glyph, a short name and the status dot.
+- **fps** (`screenshots/redesign-r2/fps-headed.json`; headed Chrome, Intel UHD iGPU, 1600x1000, full quality = camera still, AO on):
+
+| View | Camera moving | Full quality | Frame avg / p95 | Note |
+|---|---|---|---|---|
+| 01-overview-light | 71.2 | 68.8 | 14.43 / 16.8 ms | engine mode |
+| 02-overview-dark | 70.9 | 71.5 | 13.85 / 16.1 ms | engine mode |
+| 03-research-room | 62.2 | 62.4 | 15.94 / 18 ms | legacy fixtures view (zoomed) |
+| 04-design-room | 70.9 | 68.2 | 14.54 / 16.3 ms | legacy fixtures view (zoomed) |
+| 05-office-room | 68.7 | 60.2 | 16.49 / 21 ms | legacy fixtures view (zoomed) |
+| 06-lounge-idle | 61.5 | 70.2 | 14.1 / 16.1 ms | engine mode (zoomed) |
+| 07-people-closeup | 69.4 | 65.2 | 15.18 / 18.2 ms | legacy fixtures view (zoomed; QA-DESIGN set to working on the page) |
+| 08-desk-panel | 72.7 | 71.5 | 13.85 / 16.5 ms | legacy fixtures view |
+| 09-board | 165.1 | 165.1 | 6.06 / 6.2 ms | (3D scene paused behind the overlay; page frame rate) |
+| walk (engine mode, overview, dark, 8 agents walking lounge to desk) | 62.3 | 62.3 | 16.12 / 18.3 ms | animation on; 8 still walking at the end of the bench |
+
+- **Cut for performance** (details in DECISIONS.md, "Redesign R2 build record"): the AO is cached (people, the crystal and its ring left out of the AO pre-pass; AO is recomputed only when the camera stops or the scene or theme changes); the people's limbs are low-poly prisms and boxes; the bench slats are plain boxes. Kept: 4x MSAA, AO quality 6/4/1, PBR materials. The PC measured slower on 17/10 than on 16/10 (R1's own code: 63 against 72 fps on the overview), so the margins are thin: the Office room view is at 60.2 and walking at 62.3.
+- **Captures:** `screenshots/redesign-r2/01`–`09` plus `fps-headed.json` (01, 02, 06, 09 in engine mode on the mock provider; 03 to 05, 07, 08 in the legacy fixtures view; in 07 QA-DESIGN is set to working on the page only, to show two desks in use). `npm run demo:record` re-run on the final code: `screenshots/demo/station-demo.webm` (2:46 demo day) and 4 stills, problems: none. `screenshots/demo/station-demo.mp4` is still the stale 16/10 file (no pinned MP4 encoder).
+- **Files changed in R2:** `src/web/scene/layout.js`, `rooms.js`, `textures.js`, `office.js`; `src/web/config/palette.js`; `src/web/styles.css`; `src/web/main.js`; `src/web/ui/board.js`, `sidepanel.js`, `taskpanel.js` and the new `role.js`; `src/server/model.mjs`, `engine-model.mjs`; `tests/scene-layout.test.mjs`, `tests/model.test.mjs`; `scripts/screenshots.mjs` (`--set r2`); `ASSETS.md`, `DECISIONS.md`, `PROGRESS.md`.
 
 ### Redesign R1: office scene look (16/10/2026)
 
@@ -129,7 +155,9 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `5db312e`: E4 legacy import
 - `8f307ce`: Housekeeping (R1 item 0)
 - `cd74ce6`: R1 milestone: cutaway rooms, lounge walking, warm dark mode
-- The next commit: "Redesign R1" (performance cuts, captures, docs)
+- `7cf2865`: Redesign R1
+- `ca7eca4`, `39ab7a2`, `91734ae`: R2 milestones 1 to 3 (layout and light mode, people, UI polish and cached AO)
+- The next commit: "Redesign R2" (captures, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
 
@@ -149,7 +177,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **186 passed, 0 failed**, after Redesign R1 (16/10/2026, about 22:00 Irish time); new: `scene-layout` 4/4. After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **187 passed, 0 failed**, after Redesign R2 (17/10/2026); new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -198,7 +226,7 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
-1. **The owner reviews Redesign R1**: `screenshots/redesign-r1/`, the demo video, and the choices in DECISIONS.md under "Redesign R1 build record" (room order, idle-only lounge, capture themes, performance cuts). E4 is also still awaiting review (DECISIONS.md, "E4 build record"; `screenshots/e4/`).
+1. **The owner reviews Redesign R2**: `screenshots/redesign-r2/`, the demo video, and the choices in DECISIONS.md under "Redesign R2 build record" (closet turned, where props go, role labels from the agent name, capture modes, the AO cache). R1 and E4 are also still awaiting review (DECISIONS.md, "Redesign R1 build record" and "E4 build record").
 2. **E5 Live UI**, after the owner's go-ahead.
 3. E6 stays blocked on Q1 (billing), Q2 (caps) and Q3/§4.3 (products).
 
