@@ -397,6 +397,8 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
   // the price fill: proposed = the larger of the floor and the brief high (a minimum, not a target)
   assert.deepEqual(variantLadder(PACK, { min: 3.5, max: 3.5 }, st).map((x) => [x.floorEur, x.proposedEur]), [[3.13, 3.13]]);
   assert.deepEqual(variantLadder(PACK, { min: 3.5, max: 5.99 }, st).map((x) => [x.floorEur, x.proposedEur]), [[3.13, 5.35]]);
+  // owner, 17/10/2026: the margin at the floor (EUR 2.14) is intended; no minimum-margin rule raises the floor (no-brief price = floor + 15%)
+  assert.deepEqual(variantLadder(PACK, null, st).map((x) => [x.floorEur, x.proposedEur, x.marginEur]), [[3.13, 3.6, 2.55]]);
   // the package gate (QA-LISTING's prices are re-checked there, with the gate's 2-cent tolerance): a brief at
   // USD 3.50 only lists at the floor EUR 3.13; EUR 3.10 is below it, 3.13 is right
   const wd = path.join(r.dataRoot, 'gate'); fs.mkdirSync(wd, { recursive: true }); fs.writeFileSync(path.join(wd, 'brief.md'), brief('3.50').replace('USD 3.50–5.99', 'USD 3.50–3.50'));
@@ -433,5 +435,6 @@ test('D3: forced tool choice only where the skill says it is valid (Haiku 5.5 ye
   assert.equal(CFG.engine.tiers.cheap.model, 'claude-haiku-5-5'); assert.equal(CFG.engine.tiers.cheap.forcedToolChoice, true);
   assert.equal(CFG.engine.tiers.strong.model, 'claude-sonnet-5-5'); assert.equal(CFG.engine.tiers.strong.forcedToolChoice, false);
   assert.match(CFG.engine.$tiersComment, /a model restriction, not a thinking one/);
+  assert.equal(CFG.engine.caps.perRunUsd, 2, 'per-run cap USD 2.00 (owner, 17/10/2026)');
   assert.equal(createProviders({ mode: 'mock' }).image.id, 'mock');
 });

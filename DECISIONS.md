@@ -1407,10 +1407,24 @@ No spend: everything below is tested against stubs (no network, no key read).
   the legacy listing, 3.13 now under D1); price EUR 9.00 and margin EUR 7.25 must be unchanged. Listed as explained.
 
 ### For the owner (open; nothing decided here)
-- **D1 margin:** at the USD 3.50 floor the margin is EUR 2.14 after fees, not the EUR 5 minimum of the fee model. A brief
-  priced at the floor would list at EUR 3.13. Intended?
-- **Row 19, the per-run cap (USD 1.00):** unchanged. A DESIGNER batch of 6 images plus their checks could come near it
-  (one legacy DESIGNER pass cost about USD 0.92); if a run hits it, the job ends blocked at the cap (no rerun in step c).
+- ~~D1 margin~~ and ~~row 19, the per-run cap~~: decided by the owner, see "E6 step c0: owner decisions, part 2".
 - **Thinking off and quality:** D2 is for the first full live run; the skill recommends adaptive thinking at low effort
   over thinking off for quality. Per agent in config when the owner wants to turn it on.
 - **The web relay** keeps its default thinking (it is not an agent); say if D2 should cover it too.
+
+## E6 step c0: owner decisions, part 2 (owner-approved, 17/10/2026)
+
+1. **Per-run cap USD 2.00** (owner spend rule; config said 1.00, carried over from the StarNet era). Job cap USD 5.00 and
+   daily USD 10.00 unchanged. `config/engine.json` caps.perRunUsd = 2; E6 checklist row 19 closed; pinned in tests
+   (`e6-prices`, `e6-c0`). No test pinned 1.00 from the config (`tests/helpers/engine.mjs` has its own test caps).
+2. **The margin at the USD 3.50 floor (EUR 2.14 after fees) is intended.** Checked: no separate minimum-margin rule makes
+   the effective floor higher. The EUR 5 minimum margin lives only in the fee-model floor (`variantFloor`), which the owner
+   floor replaces in `variantLadder` and `briefPriceCheck`; the brief check, intake, the scout's brief check, the price fill
+   and the package gate all read that. The gate checks the margin estimate's figures, never a minimum. Changed: the wording
+   only, so no agent reads the EUR 5 margin as binding: `prompts/skills/price-floor.md` ("except an owner floor below (it
+   binds; no margin rule raises it)") and the note on `products.json` priceFloorUsd. Also tested: with no brief price the
+   pack lists at the floor + 15% (EUR 3.60, margin EUR 2.55), not at a margin-based price.
+3. **Fallback:** if the scout rerun verifies no brief, stop and report. DESK-PROPS-01 (already published) is not a fallback.
+
+Checks after the change: `npm test` 371/371; the mock dry run and `npm run parity -- --rebuild` (26/26) unchanged; port
+drift none. EVIDENCE-CHECKER's built prompt is 15,962 chars, 38 under StarNet's 16,000 clamp (flagged: little room left).

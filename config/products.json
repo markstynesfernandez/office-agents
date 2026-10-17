@@ -30,7 +30,7 @@
         "text": "This is a digital download. Nothing will be shipped. You'll receive one ZIP file containing 12 transparent PNG files (2000×2000 px). The files are available to download from Etsy once payment is confirmed.",
         "status": "owner-approved 2026-10-16 (wording by the owner)"
       },
-      "priceFloorUsd": { "value": 3.5, "decidedBy": "owner", "date": "2026-10-17", "note": "OWNER D1 17/10/2026 (DECISIONS.md 'E6 step c0'): USD 3.50 (was USD 7.19, the fee-model digital floor with the EUR 5 minimum margin). A minimum: agents may price higher when the evidence supports it. At USD 3.50 = EUR 3.13 the margin after Etsy fees incl. VAT is EUR 2.14 (fees EUR 0.99), below the EUR 5 minimum margin of the fee model." },
+      "priceFloorUsd": { "value": 3.5, "decidedBy": "owner", "date": "2026-10-17", "note": "OWNER D1 17/10/2026 (DECISIONS.md 'E6 step c0'): USD 3.50 (was USD 7.19, the fee-model digital floor with the EUR 5 minimum margin). A minimum: agents may price higher when the evidence supports it. At USD 3.50 = EUR 3.13 the margin after Etsy fees incl. VAT is EUR 2.14 (fees EUR 0.99), below the EUR 5 minimum margin of the fee model: intended (owner-approved 17/10/2026); the owner floor binds and no margin rule raises it." },
       "styleReference": { "ownerOk": true, "note": "Owner go 2026-10-16: file 1 (the steaming mug) is generated alone, the owner sees it flattened on light and dark and approves it, then it is the image model's style reference for files 2-12." },
       "deliverables": {
         "package": { "kind": "zip", "preview": true },

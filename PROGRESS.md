@@ -48,6 +48,8 @@ Built and tested on stubs only: no network, no key read, $0. Decisions and the b
 - **Vision pricing:** image_analyze reserved from the image's pixel size (ceil(w/28) × ceil(h/28), capped at 4,784), settled
   from the usage.
 - **Live command for step c:** `npm run line:live -- --brief <id>` / `-- --resume <job id>` / `-- --plan`.
+- **Owner decisions, part 2 (17/10/2026):** per-run cap USD 2.00; the EUR 2.14 margin at the floor is intended (no margin
+  rule raises the floor; the price-floor skill's wording aligned); no fallback brief. Commit "E6 c0: run cap 2.00, margin aligned".
 - **Checks:** `npm test` 371/371 (new `e6-c0` 15/15); `npm run dry-run -- --no-shots` the reference result (job A approval
   after one QA-DESIGN rework, job B blocked "garfield", 56 ledger rows, all mock, $0); `npm run parity -- --rebuild` 26/26,
   0 unexplained (one new explained difference: the margin workings' floor figure, D1); port drift none.
@@ -569,7 +571,7 @@ Also needed before a real job on the product (added here; not in the owner's lis
 | 16 | Buttons on the page for the owner's actions | **open** (not blocking) | The routes exist; `npm run owner` works today with the server stopped. |
 | 17 | Genre-scout sources | **closed** (17/10/2026) | v1: trend articles, editorial roundups and community discussion by Anthropic web search; Steam, itch.io, Twitch and YouTube blocked on both web tools and refused by the engine for fetch (`1b912a7`); TREND-SCOUT's prompt changed. Twitch and YouTube data later through their official APIs only. |
 | 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **built**: Anthropic text (a0/a) and the live web backend (b0, first live run in b) done 17/10/2026; OpenRouter images built in c0 (17/10/2026), **not yet run live** | `@anthropic-ai/sdk` 0.131.0; `providers/anthropic.mjs`, `providers/anthropic-web.mjs`, `providers/openrouter.mjs` (plain `fetch`, no new dependency). |
-| 19 | Per-run cap | **open** (owner; before step c) | `perRunUsd` is USD 1.00 (StarNet era) and was not part of the Q2 answer. One legacy DESIGNER pass cost about USD 0.92. Unchanged in c0: a DESIGNER batch (up to 6 images and their checks) could come near it; a run that hits it ends the job blocked at the cap. |
+| 19 | Per-run cap | **closed** (owner, 17/10/2026) | `perRunUsd` USD 2.00 (owner spend rule; was 1.00 from the StarNet era). Job USD 5.00 and day USD 10.00 unchanged. |
 | 20 | Image token estimate in reservations | **done** (E6 c0, 17/10/2026) | `image_analyze` reserves the image as vision tokens from its pixel size (ceil(w/28) × ceil(h/28), capped at 4,784 on Haiku 5.5 and Sonnet 5.5, from the vision docs), settled from the usage: a 1024×1024 image reserves 1,369 tokens (USD 0.0027 on Sonnet). |
 
 ### E5 Live UI (17/10/2026)
@@ -857,7 +859,7 @@ The post-E3 re-port changed:
    brief floor; see "E6 step b2"; the owner set the prop pack's floor to USD 3.50 (D1, "E6 step c0")). **Next: c** on the
    owner's "go c": one live scout rerun (product_key pngtuber-prop-pack, run cap USD 0.50), then the owner picks a brief
    ("go line <brief id>") and one job runs through the whole line (`npm run line:live`), pausing once for the owner's
-   decision on file 1. Owner decisions open: the D1 margin (EUR 2.14 at the floor) and row 19 (per-run cap). Owner to-do: match b2's request ids in the Console. Owner to-do: match the b run's request ids in
+   decision on file 1. The owner closed the D1 margin (intended) and row 19 (per-run cap USD 2.00) on 17/10/2026; no fallback brief if the scout verifies none. Owner to-do: match b2's request ids in the Console. Owner to-do: match the b run's request ids in
    the Console (DECISIONS/PROGRESS "E6 steps b0 and b"). Owner to-do: match request `req_011Cg7xU6wxApdmaNh1rw2VC` in the Console.
 
 ### E6 plan: the first real run (each step stops for the owner's go-ahead)

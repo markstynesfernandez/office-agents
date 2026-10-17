@@ -43,7 +43,7 @@ test('config: the owner\'s prices, caps and image model; every real price names 
   assert.equal(PRICING.openrouter.models['openai/gpt-5-image-mini'].perImage, 0.08);
   assert.deepEqual(ENGINE.image.allowedModels, ['openai/gpt-5-image-mini']);
   assert.equal(ENGINE.image.opaqueModelApproved, false);
-  assert.deepEqual({ job: CAPS.perJobUsd, day: CAPS.perDayUsd, line: CAPS.perLineDayUsd.default, scout: CAPS.perJobUsdByLine['genre-scout'] }, { job: 5, day: 10, line: 10, scout: 0.5 });
+  assert.deepEqual({ run: CAPS.perRunUsd, job: CAPS.perJobUsd, day: CAPS.perDayUsd, line: CAPS.perLineDayUsd.default, scout: CAPS.perJobUsdByLine['genre-scout'] }, { run: 2, job: 5, day: 10, line: 10, scout: 0.5 });
   for (const [prov, p] of Object.entries(PRICING)) {
     if (prov === 'mock') continue;
     for (const [model, e] of Object.entries(p.models)) {
