@@ -1144,3 +1144,112 @@ longer takes the key from it (the seed's `productKey` is passed). Edit or re-see
 Tests: new `tests/product-key.test.mjs` 5/5 (an unknown key: incomplete, USD 0, no model call, no stage, exit 1;
 missing: the config default only, and with no default incomplete the same way; the routine seed's key; no prompt or skill
 describes a product as its key; the mock takes the key from the run input, a draft with another key refused on write).
+
+## R4a build record: warm office prototype and quality tiers (17/10/2026)
+
+The owner's R4a brief: a visual pass on one room (the main office room) plus quality tiers, then stop for review; R4b
+(the other rooms) later. No engine, provider, guard, ledger, data, prompt, engine config or line config file changed;
+STATION_PROVIDER stayed mock (the captures and the demo check ran the engine on the mock provider in throwaway data
+roots); no live call. No new dependency; three.js stays 0.186.1 (AgX is in it). Owner's style direction (17/10/2026):
+02.png as the base, 01-main.png for the light wood edge band and plinth deck, desk and wall lamps and wall shelves.
+
+### Choices made in the build (for the owner to confirm or change)
+
+- **The room.** "The main office room" was read as the Office room (the `office` bake unit, 4 desks in two rows). The
+  other four areas are untouched: their glTF, buffers and lightmaps are byte-identical to R3b.
+- **The reference images.** `design-refs/01-main.png` and `02.png` are not tracked (`git ls-files` lists neither;
+  `design-refs/` is in .gitignore); left as they are. Used as style guidance only: nothing traced, sampled or copied.
+- **One rug per department.** The Office's single department gets one charcoal rug under its whole desk cluster (both
+  rows), as the brief says; the layout's per-row clusters (`layout.js`) are unchanged and still drive the procedural rooms.
+- **Pendants.** A dome pendant over each desk. A linear pendant along each row was tried first: in the isometric view
+  it read as a dark beam across the monitors. The domes sit mostly behind the desks' labels at overview zoom and show
+  when zoomed in; their warm pools land on the desks.
+- **Window wall.** The Office's left wall (the slab edge, the outside) has three tall windows with light wood frames.
+  Panes are unlit on the page (bright by day, dusk blue by evening) and left out of the bake. The daylight is one soft
+  spot per window, 5 units outside, aimed down at 45 degrees with a cone the window's size, so the wall masks it and
+  window-shaped patches (with the frame's shadows) fall across the tile. Two earlier set-ups were measured and dropped:
+  a panel just outside burnt out the sills and reveals (day lightmap scale 13.6, the other rooms about 1.05), and a
+  large panel further out lit the wall tops (there is no ceiling in the bake; scale 30.6). Final day scale 4.68.
+- **Thick walls.** The visible wall thickness is 0.32 (the layout's 0.18): the inner faces move into the room, so the
+  room's outline, the atrium and every path stay as they are. Caps are chamfered (3 cm) and catch the light.
+- **The plinth deck.** Along the slab's front edge under the Office: a light wood fascia over a dark base, 4 cm proud of
+  the slab, so it covers the atrium unit's slab face there. The step where the deck ends (the Office's right edge) is
+  visible until R4b gives the rest of the slab the same edge.
+- **Materials on the unlit page.** Baked surfaces stay unlit (lightmap x albedo, as since the R3 spike), so roughness
+  cannot show; the floor's "roughness variation" is a per-tile tone, soft clouding and speckle in the tile's colour. The
+  tile (0.9 m, 14 mm grout, exaggerated so it reads at overview zoom) and the plaster are made in the build (seeded numpy,
+  no download); the light wood is the CC0 oak photo shifted.
+- **Compressed textures.** The pipeline's JPEG and WebP stay; KTX2/Basis would need a new encoder tool (not pinned or
+  licence-checked here) and saves GPU memory rather than download at these sizes. Not added.
+- **Lightmap resolution.** Office atlas 3072 px (132 texels per unit; R3b 2176 px, 103). One Cycles bake at 6144 px for
+  the high tier; the default atlas is that bake halved in linear light. 512 samples (the 6144 px bake at 1024 would take
+  about 10 minutes more); the halved default map averages four baked texels each.
+- **Bevels.** `Kit.fbox` chamfers furniture boxes by 12 mm when an area sets a bevel (only the warm Office does; every
+  other area builds exactly as before, the same random draws). Office triangles 11,273 (R3b 5,916).
+- **Tone mapping.** AgX for the whole scene (the renderer's operator is global), exposure 1.32 light / 1.30 dark from
+  `config/warm-office.js`. The other rooms change a little with it (slightly softer, less saturated); their
+  brightness against the procedural rooms was not re-measured. Plaster's brightest channel 213 of 255, caps 217 (247 in
+  the high tier): no clipping.
+- **Default tier = no post-processing at all**, as the brief says: the scene is drawn straight to the canvas. That
+  also drops what R3b had in its post chain, for every room: 4x MSAA (edges are no longer anti-aliased), the cached AO
+  (the bake's own occlusion stays) and the dark-mode LED glow. The status lights, screens and LEDs are drawn untoned in
+  this path (their own colours, unaffected by AgX).
+- **High tier** = the R3b post chain plus: 4x MSAA, the cached half-resolution AO (kept: it gives the real-time
+  monitors and people contact shading), a selective bloom (only the lamp and LED meshes and the screens, drawn on their
+  own layer at half resolution; a threshold bloom also caught the sunlit floor), the 6144 px lightmaps (loaded lazily,
+  only the current theme's), pixel ratio up to 2. By day only the warm rooms' lamps bloom (the other rooms' LED strips
+  are unlit profiles in light mode, as R3b decided).
+- **Auto-select.** `quality.js` `pickTier`: high only for a recognised discrete GPU (GeForce, RTX, GTX, Quadro, Radeon
+  RX/Pro, Arc) with a texture limit of at least 8192 and not a phone; anything else, or an unreported GPU, gets default.
+  The top bar's Quality control (Auto / Default / High) is remembered in this browser (`office-quality`);
+  `?quality=` sets one page without changing the remembered choice. On this PC: Playwright Chromium (Intel) picks
+  default; the owner's Chrome (RTX, High performance) would pick high.
+- **Readability.** A dark ring under every desk status light (the idle grey was weak on light wood). A phone layout
+  (up to 640 px wide): before R4a the 340 px task panel left the 3D stage about 120 px wide at 390 px, so nothing in
+  the scene was readable; now the stage takes the full width, the task panel moves under it and scrolls, the side panel
+  covers the stage, the key hints hide, and the department cards show name and agent count only (they overlapped).
+  The agents and the desk labels needed no change against the charcoal rug: oatmeal chairs and light wood desks frame
+  the people.
+- **Measuring at the vsync cap.** Both tiers render faster than this panel's 165 Hz, so the fps rows read about 164
+  (the frame interval, 6.06 ms). The harness cannot show the headroom above that; as an upper bound on cost, the high
+  tier on the Intel iGPU still runs 76.7-84.1 fps.
+- **GPU choice in the captures.** Headed Playwright Chromium once came up on the RTX this session (it usually gets the
+  Intel). The R4a capture script now records the page's own GL renderer on every fps row and flags any row not on the
+  expected GPU; the budget run's rows all say Intel UHD.
+
+### Measured (17/10/2026)
+
+Same harness and method as R3b (fresh page per view, 3 s benches, headed, the throttled-bench retry; engine view on the
+mock provider), 1600 x 1000; `screenshots/r4a/fps-*.json`. Office room camera: R3a's (the room focused at zoom 1.8),
+overview: R3b's.
+
+| View | R3b (before), Intel UHD | Default tier, Intel UHD | High tier, RTX 5060 Laptop | High tier, Intel UHD (reference) |
+|---|---|---|---|---|
+| Office, light (moving / full) | 75.3 / 78.1 | 165.2 / 163.6 | 165.2 / 164.0 | — |
+| Office, dark | 71.5 / 75.4 | 165.0 / 163.8 | 165.0 / 163.9 | — |
+| Overview, light | 80.0 / 79.8 | 165.2 / 163.6 | 165.2 / 163.9 | 82.0 / 84.1 |
+| Overview, dark | 74.4 / 73.4 | 165.2 / 163.6 | 165.2 / 163.9 | 82.4 / 83.9 |
+| All agents walking, dark | 64.8 | 165.0 | 165.5 | 76.7 |
+| All agents walking, light | 71.4 | 164.8 | 165.2 | 79.4 |
+
+Default tier on the Intel iGPU: min 163.6, mean 164.1 fps at full quality (vsync-capped; frame p95 6.2-6.3 ms).
+
+Download per tier (bytes as served, `src/web/assets/office/`): R3b 7,135,513; **default tier 8,143,195** (81.4% of the
+10 MB budget; brotli 5,377,902); **high tier 11,550,869** (the default set plus `high/`, 3,407,674: day 1,556,752,
+evening 1,850,922, loaded only when high is on). The Office unit: atlases 536,368 (day) and 556,126 (evening),
+`office.bin` 1,217,668, `office.gltf` 19,939; new textures tile 78,952, lightwood 48,227, plaster 18,820.
+Rebuild of the Office unit: 353.1 s (day bake 164.6 s, evening 152.2 s; 512 samples at 6144 px, OptiX).
+
+### For the owner
+
+- **Anti-aliasing in the default tier.** As briefed it has none, and edges are visibly stepped next to R3b (which had
+  4x MSAA). The default tier is far inside the budget (vsync-capped on the iGPU), so the canvas's own MSAA could likely
+  be turned on without missing 60 fps; it is not post-processing, but it is not measured. Turn it on?
+- **The dark-mode LED glow** is a post pass, so the default tier no longer has it in any room (the high tier does).
+  Keep, or allow that one cheap pass in the default tier?
+- **AgX everywhere** changes the four R3b areas slightly ahead of R4b. Keep, or hold them on ACES until R4b?
+- **One rug for the whole department** (as briefed) covers both desk rows; 02.png's look has a rug per desk zone. Keep,
+  or one per row?
+- **Default-tier budget headroom:** 8.14 MB now; R4b adds the warm textures to the other rooms (shared, already in) and
+  bigger atlases. At the Office's density and bevels the other three units would add roughly 3 MB (an estimate, not measured): over 10 MB unless they stay at
+  R3b's density or `office.bin`-style buffers are compressed (meshopt; three's decoder is in the pinned package).

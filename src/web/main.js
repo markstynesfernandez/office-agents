@@ -15,14 +15,18 @@ import { createPresenter } from './ui/presenter.js';
 import { esc, money, dateTime, hhmm, setMoneyHidden, isMoneyHidden, hasMoney, scrubMoney } from './ui/format.js';
 import { PALETTE } from './config/palette.js';
 import { createControls } from './ui/controls.js';
+import { QUALITY_KEY } from './scene/quality.js';
 
 const q = new URLSearchParams(location.search);
 const $ = (s) => document.querySelector(s);
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* private mode */ } } };
 let theme = q.get('theme') || store.get('office-theme') || 'light';
 document.body.dataset.theme = theme;
+// R4a: rendering quality: ?quality= for this page only, else the remembered choice, else auto (from the GPU)
+const qualityParam = ['auto', 'default', 'high'].includes(q.get('quality')) ? q.get('quality') : null;
+let qualityChoice = qualityParam || (['auto', 'default', 'high'].includes(store.get(QUALITY_KEY)) ? store.get(QUALITY_KEY) : 'auto');
 
-const office = createOffice({ canvas: $('#scene'), theme, onPick: handlePick, options: { ao: q.get('ao') !== '0', animate: q.get('anim') !== '0', msaa: q.get('msaa') !== '0', msaaSamples: Number(q.get('msaa')) || 4, aoQuality: q.get('aoq') ? Object.fromEntries(['samples', 'pdSamples', 'rings'].map((k, i) => [k, Number(q.get('aoq').split(',')[i])])) : null, scene: q.get('scene') === 'procedural' ? 'procedural' : 'baked', glow: q.get('glow') !== '0', bakedAO: q.get('bakedao') !== '0' } });   // R3a: baked rooms by default; ?scene=procedural draws every room procedurally
+const office = createOffice({ canvas: $('#scene'), theme, onPick: handlePick, options: { ao: q.get('ao') !== '0', animate: q.get('anim') !== '0', msaa: q.get('msaa') !== '0', msaaSamples: Number(q.get('msaa')) || 4, aoQuality: q.get('aoq') ? Object.fromEntries(['samples', 'pdSamples', 'rings'].map((k, i) => [k, Number(q.get('aoq').split(',')[i])])) : null, scene: q.get('scene') === 'procedural' ? 'procedural' : 'baked', quality: qualityChoice, glow: q.get('glow') !== '0', bakedAO: q.get('bakedao') !== '0' } });   // R3a: baked rooms by default; ?scene=procedural draws every room procedurally
 const ctl = createControls({ root: $('#dialogs'), toastRoot: $('#toasts'), onRefresh: (fresh) => { load(!!fresh).catch(() => {}); } });
 const labels = createLabels({ container: $('#labels'), office, onDept: focusDept, onHub: openLedger });
 const sidepanel = createSidePanel({ root: $('#sidepanel'), onOpenJob: openJob, onOpenAgent: openAgent, onClose: () => { office.setSelected(null); labelsDirty = true; }, getNow: () => (snap ? snap.generatedAt : Date.now()), getSnap: () => snap, ctl });
@@ -194,6 +198,14 @@ window.addEventListener('keydown', (e) => {
 });
 $('#zoom-in').addEventListener('click', () => office.zoomBy(1.2)); $('#zoom-out').addEventListener('click', () => office.zoomBy(1 / 1.2)); $('#reset-view').addEventListener('click', () => office.resetView());
 $('#theme-toggle').addEventListener('click', () => setTheme(theme === 'dark' ? 'light' : 'dark'));
+// R4a: the Quality control (Auto shows which tier it picked); the choice is remembered in this browser
+function showQuality() {
+  const sel = $('#quality'), r = office.quality;
+  sel.value = qualityChoice; sel.options[0].textContent = 'Auto · ' + r.tier;
+  sel.title = 'Rendering quality: ' + r.tier + (r.auto ? ' (auto: ' + r.reason + ')' : ' (chosen)') + '. Default: fastest, no post-processing. High: sharper lightmaps, anti-aliasing, soft glow.';
+}
+$('#quality').addEventListener('change', (e) => { qualityChoice = e.target.value; if (!qualityParam) store.set(QUALITY_KEY, qualityChoice); office.setQuality(qualityChoice); showQuality(); labelsDirty = true; });
+showQuality();
 window.addEventListener('resize', () => { office.resize(); labelsDirty = true; });
 
 // clock (24h) + the on-demand loop: rAF is cheap when nothing changed (no render, no layout)

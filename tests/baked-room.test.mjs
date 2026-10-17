@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeLayout, bakedRoomSpec } from '../src/web/scene/layout.js';
 import { BAKED_ROOMS, BAKE_UNITS, bakedLook } from '../src/web/scene/bakedlook.js';
-import { ASSET_DIR, BUDGET_BYTES, BAKE_LIGHT, DENSITY, officeSpecs, stationDepartments, assetJail, sizesOf, mergeManifest, unitsFor, unitFiles } from '../scripts/build-office.mjs';
+import { ASSET_DIR, BUDGET_BYTES, BAKE_LIGHT, DENSITY, UNIT_ATLAS, HIGH_DIR, officeSpecs, stationDepartments, assetJail, sizesOf, defaultBytes, mergeManifest, unitsFor, unitFiles } from '../scripts/build-office.mjs';
 import { createOfficeServer } from '../src/server/index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -71,18 +71,21 @@ test('the bake used the page\'s current look: one oak floor, palette colours, ti
 const rgb = (h) => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
 const lum = (h) => { const [r, g, b] = rgb(h); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
 
-test('one lightmap atlas pair per bake unit, one texel density, the whole asset folder under the 10 MB budget', () => {
+// R4a: units with their own atlas size (UNIT_ATLAS: the warm Office) are denser than the shared density, and their
+// high-tier set (high/) is outside the default download the budget counts
+test('one lightmap atlas pair per bake unit, one texel density (R4a: the warm Office denser), the default download under the 10 MB budget', () => {
   const s = sizesOf(ASSET_DIR, { compress: false });
-  assert.ok(s.total.bytes <= BUDGET_BYTES, 'baked assets ' + s.total.bytes + ' bytes > ' + BUDGET_BYTES);
+  assert.ok(defaultBytes(s) <= BUDGET_BYTES, 'default-tier assets ' + defaultBytes(s) + ' bytes > ' + BUDGET_BYTES);
   assert.equal(BUDGET_BYTES, 10 * 1000 * 1000);
   const dens = [];
   for (const [u, x] of Object.entries(manifest.units)) {
     for (const m of ['day', 'evening']) { assert.ok(x.lightmaps[m].scale > 0, u + ' ' + m + ' scale'); assert.equal(x.lightmaps[m].file, 'lightmap-' + u + '-' + m + '.webp'); assert.ok(fs.existsSync(path.join(ASSET_DIR, x.lightmaps[m].file))); }
     assert.match(x.build.blender, /Blender 5\.2\.\d+/, u + ' built with the pinned Blender series');
     assert.ok(x.atlas.size >= 512 && x.atlas.size <= 4096, u + ' atlas ' + x.atlas.size);
-    dens.push(x.atlas.density);
+    if (UNIT_ATLAS[u]) { assert.equal(x.atlas.size, UNIT_ATLAS[u].size, u + ' atlas'); assert.ok(x.atlas.density > DENSITY * 1.2, u + ': higher lightmap resolution than R3b (' + x.atlas.density + ')'); }
+    else dens.push(x.atlas.density);
   }
-  assert.ok(Math.max(...dens) / Math.min(...dens) < 1.15, 'one texel density in every unit: ' + dens.join(', '));
+  assert.ok(Math.max(...dens) / Math.min(...dens) < 1.15, 'one texel density in every other unit: ' + dens.join(', '));
   assert.equal(manifest.build.density, DENSITY); assert.deepEqual(manifest.build.light, BAKE_LIGHT);
   const lightmaps = s.files.filter((f) => /^lightmap-/.test(f.file)).map((f) => f.file).sort();
   assert.deepEqual(lightmaps, Object.keys(BAKE_UNITS).flatMap((u) => ['lightmap-' + u + '-day.webp', 'lightmap-' + u + '-evening.webp']).sort(), 'no stray lightmaps');
@@ -94,12 +97,12 @@ test('the glTFs: lightmap UVs on every lit primitive, shared textures written on
     const names = g.materials.map((m) => m.name);
     assert.equal(new Set(names).size, names.length, u + ': one material per name');
     for (const mesh of g.meshes) for (const p of mesh.primitives) {
-      if (g.materials[p.material].name === 'led') continue;
+      if (['led', 'window'].includes(g.materials[p.material].name)) continue;   // unlit on the page (R4a: window panes)
       assert.ok('TEXCOORD_1' in p.attributes, u + ': ' + mesh.name + '/' + g.materials[p.material].name + ' has no lightmap UVs');
     }
     for (const i of g.images || []) { assert.match(i.uri, /^textures\/[a-z]+\.jpg$/); assert.ok(fs.existsSync(path.join(ASSET_DIR, i.uri)), i.uri); uris.add(i.uri); }
     const nodes = g.nodes.map((n) => n.name);
-    for (const k of BAKE_UNITS[u]) { assert.ok(nodes.includes(manifest.rooms[k].node), k + ' node'); if (manifest.rooms[k].leds) assert.ok(nodes.includes(manifest.rooms[k].leds), k + ' LED node'); }
+    for (const k of BAKE_UNITS[u]) { assert.ok(nodes.includes(manifest.rooms[k].node), k + ' node'); if (manifest.rooms[k].leds) assert.ok(nodes.includes(manifest.rooms[k].leds), k + ' LED node'); if (manifest.rooms[k].windows) assert.ok(nodes.includes(manifest.rooms[k].windows), k + ' window node'); }
     assert.ok(!nodes.some((n) => /^occ_/.test(n)), u + ': bake-only occluders are not exported');
     assert.ok(g.buffers.every((b) => b.uri === u + '.bin'), u + ': its own buffer');
   }
@@ -142,6 +145,12 @@ test('a one-room build replaces only its unit, and refuses when the look or the 
   assert.throws(() => mergeManifest({ ...manifest, version: 2 }, fresh, opts), /full build first/);
   assert.throws(() => mergeManifest(manifest, fresh, { ...opts, look: { ...look, floor: { ...look.floor, tile: 3 } } }), /look .* changed/);
   assert.throws(() => mergeManifest(manifest, fresh, { ...opts, density: DENSITY + 1 }), /bake settings changed/);
+  // R4a: the warm look is not shared: changing it needs the warm units in the build, and nothing else
+  const warmer = { ...look, warm: { ...look.warm, band: look.warm.band + 0.1 } };
+  assert.throws(() => mergeManifest(manifest, fresh, { ...opts, look: warmer }), /warm look changed/);
+  const office = { units: { office: { ...manifest.units.office } }, rooms: { office: { ...manifest.rooms.office } }, last: { units: ['office'] } };
+  assert.deepEqual(mergeManifest(manifest, office, { ...opts, look: warmer }).look, warmer);
+  assert.deepEqual(unitFiles('office', { buffers: [{ uri: 'office.bin' }] }).filter((f) => f.startsWith(HIGH_DIR + '/')), ['high/lightmap-office-day.webp', 'high/lightmap-office-evening.webp']);
   const full = mergeManifest(manifest, fresh, { ...opts, full: true });
   assert.deepEqual(Object.keys(full.units), ['design'], 'a full build keeps nothing from before');
 });

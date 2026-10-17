@@ -6,11 +6,13 @@
 import * as THREE from 'three';
 import { PALETTE } from '../config/palette.js';
 import { ATLAS, atlasUV } from './textures.js';
+import { warmLook } from '../config/warm-office.js';
 
-// R3b: every area is baked (R3a: Design and Office). A bake unit has its own lightmap atlas, so a change to one room
+// R3b: every area is baked (R3a: Design and Office). R4a: the Office room has the warm look (WARM_UNITS). A bake unit has its own lightmap atlas, so a change to one room
 // re-bakes only that unit; the atrium and the lounge share one (they light each other).
 export const BAKED_ROOMS = ['research', 'design', 'office', 'lounge', 'atrium'];
 export const BAKE_UNITS = { research: ['research'], design: ['design'], office: ['office'], atrium: ['atrium', 'lounge'] };
+export const WARM_UNITS = ['office'];          // R4a: the units built with the warm look (R4b: the rest)
 export const unitOf = (key) => Object.keys(BAKE_UNITS).find((u) => BAKE_UNITS[u].includes(key)) || null;
 export const FLOOR_OAK = { tile: 2.2, colour: '#a47f58', texture: 'textures/floor.jpg' };   // one mid-tone oak, every room
 // shared textures the build shifts to a light neutral average; each material using one is tinted to its own colour
@@ -46,6 +48,9 @@ export function bakedLook() {
     textures: Object.fromEntries(Object.entries(TEXTURE_MEANS).map(([k, mean]) => [k, { mean }])),
     themed: themedColours(),
     themedTex: THEMED_TEX,
-    atlas: { board: atlasUV(ATLAS.board), white: atlasUV(ATLAS.white), art: ATLAS.art.map(atlasUV) }
+    atlas: { board: atlasUV(ATLAS.board), white: atlasUV(ATLAS.white), art: ATLAS.art.map(atlasUV) },
+    // R4a: the warm office look (config/warm-office.js). Only the units that use it (R4a: the Office) are re-baked when it
+    // changes; the rest of the look is shared by every unit (build-office.mjs mergeManifest)
+    warm: warmLook()
   };
 }

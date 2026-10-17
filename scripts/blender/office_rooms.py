@@ -3,6 +3,7 @@
 # the atrium's floor, walls, closet and props). R3a: Design and Office; R3b: Research, the lounge and the atrium.
 # Decals (mood board, whiteboard, pictures) use regions of the page's own procedural atlas (textures.js ATLAS), passed
 # in the look as UV rectangles, so the baked rooms show the same abstract artwork as the procedural ones.
+# R4a: the Office is the warm prototype (office() below); R4b rolls the warm look out to the other areas.
 import math
 import office_lib as lib
 
@@ -56,25 +57,49 @@ def design(k):
         if pr['kind'] == 'easel': lib.easel(k, pr, A['art'][3])
 
 def office(k):
-    """the Office: lockers and a framed picture on the left wall, the whiteboard and two lit book shelves on the back
-    wall, oak desks in two rows on their rugs, the round meeting table with two stools, a fig and a small plant"""
-    S, A, PT = k.S, k.look['atlas'], k.PT
-    lib.shell(k)
-    lib.locker(k, 'x', 1.05); lib.locker(k, 'x', 1.98)
-    if k.D > 6:
-        lib.frame(k, 'x', 4.4, PT + 1.68, 0.9, 1.15, A['art'][5])
-        lib.wall_shelf(k, 'x', 6.6, 1.4, PT + 1.58, 61)
-    xs = [d['x'] for d in S['desks']]
-    u0, u1 = min(xs) - 1.05, max(xs) + 1.05
-    wbw = min(3.0, u1 - u0 - 1.6); wbu = (u0 + u1) / 2 - 0.6
-    lib.whiteboard(k, 'z', wbu, PT + 1.6, wbw, 1.3, A['white'])
-    lib.wall_shelf(k, 'z', wbu + wbw / 2 + 1.0, 1.3, PT + 1.43, 53)
-    lib.wall_shelf(k, 'z', wbu + wbw / 2 + 1.0, 1.3, PT + 2.03, 59)
-    for c in clusters(S): lib.rug(k, *c)
-    for dk in S['desks']: lib.desk(k, dk)
-    lib.plants(k)
-    for pr in S['props']:
-        if pr['kind'] == 'meeting': lib.meeting(k, pr)
+    """R4a: the warm Office (config/warm-office.js; the owner's style direction from 02.png with 01-main.png's light wood
+    edge band, plinth deck, desk and wall lamps and wall shelves; style only, nothing traced or copied). Thick cream
+    plaster walls with bevelled caps; the left wall a window wall (three tall windows, daylight on the floor in the day
+    bake); a beige large-format tiled floor in a light wood band; the plinth deck on the slab's front edge. On the back
+    wall a light wood bookcase (blank spines), two wall shelves, two framed abstract pictures (the page's atlas) and two
+    wall lamps. One dark charcoal rug under the department's whole desk cluster; light wood desks with cream pedestals,
+    desk lamps, mugs and small desk items; a dome pendant over each desk; the round meeting table with
+    terracotta stools; plants in warm pots. Walkways stay as the layout has them (nothing new on the agents' paths)."""
+    S, A, PT, W, D = k.S, k.look['atlas'], k.PT, k.W, k.D
+    w = k.look['warm']
+    lib.warm_setup(k)
+    WT = k.WT
+    # three tall windows on the left wall, evenly spaced between the back wall and the front pier
+    n, pier, front = 3, 0.9, 0.9
+    span = D - WT - 0.55 - front
+    ww = (span - (n - 1) * pier) / n
+    wins = [(WT + 0.55 + i * (ww + pier), WT + 0.55 + i * (ww + pier) + ww) for i in range(n)]
+    lib.warm_shell(k, wins, PT + 0.62, PT + 2.25)
+    xs = sorted(d['x'] for d in S['desks']); zs = sorted(set(round(d['z'], 3) for d in S['desks']))
+    # back wall: bookcase in the left corner, a wall lamp, two stacked shelves, a picture, a wall lamp, a picture over
+    # the meeting table
+    lib.bookcase(k, WT + 0.12, WT + 1.95, 83, depth=0.36, height=2.15)
+    lib.sconce(k, 'z', WT + 2.45, PT + 1.95)
+    sx = (xs[0] + xs[-1]) / 2 - 0.85
+    lib.wall_shelf(k, 'z', sx, 1.5, PT + 1.38, 89)
+    lib.wall_shelf(k, 'z', sx, 1.5, PT + 1.9, 97)
+    lib.frame(k, 'z', sx + 1.95, PT + 1.65, 1.3, 0.95, A['art'][5])
+    lib.sconce(k, 'z', sx + 3.0, PT + 1.95)
+    mt = next((p for p in S['props'] if p['kind'] == 'meeting'), None)
+    if mt: lib.frame(k, 'z', mt['x'], PT + 1.7, 0.85, 1.1, A['art'][0])
+    # one rug per department: under the whole desk cluster
+    lib.warm_rug(k, xs[0] - 1.55, xs[-1] + 1.55, zs[0] - 0.95, zs[-1] + 1.55)
+    for i, dk in enumerate(S['desks']): lib.desk_warm(k, dk, 101 + i)
+    # a dome pendant over each desk of the cluster (a warm pool on the desk)
+    for dk in S['desks']: lib.pendant(k, dk['x'] + 0.1, dk['z'] - 0.05, PT + 2.1)
+    if mt: lib.meeting_warm(k, mt)
+    # plants: the layout's (a fig, a small plant) in warm pots, and two more by the window piers (off every path)
+    P = w['pots']
+    for i, p in enumerate(S['plants']):
+        if p['kind'] == 'tall': lib.fig(k, p['x'], p['z'], 31 + i, pot=P['brown'])
+        else: lib.small_plant(k, lib.T(p['x'], PT, p['z']), 31 + i, pot=P['terracotta'])
+    lib.small_plant(k, lib.T(WT + 0.32, PT, (wins[0][1] + wins[1][0]) / 2), 61, scale=1.35, pot=P['sage'])
+    lib.snake_plant(k, WT + 0.3, (wins[1][1] + wins[2][0]) / 2, 67, P['cream'])
 
 def lounge(k):
     """the lounge: the oak floor (no walls: it sits at the slab's front corner), a dark rug, an L of two three-seat sofas,

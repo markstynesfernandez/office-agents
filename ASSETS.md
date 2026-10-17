@@ -97,6 +97,27 @@ Size: 6,877,262 bytes as served (68.8% of the 10 MB office budget; gzip 4,880,43
 `screenshots/r3b/asset-sizes.json`. Per unit: Research 2,264,407, Design 1,044,486, Office 1,470,579, atrium with lounge
 1,789,062; shared textures 279,522; manifest 29,206.
 
+**R4a: the warm Office prototype and quality tiers (17/10/2026).** The Office bake unit only; the other four areas are
+unchanged (their files are byte-identical to R3b). Owner's style direction: `design-refs/02.png` (warm cream walls, beige
+large-format tile, a dark rug per desk zone, warm pendants, light wood, plants, a dark plinth), with the light wood floor
+band and plinth deck, desk and wall lamps and wall-mounted shelves from `design-refs/01-main.png`. Both are mood
+references only, kept local and ignored by git (`git ls-files` lists neither): nothing was traced, sampled, measured or
+extracted from them, and no layout was copied (the room's plan is still `layout.js`). Every asset below is made in this
+repository; licence: this project. No new texture was downloaded; no new dependency.
+
+| Asset | Made with | Where |
+|-------|-----------|-------|
+| Warm palette and tone mapping (one file): cream walls and caps, beige tile and grout, light wood, charcoal rug, cream pedestals, warm-charcoal metal, terracotta / sage / soft brown accents, pot and book colours, window panes per theme, AgX exposure | own choice | `src/web/config/warm-office.js` |
+| Floor tile texture: beige large-format tile (0.9 m), grout lines, a tone per tile, soft clouding and speckle (seeded FFT noise; tileable) | numpy in Blender, `gen_tile` | `src/web/assets/office/textures/tile.jpg` (1024 px) |
+| Wall plaster texture: low-contrast clouding and grain, tinted per theme (seeded) | numpy in Blender, `gen_plaster` | `textures/plaster.jpg` (512 px) |
+| Light wood: the CC0 oak veneer photo below, shifted to a light wood (`#cfb08a`) | as the other shared textures | `textures/lightwood.jpg` |
+| Warm Office pieces: thick plaster walls with bevelled caps and capped cut ends; a window wall (three openings, light wood frames, sills, mullions, transoms; unlit panes); light wood skirting; tiled floor in a light wood edge band; the plinth deck (light wood fascia over a dark base); a light wood bookcase (plain-colour spines, blank binder labels, no titles); two wall shelves; two framed abstract pictures (the page's own atlas); two wall lamps; one charcoal rug; bevelled light wood desks with cream pedestals; desk lamps; dome pendants; mugs (plain, no logo), notebooks, pen cups, small succulents; the meeting table with terracotta stools; a snake plant and pot plants in warm pots | Python in Blender 5.2.1 (`office_lib.py` R4a section, `office_rooms.py` `office()`), seeded; furniture edges chamfered (`Kit.fbox`, 12 mm) | `src/web/assets/office/office.gltf`, `office.bin` |
+| Lightmaps, two tiers: default 3072 px atlas (R3b: 2176), high 6144 px (`high/`, loaded only in the high tier); one Cycles bake at 6144 px, the default halved in linear light | Cycles bake (OptiX), 512 samples, sharp | `lightmap-office-day.webp`, `-evening.webp`; `high/lightmap-office-*.webp` |
+| Status-light ring (readability): a dark disc under each desk's status light | `CylinderGeometry`, instanced | `src/web/scene/office.js` |
+
+Compressed textures: the pipeline stays JPEG (albedo) and WebP (lightmaps). KTX2/Basis would need a new encoder tool and
+the Basis transcoder; it was not added (it saves GPU memory, not download size, at these sizes).
+
 **Third-party textures (CC0 1.0, Poly Haven).** Five 1k diffuse JPGs, downloaded 17/10/2026 from the Poly Haven API
 and checked against its MD5: `assets-src/polyhaven/` (source URLs, publication dates, authors and MD5s in
 `assets-src/polyhaven/SOURCES.md`). Licence text: `assets-src/licences/CC0-1.0.txt` (CC0 1.0 Universal legal code, from
@@ -105,7 +126,7 @@ https://polyhaven.com/license.
 
 | File | Source | Published | Licence | Used for |
 |------|--------|-----------|---------|----------|
-| `oak_veneer_01_diff_1k.jpg` | https://polyhaven.com/a/oak_veneer_01 | 2024-03-08 | CC0 1.0 | slats, shelves, mood board frame, easel, meeting table, Office and Research desk tops, the Design desk tops by day (R3b), the bookcase, benches, tables |
+| `oak_veneer_01_diff_1k.jpg` | https://polyhaven.com/a/oak_veneer_01 | 2024-03-08 | CC0 1.0 | slats, shelves, mood board frame, easel, meeting table, Office and Research desk tops, the Design desk tops by day (R3b), the bookcase, benches, tables; R4a: shifted to the light wood (`textures/lightwood.jpg`) of the warm Office |
 | `walnut_veneer_diff_1k.jpg` | https://polyhaven.com/a/walnut_veneer | 2026-08-11 | CC0 1.0 | drawer fronts; the Design desk tops and credenza top by evening |
 | `wood_floor_diff_1k.jpg` | https://polyhaven.com/a/wood_floor | 2023-10-24 | CC0 1.0 | the office floor everywhere, baked and procedural (R3a: shifted to a mid-tone oak, `#a47f58`) |
 | `poly_wool_herringbone_diff_1k.jpg` | https://polyhaven.com/a/poly_wool_herringbone | 2025-09-05 | CC0 1.0 | upholstery: task chairs (charcoal), lounge sofas (R3b: beige by day, grey by evening); one file, tinted per material |

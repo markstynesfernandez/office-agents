@@ -10,6 +10,11 @@
 // and paused while the tab is hidden, devicePixelRatio capped at 1.5, GTAO at half resolution (skipped while the camera
 // moves), shadows baked (the shadow map is drawn only when the static scene changes; people cast no shadow, they get a
 // soft blob instead), repeated furniture instanced, static geometry merged per room.
+// R4a: two quality tiers (quality.js). Default: the scene is drawn straight to the canvas, no post-processing (no MSAA,
+// AO pass or glow), device pixel ratio up to 1.5. High: the composer (4x MSAA, the cached half-resolution AO, a subtle
+// bloom on lamps, LEDs and screens, all fused into the output pass), the high-tier lightmaps (loaded lazily), pixel
+// ratio up to 2. Chosen automatically from the GPU (default when unsure), or by hand (the page's Quality control,
+// ?quality=). Tone mapping: AgX with the warm look's exposure (config/warm-office.js).
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -26,6 +31,10 @@ import { buildRooms } from './rooms.js';
 import { woodTexture, tileTexture, glowTexture, atlasTexture, GLOW_UV } from './textures.js';
 import { SKIN, HAIR, TROUSERS, hash, shirtColours } from './looks.js';   // people's looks (R2; shirts off the skin range, E5)
 import { loadBakedOffice, loadFloorTexture } from './baked.js';   // R3a, R3b: the baked areas (default; ?scene=procedural turns them off)
+import { TIER, resolveTier } from './quality.js';                  // R4a: quality tiers
+import { BAKE_UNITS, WARM_UNITS } from './bakedlook.js';
+const WARM_ROOMS = WARM_UNITS.flatMap((u) => BAKE_UNITS[u]);           // R4a: the areas with the warm look (lamps lit by day)
+import { TONE } from '../config/warm-office.js';                  // R4a: AgX and its exposure per theme
 
 const DEG = Math.PI / 180;
 const PITCH = 35 * DEG, YAW = 45 * DEG;
@@ -56,6 +65,7 @@ class MSAARenderPass extends Pass {
     this.quad = new FullScreenQuad(this.copy);
   }
   setSize(w, h) { this.rt.setSize(w, h); }
+  dispose() { this.rt.dispose(); this.copy.dispose(); this.quad.dispose(); }
   render(renderer, writeBuffer) {
     renderer.setRenderTarget(this.rt); renderer.clear(); renderer.render(this.scene, this.camera);
     this.copy.uniforms.tDiffuse.value = this.rt.texture;
@@ -97,9 +107,13 @@ class HalfResGTAOPass extends GTAOPass {
 // the 16 full-resolution pixels of each quarter pixel exactly (no bilinear averaging, so a strip one pixel wide still
 // glows) and the blur steps half a quarter texel, so the glow keeps its width; and the glow is added in the output pass
 // (OfficeOutputPass) instead of its own full-screen blend, which was most of its cost on the iGPU (memory bandwidth).
+// R4a, the high tier: a selective bloom instead. Only the objects on BLOOM_LAYER (lamp bulbs and LED meshes, the
+// screens) are drawn, at half resolution, into the glow target, which is then blurred the same way; a threshold on the
+// frame would also catch sunlit floor and walls (the warm Office's window light is above 1.0 in linear light).
+export const BLOOM_LAYER = 2;
 class HalfResGlowPass extends Pass {
-  constructor() {
-    super(); this.needsSwap = false; this.enabled = false; this.strength = 0.85;
+  constructor(scene = null, camera = null) {
+    super(); this.needsSwap = false; this.enabled = false; this.strength = 0.85; this.scene = scene; this.camera = camera; this.selective = !!(scene && camera);
     const rt = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
     this.a = rt(); this.b = rt(); this.full = new THREE.Vector2(1, 1);
     const vertexShader = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
@@ -113,15 +127,23 @@ class HalfResGlowPass extends Pass {
       { transparent: true, blending: THREE.AdditiveBlending });
     this.quad = new FullScreenQuad(null);
   }
-  setSize(w, h) { this.full.set(w, h); const hw = Math.max(1, Math.round(w / 4)), hh = Math.max(1, Math.round(h / 4)); this.a.setSize(hw, hh); this.b.setSize(hw, hh); }
+  setSize(w, h) { this.full.set(w, h); const d = this.selective ? 2 : 4, hw = Math.max(1, Math.round(w / d)), hh = Math.max(1, Math.round(h / d)); this.a.setSize(hw, hh); this.b.setSize(hw, hh); }
   render(renderer, writeBuffer, readBuffer) {
     const auto = renderer.autoClear; renderer.autoClear = false;
     const hw = this.a.width, hh = this.a.height;
-    this.bright.uniforms.tDiffuse.value = readBuffer.texture; this.bright.uniforms.texel.value.set(1 / this.full.x, 1 / this.full.y);
-    this.quad.material = this.bright; renderer.setRenderTarget(this.a); this.quad.render(renderer);
-    this.blur.uniforms.tDiffuse.value = this.a.texture; this.blur.uniforms.dir.value.set(0.5 / hw, 0);
+    if (this.selective) {        // only the bloom layer, into the glow target (cleared to black)
+      const mask = this.camera.layers.mask, cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
+      renderer.setRenderTarget(this.a); renderer.setClearColor(0x000000, 1); renderer.clear(true, true, false);
+      this.camera.layers.set(BLOOM_LAYER); renderer.render(this.scene, this.camera); this.camera.layers.mask = mask;
+      renderer.setClearColor(cc, ca);
+    } else {
+      this.bright.uniforms.tDiffuse.value = readBuffer.texture; this.bright.uniforms.texel.value.set(1 / this.full.x, 1 / this.full.y);
+      this.quad.material = this.bright; renderer.setRenderTarget(this.a); this.quad.render(renderer);
+    }
+    const step = this.selective ? 1 : 0.5;
+    this.blur.uniforms.tDiffuse.value = this.a.texture; this.blur.uniforms.dir.value.set(step / hw, 0);
     this.quad.material = this.blur; renderer.setRenderTarget(this.b); this.quad.render(renderer);
-    this.blur.uniforms.tDiffuse.value = this.b.texture; this.blur.uniforms.dir.value.set(0, 0.5 / hh);
+    this.blur.uniforms.tDiffuse.value = this.b.texture; this.blur.uniforms.dir.value.set(0, step / hh);
     renderer.setRenderTarget(this.a); this.quad.render(renderer);
     if (!this.fusedInto) { this.add.uniforms.tDiffuse.value = this.a.texture; this.add.uniforms.strength.value = this.strength; this.quad.material = this.add; renderer.setRenderTarget(readBuffer); this.quad.render(renderer); }
     renderer.autoClear = auto;
@@ -155,11 +177,14 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // browser composites it (premultiplied alpha) instead of the GPU filling a full-screen plane in the MSAA target
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance', stencil: false });
   renderer.setClearColor(0x000000, 0);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  // R4a: the tier, from the GPU unless chosen (options.quality: 'auto', 'default' or 'high')
+  const gpu = (() => { try { const g = renderer.getContext(), d = g.getExtension('WEBGL_debug_renderer_info'); return { renderer: d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : null, maxTextureSize: g.getParameter(g.MAX_TEXTURE_SIZE), mobile: (navigator.maxTouchPoints || 0) > 1 && Math.min(screen.width, screen.height) < 820 }; } catch (_) { return {}; } })();
+  let quality = resolveTier(options.quality, gpu), tierCfg = TIER[quality.tier];
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, tierCfg.maxDpr));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;      // soft edges via shadow.radius
   renderer.shadowMap.autoUpdate = false;             // baked: refreshed only when the static scene changes
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = TONE.mapping === 'agx' ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;   // R4a: AgX (three 0.186 has it)
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.info.autoReset = false;
 
@@ -206,6 +231,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     potTall: std('#c9b8a3'), potSmall: std('#c9b8a3'), leafTall: std('#9fc49a', { roughness: 0.9, flatShading: true }), leafSmall: std('#9fc49a', { roughness: 0.9, flatShading: true }),
     shirt: std('#fff', { roughness: 0.85 }), skin: std('#fff', { roughness: 0.8 }), hair: std('#fff', { roughness: 0.75 }), trousers: std('#fff', { roughness: 0.85 }), shoe: std('#2a2a2e', { roughness: 0.6 }),
     light: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
+    lightBase: new THREE.MeshBasicMaterial({ color: new THREE.Color('#24221f') }),
     terminal: std('#eee', { roughness: 0.5, metalness: 0.15 }), termScreen: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     crystal: new THREE.MeshStandardMaterial({ color: new THREE.Color('#bcd9fa'), emissive: new THREE.Color('#5f9fe6'), emissiveIntensity: 0.6, roughness: 0.2, metalness: 0.05, flatShading: true }),
     coreRing: new THREE.MeshBasicMaterial({ color: new THREE.Color('#8fc0f2'), toneMapped: false }),
@@ -260,6 +286,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     chair: merge([...[0, 1, 2, 3, 4].map((i) => new THREE.BoxGeometry(0.05, 0.035, 0.3).translate(0, 0.04, 0.15).rotateY((i * Math.PI * 2) / 5)), new THREE.CylinderGeometry(0.035, 0.035, 0.36, 8).translate(0, 0.24, 0), rbox(0.52, 0.08, 0.5, 0.035).translate(0, 0.45, 0), rbox(0.5, 0.62, 0.07, 0.035).translate(0, 0.86, 0.25), rbox(0.05, 0.05, 0.3, 0.02).translate(-0.27, 0.64, 0.02), rbox(0.05, 0.05, 0.3, 0.02).translate(0.27, 0.64, 0.02), new THREE.BoxGeometry(0.04, 0.17, 0.04).translate(-0.27, 0.55, 0.06), new THREE.BoxGeometry(0.04, 0.17, 0.04).translate(0.27, 0.55, 0.06)]),
     ...PERSON,
     light: new THREE.SphereGeometry(0.075, 10, 8),
+    lightBase: new THREE.CylinderGeometry(0.115, 0.125, 0.03, 20).translate(0, 0.015, 0),   // R4a: a dark ring under each status light (readable on light wood)
     potTall: new THREE.CylinderGeometry(0.27, 0.21, 0.5, 14), potSmall: new THREE.CylinderGeometry(0.19, 0.15, 0.32, 12),
     leavesTall: merge([new THREE.CylinderGeometry(0.025, 0.03, 1.0, 6).translate(0, 0.75, 0), ...[0, 1, 2, 3, 4, 5, 6].map((i) => { const g = new THREE.IcosahedronGeometry(0.26 + (i % 3) * 0.04, 0); g.scale(1, 0.7, 1.25); g.rotateY(i * 1.9); const a = i * 2.4, rr = 0.18 + (i % 2) * 0.12; return g.translate(Math.cos(a) * rr, 0.75 + i * 0.13, Math.sin(a) * rr); })]),
     leavesSmall: merge([0, 1, 2].map((i) => { const g = new THREE.IcosahedronGeometry(0.25, 0); g.rotateX(i); g.rotateY(i * 0.7); return g.translate((i - 1) * 0.11, 0.42 + (i % 2) * 0.13, i === 1 ? -0.09 : 0.07); })),
@@ -279,7 +306,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // is drawn procedurally.
   const baked = { want: options.scene !== 'procedural', office: null, active: new Set(), failed: null, warned: new Set() };
   // when it arrives after the first snapshot, the normal data path rebuilds the office with it (statuses, screens, lines)
-  if (baked.want) loadBakedOffice({ decalMap: TX.atlas, concreteMap: TX.tile }).then((o) => { baked.office = o; if (data) { structureKey = null; setData(data); } invalidate(2); })
+  if (baked.want) loadBakedOffice({ decalMap: TX.atlas, concreteMap: TX.tile }).then((o) => { baked.office = o; o.setTier(quality.tier, { onLoaded: () => invalidate(2) }); if (data) { structureKey = null; setData(data); } invalidate(2); })
     .catch((e) => { baked.failed = String(e && e.message || e); console.warn('office: the baked rooms did not load; drawing the procedural rooms:', baked.failed); invalidate(1); });
   // R3a: each baked area is used only while its spec matches the live layout (layout.js bakedRoomSpec); a stale area
   // falls back to the procedural one, with a console warning, and the others stay baked. R3b: with every area baked
@@ -347,7 +374,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     const top = makeInst('deskTop', G.deskTop, M.deskTop, n, { receive: true }), frame = makeInst('deskFrame', G.deskFrame, M.deskMetal, n);
     const ret = makeInst('deskReturn', G.deskReturn, M.deskTop, lsh.length, { receive: true }), retFrame = makeInst('returnFrame', G.returnFrame, M.deskMetal, lsh.length);
     const mon = makeInst('monitor', G.monitor, M.monitorFrame, n), kb = makeInst('keyboard', G.keyboard, M.keyboard, n), lamp = makeInst('lamp', G.lamp, M.deskMetal, n), bulb = makeInst('bulb', G.bulb, M.light, n, { shadow: false });
-    const chair = makeInst('chair', G.chair, M.chair, n), light = makeInst('light', G.light, M.light, n, { shadow: false });
+    const chair = makeInst('chair', G.chair, M.chair, n), light = makeInst('light', G.light, M.light, n, { shadow: false }), lightBase = makeInst('lightBase', G.lightBase, M.lightBase, n, { shadow: false });
     // people: one mesh per part (two per person for arms and legs); hair: one mesh per style
     const person = (name, geo, mat, per = 1) => makeInst(name, geo, mat, n * per, { shadow: false });
     const parts = { pelvis: person('pelvis', G.pelvis, M.trousers), torso: person('torso', G.torso, M.shirt), head: person('head', G.head, M.skin), upperArm: person('upperArm', G.upperArm, M.shirt, 2), forearm: person('forearm', G.forearm, M.skin, 2), hand: person('hand', G.hand, M.skin, 2), thigh: person('thigh', G.thigh, M.trousers, 2), shin: person('shin', G.shin, M.trousers, 2), shoe: person('shoe', G.shoe, M.shoe, 2) };
@@ -380,7 +407,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const style = styleOf(agentId), hairI = styleIx[style]++;
       parts.torso.setColorAt(i, shirt); parts.head.setColorAt(i, skin); parts.pelvis.setColorAt(i, legs); parts.hair[style].setColorAt(hairI, hairC);
       for (const j of [0, 1]) { parts.upperArm.setColorAt(i * 2 + j, shirt); parts.forearm.setColorAt(i * 2 + j, skin); parts.hand.setColorAt(i * 2 + j, skin); parts.thigh.setColorAt(i * 2 + j, legs); parts.shin.setColorAt(i * 2 + j, legs); }
-      setInst(light, i, x + 0.9, onTop + 0.05, z + 0.34);
+      setInst(light, i, x + 0.9, onTop + 0.05, z + 0.34); setInst(lightBase, i, x + 0.9, onTop, z + 0.34);
       const path = L.paths[agentId] || { seat: null, toLounge: null };
       workers.push({ agentId, i, x, z, chair: ch, seat: path.seat != null ? L.lounge.seats[path.seat] : null, path: path.toLounge, len: path.toLounge ? pathLength(path.toLounge) : 0, phase: (i * 1.7) % (Math.PI * 2), status: a.status, place: 'desk', walk: null, yaw: 0, pick: null, style, hairI });
       // the screen: its own mesh (own texture), glow material at overview, canvas text when zoomed in or selected
@@ -586,7 +613,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     M.crystal.emissive.set(p.hubCore); M.coreRing.color.set(p.hubCore); glow.material.color.set(p.hubCore);
     dropMat.opacity = p.shadowOpacity * 2; blobMat.opacity = p.blobOpacity;
     hemi.color.set(p.hemiSky); hemi.groundColor.set(p.hemiGround); hemi.intensity = p.hemiIntensity; sun.intensity = p.sunIntensity; sun.color.set(p.sunColour);
-    renderer.toneMappingExposure = p.exposure;
+    renderer.toneMappingExposure = TONE.exposure[theme] || p.exposure;   // R4a: the warm look's exposure (AgX)
     // dark mode: LED washes, lamp and screen pools; light mode: none of them (LED strips read as plain profiles)
     const lit = p.ledGlow > 0;
     if (glowMesh) glowMesh.visible = lit;
@@ -595,7 +622,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (inst.bulb) { for (let i = 0; i < inst.bulb.count; i++) inst.bulb.setColorAt(i, new THREE.Color(p.bulb)); if (inst.bulb.instanceColor) inst.bulb.instanceColor.needsUpdate = true; }
     if (gtao) gtao.blendIntensity = p.aoBlend;
     if (baked.office && baked.active.size) baked.office.setTheme(theme);
-    if (glowPass) glowPass.enabled = baked.active.size > 0 && theme === 'dark';
+    if (glowPass) { glowPass.enabled = true; glowPass.strength = theme === 'dark' ? 0.7 : 0.35; }   // R4a: subtle; the default tier has no pass
+    updateBloomLayer();
     colourServices(); updateScreens(); paintBackdrop(); setHubGlow(0);
     for (const s of screens) if (s.textured) { const a = data && data.agents.find((x) => x.id === s.agentId); if (a) s.tex.draw(a, theme); }
     if (gtao) gtao.aoDirty = true;
@@ -616,15 +644,23 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     updateScreens(); invalidate(1);
   }
 
-  // ---- post-processing: MSAA target + half-resolution GTAO + output (ACES + sRGB)
+  // ---- post-processing (R4a: the high tier only): MSAA target + half-resolution GTAO + bloom + output (AgX + sRGB)
   const size = new THREE.Vector2();
   let composer = null, gtao = null, glowPass = null;
+  function disposeComposer() {
+    if (!composer) return;
+    for (const p of composer.passes) if (p.dispose) p.dispose();
+    if (glowPass) { glowPass.a.dispose(); glowPass.b.dispose(); }
+    composer.dispose();
+    composer = null; gtao = null; glowPass = null;
+  }
   function setupComposer(w, h) {
+    if (!tierCfg.post) return;                 // R4a default tier: straight to the canvas
     const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
     composer = new EffectComposer(renderer, rt);
-    const samples = options.msaa === false ? 0 : (options.msaaSamples || 4);
+    const samples = options.msaa === false ? 0 : (options.msaaSamples || tierCfg.msaa);
     composer.addPass(samples ? new MSAARenderPass(scene, camera, samples) : new RenderPass(scene, camera));
-    if (options.ao !== false) {
+    if (options.ao !== false && tierCfg.ao) {
       try {
         gtao = new HalfResGTAOPass(scene, camera, Math.round(w / 2), Math.round(h / 2));
         gtao.output = GTAOPass.OUTPUT.Default;
@@ -634,11 +670,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
         gtao.blendIntensity = P().aoBlend;
         // left out of the AO pre-pass: overlays (they would make halos) and small details that gain nothing from AO
         // R2: the people are left out too (small, they move, and they have blob shadows): 15 fewer draws in the pre-pass
-        gtao.hideDuringAO = () => [...PEOPLE_PARTS.map((n) => inst[n]), ...bakedRooms().flatMap((r) => r.ledMeshes), ...(options.bakedAO === false ? bakedRooms().map((r) => r.group) : []), crystal, coreRing, glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
+        gtao.hideDuringAO = () => [...PEOPLE_PARTS.map((n) => inst[n]), ...bakedRooms().flatMap((r) => r.ledMeshes), ...(options.bakedAO === false ? bakedRooms().map((r) => r.group) : []), crystal, coreRing, glow, glowMesh, drop, inst.blobs, inst.screenPool, inst.lampPool, selectRing, ...lines, inst.keyboard, inst.bulb, inst.light, inst.lightBase, inst.lamp, inst.termScreen, inst.termLight, ...statics.filter((m) => m.name === 'decals' || m.name === 'emissive'), ...screens.map((x) => x.mesh)];
         composer.addPass(gtao);
       } catch (e) { console.warn('GTAO unavailable, continuing without AO', e); gtao = null; }
     }
-    if (baked.want && options.glow !== false) { glowPass = new HalfResGlowPass(); glowPass.setSize(w, h); composer.addPass(glowPass); }
+    // R4a: the bloom (the R3b LED glow, now on lamps, LEDs and screens in both themes; subtle)
+    if (options.glow !== false && tierCfg.bloom) { glowPass = new HalfResGlowPass(scene, camera); glowPass.enabled = true; glowPass.setSize(w, h); composer.addPass(glowPass); updateBloomLayer(); }
     composer.addPass(new OfficeOutputPass(gtao, glowPass));
   }
 
@@ -648,6 +685,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     const aspect = w / h, fh = view.frustumH;
     camera.left = -fh * aspect / 2; camera.right = fh * aspect / 2; camera.top = fh / 2; camera.bottom = -fh / 2; camera.updateProjectionMatrix();
     if (!composer) setupComposer(w, h); else composer.setSize(w, h);
+    if (glowPass) glowPass.setSize(w, h);
     size.set(w, h); cameraDirty = true; invalidate(1);
   }
 
@@ -736,7 +774,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (dirty <= 0) { if (!animate && !cameraChanged) stats.mode = 'idle'; return { rendered: false, cameraChanged }; }
     dirty--;
     renderer.info.reset();
-    const c0 = performance.now(); composer.render(); const c1 = performance.now();
+    const c0 = performance.now(); if (composer) composer.render(); else renderer.render(scene, camera); const c1 = performance.now();
     if (renderer.shadowMap.needsUpdate) renderer.shadowMap.needsUpdate = false;
     stats.calls = renderer.info.render.calls; stats.tris = renderer.info.render.triangles;
     if (stats.lastRenderAt) stats.intervals.push(c0 - stats.lastRenderAt);
@@ -746,8 +784,24 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     return { rendered: true, cameraChanged };
   }
   const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
+  // R4a: the bloom layer: the screens, the lamp bulbs, and the baked LED meshes (every room's in dark mode; by day only the
+  // warm rooms', whose lamps are on by day: the other rooms' strips are unlit profiles in light mode, as R3b)
+  function updateBloomLayer() {
+    for (const s of screens) s.mesh.layers.enable(BLOOM_LAYER);
+    if (inst.bulb) inst.bulb.layers.enable(BLOOM_LAYER);
+    for (const r of bakedRooms()) for (const m of r.ledMeshes) { if (theme === 'dark' || WARM_ROOMS.includes(r.key)) m.layers.enable(BLOOM_LAYER); else m.layers.disable(BLOOM_LAYER); }
+  }
+  // R4a: switch the tier live ('auto', 'default' or 'high'): pixel ratio, the composer, the lightmap set
+  function setQuality(choice) {
+    quality = resolveTier(choice, gpu); tierCfg = TIER[quality.tier];
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, tierCfg.maxDpr));
+    disposeComposer(); resize();
+    if (baked.office) baked.office.setTier(quality.tier, { onLoaded: () => invalidate(2) });
+    applyTheme(false);
+    return quality;
+  }
   function bakedState() { return { want: baked.want, loaded: !!baked.office, active: baked.active.size > 0, rooms: [...baked.active], failed: baked.failed, glow: !!(glowPass && glowPass.enabled) }; }
-  function getStats() { return { baked: baked.want ? (baked.active.size ? [...baked.active].join('+') : baked.failed ? 'failed' : baked.office ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, post: (gtao && gtao.fusedInto) || (glowPass && glowPass.fusedInto) ? 'fused' : (gtao || glowPass) ? 'fallback (separate blends)' : 'output only', textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
+  function getStats() { return { baked: baked.want ? (baked.active.size ? [...baked.active].join('+') : baked.failed ? 'failed' : baked.office ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, post: !composer ? 'none (default tier)' : (gtao && gtao.fusedInto) || (glowPass && glowPass.fusedInto) ? 'fused' : (gtao || glowPass) ? 'fallback (separate blends)' : 'output only', tier: quality.tier, tierAuto: quality.auto, tierReason: quality.reason, gpu: gpu.renderer || null, highMaps: baked.office ? baked.office.highState() : 'none', toneMapping: TONE.mapping, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
   // continuous rendering for `ms` (as if the camera were moving every frame): average fps and frame times
   // (the page's own loop keeps calling tick(); while benchUntil is in the future every tick renders)
   // move: true orbits the target a little every frame (the real camera-motion path: AO off while moving)
@@ -774,5 +828,5 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   function people() { return workers.map((w) => ({ agentId: w.agentId, status: w.status, place: w.walk ? 'walking' : w.place, seat: w.seat ? L.lounge.seats.indexOf(w.seat) : null })); }
 
   resize(); updateCamera(0); paintBackdrop();
-  return { renderer, scene, camera, setData, setTheme, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
+  return { renderer, scene, camera, setData, setTheme, setQuality, get quality() { return quality; }, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
 }

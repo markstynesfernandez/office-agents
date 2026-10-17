@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (E6 step b2: the product key as data, then live rerun 4 (incomplete: TREND-SCOUT reported blocked, search-result prices below the brief floor); before that scout fixes D1–D4, the owner's part-2 decisions and rerun 3 (blocked on the product key); E6 steps b0 and b: live web search with the owner's source rule, and the first live scout run (no briefs); E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (R4a: the warm Office prototype and quality tiers, for the owner's review; R4b next. Before that, E6 step b2: the product key as data, then live rerun 4 (incomplete: TREND-SCOUT reported blocked, search-result prices below the brief floor); before that scout fixes D1–D4, the owner's part-2 decisions and rerun 3 (blocked on the product key); E6 steps b0 and b: live web search with the owner's source rule, and the first live scout run (no briefs); E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -23,11 +23,47 @@ Last updated: 17/10/2026 (E6 step b2: the product key as data, then live rerun 4
 | **R3b** Baked look, phase 2 of 2 | Done (17/10/2026), **approved by the owner** (17/10/2026), with the importer label fix (`db18e5a`). The Research room, the lounge and the atrium baked: every area is baked. One lightmap atlas per bake unit (`npm run build-office -- --room <name>`); light-mode Design room within 1% of the other rooms; dark grey rugs everywhere. Frame-rate fix: the AO multiply and the glow folded into the output pass. 66+ fps full quality on the Intel iGPU in every measured view, all 8 agents walking included; 6.88 MB of the 10 MB office budget; full rebuild 262 s, one unit 43–91 s. Screenshots in `screenshots/r3b/`. See below. |
 | **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions") and **approved by the owner** (17/10/2026). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
 | E6 readiness | Done (17/10/2026). The owner's decisions on Q1 (verbal), Q2 caps, prices, image models, keys and scout sources recorded; the guard prices Haiku's long-prompt tier and cache reads and writes; the scout run cap. Mock only, $0. See below. |
+| **R4a** Warm office prototype + quality tiers | Done (17/10/2026), **for the owner's review**. The Office room in the warm look (owner's style direction from 02.png and 01-main.png): cream plaster walls with bevelled caps, a window wall with daylight across the floor, beige large-format tile in a light wood band, the plinth deck, one charcoal rug for the department, light wood desks, bookcase and shelves, desk, wall and pendant lamps, plants. Quality tiers: default (no post-processing; 163.6+ fps on the Intel iGPU, vsync-capped; 8.14 MB) and high (6144 px lightmaps loaded lazily, MSAA, AO, selective bloom; +3.41 MB), auto-selected from the GPU, a Quality control in the top bar. AgX tone mapping. A phone layout. Screenshots in `docs/screens/r4a/`. See below. **R4b** (the other rooms) next, on the owner's go-ahead. |
 | E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **b1** (output contract + job transcripts, `795adcb`) done; the **b1 rerun** (17/10/2026, USD 0.053095) completed research-done but **0 verified** briefs: the scout's Etsy demand fetch is refused (`url_not_allowed`), so no brief can carry demand evidence; see "E6 step b1". **b2** (D1–D4 `0ab5b1d`; owner's part 2 `308c91a`) done; rerun 3 (USD 0.002051) ended **incomplete** on the product key; the key is now data (`0542676`); **rerun 4** (17/10/2026, USD 0.16586) ended **incomplete**: TREND-SCOUT reported blocked because the search-result prices (USD 1.80–5.00) are below the brief floor (USD 7.19); see "E6 step b2". Step **c** needs a verified genre brief. Images not built yet. The plan is under "Exact next step". |
 | E7 Routines and cut-over | Not started |
 
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
+
+### R4a: warm office prototype and quality tiers (17/10/2026) — for the owner's review
+
+Visual only: the engine, providers, guard, ledger, data, prompts, `config/engine.json` and `config/lines/` are untouched;
+mock provider only, no live call, no new dependency (three.js stays 0.186.1). The choices, measurements and questions
+are in DECISIONS.md, "R4a build record".
+
+- **The room.** The Office bake unit only (the other four units are byte-identical to R3b). Palette and tone mapping in
+  one file, `src/web/config/warm-office.js`; the look reaches the build and the page as the manifest's `look.warm`, so a
+  change to it re-bakes only the warm units (`WARM_UNITS`). Built from the shared library: an R4a section in
+  `office_lib.py` (tile and plaster textures made in the build, the warm shell with the window wall and plinth deck,
+  bevelled furniture through `Kit.fbox`, dome pendants, wall lamps, desk items, a snake plant) and `office()` in
+  `office_rooms.py`. Walkways as before (the layout is unchanged; extra plants only by the window piers).
+- **Lighting.** Day: the sun and sky as before, one masked spot per window (window-shaped patches with the frame's
+  shadows), pendants and wall lamps on low. Evening: pendants, desk and wall lamps, shelf and bookcase LEDs, the sky
+  fill. Atlas 3072 px (132 texels per unit; R3b 2176); the high tier's 6144 px bake in `high/`. Agents, status lights,
+  monitors, keyboards and screens stay real-time.
+- **Tiers** (`src/web/scene/quality.js`): default = straight to the canvas, no post-processing, pixel ratio up to 1.5;
+  high = 4x MSAA, the cached AO, a selective bloom on lamps, LEDs and screens, the high lightmaps (lazily, the current
+  theme's only), pixel ratio up to 2. Auto picks high only for a recognised discrete GPU, default otherwise; the top
+  bar's Quality control (Auto / Default / High) is remembered; `?quality=` for one page.
+- **Readability.** A dark ring under each desk status light; a phone layout (up to 640 px): the stage full width, the
+  task panel under it, compact department cards (before, the stage was about 120 px wide at 390 px).
+- **Measured** (same harness and method as R3b, `node scripts/screenshots-r4a.mjs`, `screenshots/r4a/fps-*.json`):
+  R3b before, Intel UHD: 64.8-80.0 fps. **Default tier, Intel UHD: min 163.6, mean 164.1 fps** (every view, all 8 agents
+  walking included; vsync-capped at the panel's 165 Hz). **High tier, RTX 5060 Laptop: 163.9-165.5** (vsync-capped);
+  for reference the high tier on the Intel iGPU: 76.7-84.1.
+- **Download:** default tier **8,143,195 bytes** (81.4% of 10 MB; R3b 7,135,513); high tier 11,550,869 (default +
+  3,407,674 in `high/`). Office rebuild 353.1 s (`npm run build-office -- --room office --samples 512`).
+- **Captures** (`docs/screens/r4a/`, committed): `before.png` (R3b, before any change), `after-default.png`,
+  `after-high.png`, `after-phone-390.png`; the same Office camera as R3a/R3b's room views. Dark-mode, overview and
+  phone-dark captures in `screenshots/r4a/` (git-ignored).
+- **Tests:** 341/341 (`r4a-warm` 6 new; `baked-room` updated for the per-unit atlas, the high set, window panes and
+  the warm look; `write-guard` lists the capture script's jail). Demo mode checked on the mock provider (the page loads,
+  every area baked, Auto picks default on the iGPU, High switches live with its lightmaps, no console errors).
 
 ### E6 step b2: scout fixes, one live rerun (17/10/2026)
 
@@ -687,6 +723,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 - `b75cfac`: Genre-scout milestone (TREND-SCOUT, scouting blocklist, re-bake, tests green)
 - `cc9a5cc`: Genre-trend scouting line (docs); approved by the owner 17/10/2026
 - `fd10911`: Scouting decisions (the owner's 7 decisions, tests, docs); approved by the owner 17/10/2026
+- R4a: warm office prototype + quality tiers (the Office room, tiers, phone layout, captures in `docs/screens/r4a/`)
 - The next commit: "E6 readiness" (the owner's E6 decisions, prices and caps in the guard, tests, docs)
 
 `.gitignore` excludes `data/`, `data-demo/`, `dry-run/`, `fixtures/*` (except `fixtures/engine/`), `design-refs/`, `screenshots/`, `.cache/`, `logs/`, `*.log`, `.env` and `node_modules/`. `core.autocrlf` is false in this repository, so files are committed byte for byte. Before the first commit, the staged files were scanned: they contained no ignored paths, no key or token patterns and no email addresses.
@@ -708,7 +745,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **281 passed, 0 failed**, after E6 readiness (17/10/2026; new: `e6-prices` 8/8: the owner's prices and caps in config, Haiku just under and just over 100,000 prompt tokens with and without cache, Sonnet's cache prices, reservations by tier, the web fees, the image reservation settled to OpenRouter's reported cost or marked estimated, the scout run cap in the guard and on the whole scout line). Before that: **273 passed, 0 failed**, after the scouting decisions (17/10/2026; `genre-scout` 15/15: 5 new (derivative wording, misspellings, common-word titles, retention, own drafts folder), 3 changed for the new wording and drafts folder). Before that: **268 passed, 0 failed**, after the genre-trend scouting line (17/10/2026; new: `genre-scout` 10/10; changed: `baked-room` (the legacy fixtures view differs in the Research row only)). Before that: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **341 passed, 0 failed**, after R4a (17/10/2026; new: `r4a-warm` 6/6; changed: `baked-room`, `write-guard`). Earlier: **281 passed, 0 failed**, after E6 readiness (17/10/2026; new: `e6-prices` 8/8: the owner's prices and caps in config, Haiku just under and just over 100,000 prompt tokens with and without cache, Sonnet's cache prices, reservations by tier, the web fees, the image reservation settled to OpenRouter's reported cost or marked estimated, the scout run cap in the guard and on the whole scout line). Before that: **273 passed, 0 failed**, after the scouting decisions (17/10/2026; `genre-scout` 15/15: 5 new (derivative wording, misspellings, common-word titles, retention, own drafts folder), 3 changed for the new wording and drafts folder). Before that: **268 passed, 0 failed**, after the genre-trend scouting line (17/10/2026; new: `genre-scout` 10/10; changed: `baked-room` (the legacy fixtures view differs in the Research row only)). Before that: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -757,6 +794,9 @@ The post-E3 re-port changed:
 
 ## Exact next step
 
+- **R4a review (owner).** Screenshots in `docs/screens/r4a/`; the open questions in DECISIONS.md "R4a build record"
+  (anti-aliasing and the LED glow in the default tier, AgX on the other rooms ahead of R4b, one rug per department or
+  per row, R4b's budget). Then **R4b**: the warm look rolled out to Research, Design, the lounge and the atrium.
 0. **E6 readiness review.** The owner reviews this phase (DECISIONS.md "E6 readiness: owner decisions") and answers
    its open questions: the web fetch reading, the per-run cap (row 19) and the image token estimate (row 20). Written
    Q1 confirmation to be recorded when it arrives. Next lounge re-bake: a ninth seat.

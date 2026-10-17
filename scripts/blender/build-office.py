@@ -25,6 +25,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--input', required=True); ap.add_argument('--out', required=True); ap.add_argument('--textures', required=True)
 ap.add_argument('--density', type=float, default=100.0)   # lightmap texels per scene unit (about a metre)
 ap.add_argument('--max-size', type=int, default=4096); ap.add_argument('--samples', type=int, default=1024)
+# R4a: a fixed atlas size for the unit (instead of the texel density), and a bigger bake for the high tier: the UVs are
+# packed for --atlas, the lightmaps baked at --bake-size (a whole multiple); build-office.mjs makes both tiers from it
+ap.add_argument('--atlas', type=int, default=0); ap.add_argument('--bake-size', type=int, default=0)
 A = ap.parse_args(argv)
 OUT = os.path.realpath(A.out)
 def out_path(name):
@@ -53,12 +56,15 @@ scene = bpy.context.scene
 t = time.perf_counter()
 TEXIMG = lib.load_textures(A.textures)
 phase('textures', t)
-THEMED = LOOK['themed']['day']                     # material -> colour (flat) or the colour a tinted texture should average
+# material -> colour (flat) or the colour a tinted texture should average; R4a: the warm look's themed materials too
+THEMES = {m: {**LOOK['themed'][m], **(LOOK.get('warm') or {}).get('themed', {}).get(m, {})} for m in ('day', 'evening')}
+THEMED = THEMES['day']
 THEMED_TEX = LOOK.get('themedTex', {})             # material -> texture per mode (design_wood: oak by day, walnut by evening)
 BASE = ['solid', 'leaf', 'oak', 'walnut', 'floor', 'fabric', 'upholstery', 'rug', 'design_wood', 'decal', 'concrete']
+UNLIT = ('led', 'window')                          # drawn unlit on the page; no lightmap
 used = set()
-for k in kits: used |= set(k.room.m) | set(k.em.m) | set(k.occ.m)
-MAT_ORDER = [n for n in BASE if n in used] + sorted(n for n in used if n not in BASE and n != 'led') + (['led'] if 'led' in used else [])
+for k in kits: used |= set(k.room.m) | set(k.em.m) | set(k.occ.m) | set(k.win.m)
+MAT_ORDER = [n for n in BASE if n in used] + sorted(n for n in used if n not in BASE and n not in UNLIT) + [n for n in UNLIT if n in used]
 MATS = {n: lib.make_material(n, TEXIMG) for n in MAT_ORDER}
 
 rooms = []
@@ -70,8 +76,10 @@ for k in kits:
     if em: em.location = off
     oc = lib.make_object(scene, 'occ_' + k.key, k.occ, MATS, False) if k.occ.f else None
     if oc: oc.location = off
-    rooms.append({'kit': k, 'ob': ob, 'em': em, 'occ': oc, 'off': (dx, dz)})
-TRIS = {r['kit'].key: lib.triangles(r['ob']) + (lib.triangles(r['em']) if r['em'] else 0) for r in rooms}
+    wn = lib.make_object(scene, 'win_' + k.key, k.win, MATS, False) if k.win.f else None   # R4a: window panes
+    if wn: wn.location = off; wn.hide_render = True                                      # (light passes in the bake)
+    rooms.append({'kit': k, 'ob': ob, 'em': em, 'occ': oc, 'win': wn, 'off': (dx, dz)})
+TRIS = {r['kit'].key: sum(lib.triangles(o) for o in (r['ob'], r['em'], r['win']) if o) for r in rooms}
 log('triangles (exported):', TRIS)
 
 # ---------------------------------------------------------------- lightmap UVs: the unit's lit areas in one atlas,
@@ -100,7 +108,10 @@ t = time.perf_counter()
 AREA = sum(mesh_area(r['ob']) for r in rooms)
 unwrap_and_pack(4.0 / 2048, True)
 COVER = uv_coverage([r['ob'] for r in rooms])
-SIZE = int(min(A.max_size, max(512, math.ceil(A.density * math.sqrt(AREA / max(COVER, 1e-3)) / 64) * 64)))
+SIZE = A.atlas or int(min(A.max_size, max(512, math.ceil(A.density * math.sqrt(AREA / max(COVER, 1e-3)) / 64) * 64)))
+BAKE = A.bake_size or SIZE                         # R4a: the high tier's bake (a whole multiple of the atlas)
+if BAKE % SIZE: raise RuntimeError('--bake-size must be a whole multiple of the atlas size')
+MARGIN = 6 * BAKE // SIZE
 unwrap_and_pack(4.0 / SIZE, False)                 # re-pack with a 4-texel margin at the final size
 COVER = uv_coverage([r['ob'] for r in rooms])
 DENSITY = SIZE * math.sqrt(COVER / AREA)
@@ -134,15 +145,20 @@ for r in rooms:
     for i, bp in enumerate(k.bulbs):
         ob = add_light('lamp_' + k.key + '_%d' % i, 'SPOT', tuple(Vector(bp) + ox), EVEL['lamp'], lib.lin('#ffc684'), spot_size=math.radians(115), spot_blend=0.6, shadow_soft_size=0.04)
         aim(ob, (0.12, -1, -0.25)); EVE.append(ob)
+    # the area's other lights: evening energy 'energy'; R4a: an optional day energy 'day' (pendants, wall lamps, the
+    # daylight behind the windows), one light object per mode that uses it
     for i, li in enumerate(k.lights):
-        if li['type'] == 'SPOT':
-            ob = add_light('spot_' + k.key + '_%d' % i, 'SPOT', tuple(Vector(li['pos']) + ox), li['energy'], lib.lin(li['colour']), spot_size=math.radians(li['size']), spot_blend=li['blend'], shadow_soft_size=li['radius'])
-            aim(ob, tuple(li['aim']))
-        else:
-            a, b = Vector(li['a']) + ox, Vector(li['b']) + ox; L = (b - a).length
-            ob = add_light('strip_' + k.key + '_%d' % i, 'AREA', tuple((a + b) / 2), li['energy'], lib.lin(li['colour']), shape='RECTANGLE', size=L, size_y=0.03)
-            ob.data.spread = math.radians(150); aim(ob, tuple(li['aim']), tuple(b - a))
-        EVE.append(ob)
+        for mode, energy, into in (('evening', li.get('energy', 0.0), EVE), ('day', li.get('day', 0.0), DAY)):
+            if energy <= 0: continue
+            name = k.key + '_%d_' % i + mode
+            if li['type'] == 'SPOT':
+                ob = add_light('spot_' + name, 'SPOT', tuple(Vector(li['pos']) + ox), energy, lib.lin(li['colour']), spot_size=math.radians(li['size']), spot_blend=li['blend'], shadow_soft_size=li['radius'])
+                aim(ob, tuple(li['aim']))
+            else:
+                a, b = Vector(li['a']) + ox, Vector(li['b']) + ox; L = (b - a).length
+                ob = add_light('strip_' + name, 'AREA', tuple((a + b) / 2), energy, lib.lin(li['colour']), shape='RECTANGLE', size=L, size_y=li.get('size_y', 0.03))
+                ob.data.spread = math.radians(li.get('spread', 150)); aim(ob, tuple(li['aim']), tuple(b - a))
+            into.append(ob)
 
 world = bpy.data.worlds.new('world'); scene.world = world
 try: world.use_nodes = True
@@ -151,7 +167,7 @@ bg = world.node_tree.nodes.get('Background')
 MODES = {'day': {'world': (lib.lin(DAYL['sky']), DAYL['skyStrength']), 'on': DAY}, 'evening': {'world': (lib.lin(EVEL['sky']), EVEL['skyStrength']), 'on': EVE}}
 def tint_of(name, mode):
     """a tinted texture's colour factor: the themed colour over the texture's average, per channel, in linear light"""
-    t = lib.tex_of(name); mean = lib.lin(lib.TEX[t][2]); c = lib.lin(LOOK['themed'][mode][name])
+    t = lib.tex_of(name); mean = lib.lin(lib.TEX[t][2]); c = lib.lin(THEMES[mode][name])
     return tuple(c[i] / max(mean[i], 1e-4) for i in range(3))
 def set_mode(mode):
     m = MODES[mode]
@@ -160,7 +176,7 @@ def set_mode(mode):
     for name in MAT_ORDER:
         if name in THEMED:        # warm-white walls by day, dark by evening; tinted textures (rugs, upholstery)
             if lib.tex_of(name): lib.set_tint(MATS[name], tint_of(name, mode))
-            else: lib.set_colour(MATS[name], LOOK['themed'][mode][name])
+            else: lib.set_colour(MATS[name], THEMES[mode][name])
         if name in THEMED_TEX: lib.set_image(MATS[name], TEXIMG[THEMED_TEX[name][mode]])
 
 # ---------------------------------------------------------------- Cycles on the GPU (OptiX, else CUDA, else CPU)
@@ -178,25 +194,25 @@ for kind in ('OPTIX', 'CUDA'):
 scene.cycles.device = 'GPU' if DEVICE != 'CPU' else 'CPU'
 scene.cycles.samples = A.samples
 scene.cycles.max_bounces = 6; scene.cycles.diffuse_bounces = 4; scene.cycles.glossy_bounces = 1
-scene.render.bake.margin = 6; scene.render.bake.margin_type = 'EXTEND'
+scene.render.bake.margin = MARGIN; scene.render.bake.margin_type = 'EXTEND'
 log('device:', DEVICE, '| samples:', A.samples)
 
 def bake(mode):
     set_mode(mode)
-    img = bpy.data.images.new('lm_' + mode, SIZE, SIZE, alpha=True, float_buffer=True)
+    img = bpy.data.images.new('lm_' + mode, BAKE, BAKE, alpha=True, float_buffer=True)
     img.generated_color = (0, 0, 0, 0)
     nodes = []
     for name in MAT_ORDER:
-        if name == 'led': continue
+        if name in UNLIT: continue
         m = MATS[name]; n = m.node_tree.nodes.new('ShaderNodeTexImage'); n.image = img; m.node_tree.nodes.active = n; nodes.append((m, n))
     bpy.ops.object.select_all(action='DESELECT')
     for r in rooms: r['ob'].select_set(True)
     bpy.context.view_layer.objects.active = rooms[0]['ob']
     t = time.perf_counter()
-    bpy.ops.object.bake(type='DIFFUSE', pass_filter={'DIRECT', 'INDIRECT'}, uv_layer='LightMap', margin=6, margin_type='EXTEND', use_clear=True, target='IMAGE_TEXTURES')
+    bpy.ops.object.bake(type='DIFFUSE', pass_filter={'DIRECT', 'INDIRECT'}, uv_layer='LightMap', margin=MARGIN, margin_type='EXTEND', use_clear=True, target='IMAGE_TEXTURES')
     phase('bake_' + mode, t)
     for m, n in nodes: m.node_tree.nodes.remove(n)
-    px = np.empty(SIZE * SIZE * 4, np.float32); img.pixels.foreach_get(px)
+    px = np.empty(BAKE * BAKE * 4, np.float32); img.pixels.foreach_get(px)
     return px.reshape(-1, 4)
 
 def write_lightmap(mode, px):
@@ -207,7 +223,7 @@ def write_lightmap(mode, px):
     v = np.clip(px[:, :3] / k, 0, 1)
     v = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)   # sRGB-encode: more steps in the dark
     out = np.ones((px.shape[0], 4), np.float32); out[:, :3] = v
-    img = bpy.data.images.new('lm8_' + mode, SIZE, SIZE, alpha=False, float_buffer=False)
+    img = bpy.data.images.new('lm8_' + mode, BAKE, BAKE, alpha=False, float_buffer=False)
     img.colorspace_settings.name = 'Non-Color'
     name = 'lightmap-' + UNIT + '-' + mode + '.png'
     img.pixels.foreach_set(out.ravel()); img.filepath_raw = out_path('.build/' + name); img.file_format = 'PNG'; img.save()
@@ -223,7 +239,7 @@ t = time.perf_counter()
 for name in MAT_ORDER: lib.untint(MATS[name])
 bpy.ops.object.select_all(action='DESELECT')
 for r in rooms:
-    for ob in (r['ob'], r['em']):
+    for ob in (r['ob'], r['em'], r['win']):
         if ob: ob.location = (0, 0, 0); ob.select_set(True)
 for ob in DAY + EVE: ob.hide_render = True
 opts = dict(filepath=out_path(UNIT + '.gltf'), export_format='GLTF_SEPARATE', export_texture_dir='textures', use_selection=True,
@@ -233,9 +249,9 @@ opts = dict(filepath=out_path(UNIT + '.gltf'), export_format='GLTF_SEPARATE', ex
 bpy.ops.export_scene.gltf(**opts)
 phase('export', t)
 
-info = {'unit': UNIT, 'device': DEVICE, 'samples': A.samples, 'size': SIZE, 'surface': round(AREA, 2), 'uvCoverage': round(COVER, 4), 'density': round(DENSITY, 2),
+info = {'unit': UNIT, 'device': DEVICE, 'samples': A.samples, 'size': SIZE, 'bakeSize': BAKE, 'surface': round(AREA, 2), 'uvCoverage': round(COVER, 4), 'density': round(DENSITY, 2),
         'lightmaps': LM, 'triangles': TRIS, 'phases': PHASES,
-        'rooms': {r['kit'].key: {'node': 'room_' + r['kit'].key, 'leds': 'leds_' + r['kit'].key if r['em'] else None, 'strips': r['kit'].leds, 'cushions': r['kit'].cushions} for r in rooms},
+        'rooms': {r['kit'].key: {'node': 'room_' + r['kit'].key, 'leds': 'leds_' + r['kit'].key if r['em'] else None, 'windows': 'win_' + r['kit'].key if r['win'] else None, 'strips': r['kit'].leds, 'cushions': r['kit'].cushions} for r in rooms},
         'materials': MAT_ORDER, 'seconds': round(time.perf_counter() - T0, 2)}
 with open(out_path('.build/bake.json'), 'w', encoding='utf-8') as f: json.dump(info, f, indent=2)
 log('done in', info['seconds'], 's')

@@ -12,6 +12,10 @@
 // light mode, bright HDR warm light in dark mode (above 1.0, so the half-resolution glow pass in office.js picks them
 // out). People, monitors, keyboards, status lights, server cabinets and the memory core are not in the glTF: office.js
 // draws them.
+// R4a: the warm Office (config/warm-office.js): its themed materials come from the manifest's look.warm (walls, caps, the
+// chairs' and the rug's tints, the window panes, which are unlit like the LEDs). Quality tiers: a unit with a high-tier
+// lightmap set (manifest units.<u>.high, in high/) loads it only when the high tier is on, and only the current theme's
+// map; until it has loaded, and in the default tier, the unit uses its default atlas.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FLOOR_OAK } from './bakedlook.js';
@@ -55,7 +59,12 @@ export async function loadBakedOffice({ base = BAKED_BASE, decalMap = null, conc
     const t = await tl.loadAsync(base + uri); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
     return textures.has(uri) ? (t.dispose(), textures.get(uri)) : keep(uri, t);
   }
-  const themedColour = look.themed.day, themed = [], swapped = [];
+  // R4a: the warm look's themed materials and texture means join the shared ones
+  const warm = look.warm || { themed: { day: {}, evening: {} }, textures: {} };
+  const themes = { day: { ...look.themed.day, ...warm.themed.day }, evening: { ...look.themed.evening, ...warm.themed.evening } };
+  const means = { ...(look.textures || {}), ...(warm.textures || {}) };
+  const themedColour = themes.day, themed = [], swapped = [];
+  const winMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); winMat.name = 'window';
   const ledMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }); ledMat.name = 'led';
   const rooms = {};
   for (const u of units) {
@@ -65,13 +74,14 @@ export async function loadBakedOffice({ base = BAKED_BASE, decalMap = null, conc
       const name = src.name || '';
       let m;
       if (name === 'led') m = ledMat;
+      else if (name === 'window') m = winMat;
       else {
         const map = name === 'decal' ? decalMap : name === 'concrete' ? concreteMap : src.map ? shared(u.gltf, src.map) : null;
         m = new THREE.MeshBasicMaterial({ map, color: src.color ? src.color.clone() : 0xffffff, vertexColors: !!src.vertexColors, side: src.side, lightMap: u.maps.light.tex, lightMapIntensity: 1 });
         m.name = name; u.lit.push(m);
         if (name in themedColour) {     // a tinted texture divides by its texture's average (bakedlook.js TEXTURE_MEANS)
-          const file = src.map && Object.keys(look.textures || {}).find((t) => textures.get(textureFile(t)) === map);
-          m.userData.mean = file ? look.textures[file].mean : null; themed.push(m);
+          const file = src.map && Object.keys(means).find((t) => textures.get(textureFile(t)) === map);
+          m.userData.mean = file ? means[file].mean : null; themed.push(m);
         }
         if (look.themedTex && look.themedTex[name]) swapped.push(m);
       }
@@ -80,15 +90,15 @@ export async function loadBakedOffice({ base = BAKED_BASE, decalMap = null, conc
     for (const key of manifest.units[u.key].rooms) {
       const r = manifest.rooms[key]; if (!r) continue;
       const group = new THREE.Group(); group.name = 'baked:' + key;
-      const node = u.gltf.scene.getObjectByName(r.node), ledNode = r.leds ? u.gltf.scene.getObjectByName(r.leds) : null;
+      const node = u.gltf.scene.getObjectByName(r.node), ledNode = r.leds ? u.gltf.scene.getObjectByName(r.leds) : null, winNode = r.windows ? u.gltf.scene.getObjectByName(r.windows) : null;
       if (!node) throw new Error(u.key + '.gltf has no node ' + r.node);
-      group.add(node); if (ledNode) group.add(ledNode);
+      group.add(node); if (ledNode) group.add(ledNode); if (winNode) group.add(winNode);
       const ledMeshes = [];
       group.traverse((o) => {
         if (!o.isMesh) return;
         const src = o.material; o.material = pageMaterial(src);
         if (src !== o.material) src.dispose();   // the glTF material (its textures live on in the page material)
-        o.castShadow = o.material !== ledMat; o.receiveShadow = false;
+        o.castShadow = o.material !== ledMat && o.material !== winMat; o.receiveShadow = false;
         if (o.material === ledMat) ledMeshes.push(o);
       });
       rooms[key] = { key, unit: u.key, spec: r.spec, group, ledMeshes };
@@ -96,23 +106,55 @@ export async function loadBakedOffice({ base = BAKED_BASE, decalMap = null, conc
   }
   const swapTex = {};                 // design_wood: the day and evening textures, ready before the first theme change
   for (const [name, by] of Object.entries(look.themedTex || {})) swapTex[name] = { light: await byName(by.day), dark: await byName(by.evening) };
+  // R4a: the high tier's lightmaps, per unit and theme, loaded on first use (the same scale as the default map: one bake)
+  let tier = 'default', current = 'light', onHigh = null;
+  const highOf = (u, t) => { const h = manifest.units[u.key].high; return h ? h[t === 'dark' ? 'evening' : 'day'] : null; };
+  function wantHigh(u, t) {
+    const h = highOf(u, t); if (!h) return;
+    u.high = u.high || {}; if (u.high[t]) return;
+    u.high[t] = { tex: null, state: 'loading' };
+    tl.loadAsync(base + h.file).then((tex) => {
+      tex.flipY = false; tex.channel = 1; tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.needsUpdate = true;
+      u.high[t] = { tex, state: 'loaded' }; if (tier === 'high' && current === t) applyMaps(); if (onHigh) onHigh();
+    }).catch((e) => { u.high[t] = { tex: null, state: 'failed' }; console.warn('office: the high-tier lightmap ' + h.file + ' did not load; keeping the default one:', e && e.message); if (onHigh) onHigh(); });
+  }
+  function applyMaps() {
+    const t = current;
+    for (const u of units) {
+      const hi = tier === 'high' && u.high && u.high[t] && u.high[t].tex, m = u.maps[t], k = Math.PI * m.scale * LM_GAIN[t];
+      for (const mat of u.lit) { mat.lightMap = hi || m.tex; mat.lightMapIntensity = k; }   // basic material: albedo x lightmap x intensity / PI
+    }
+  }
+  // the high tier's state for the current theme: 'none' (no unit has a high set), 'loading', 'loaded' or 'failed'
+  function highState() {
+    const s = units.filter((u) => highOf(u, current)).map((u) => (u.high && u.high[current] ? u.high[current].state : 'pending'));
+    return !s.length ? 'none' : s.includes('failed') ? 'failed' : s.every((x) => x === 'loaded') ? 'loaded' : 'loading';
+  }
+  function setTier(t, { onLoaded = null } = {}) {
+    tier = t === 'high' ? 'high' : 'default'; onHigh = onLoaded;
+    if (tier === 'high') for (const u of units) wantHigh(u, current);
+    applyMaps(); setLeds();
+  }
+  function setLeds() { const l = LED[current]; ledMat.color.set(l.colour).multiplyScalar(l.gain); }
   const c = new THREE.Color(), mc = new THREE.Color();
   function setTheme(theme) {
-    const t = theme === 'dark' ? 'dark' : 'light';
-    for (const u of units) { const m = u.maps[t], k = Math.PI * m.scale * LM_GAIN[t]; for (const mat of u.lit) { mat.lightMap = m.tex; mat.lightMapIntensity = k; } }   // basic material: albedo x lightmap x intensity / PI
-    const colours = look.themed[t === 'dark' ? 'evening' : 'day'];
+    const t = theme === 'dark' ? 'dark' : 'light'; current = t;
+    if (tier === 'high') for (const u of units) wantHigh(u, t);
+    applyMaps();
+    const colours = themes[t === 'dark' ? 'evening' : 'day'];
     for (const mat of themed) {
       c.set(colours[mat.name] || '#888888');
       if (mat.userData.mean) { mc.set(mat.userData.mean); mat.color.setRGB(c.r / mc.r, c.g / mc.g, c.b / mc.b); } else mat.color.copy(c);
     }
     for (const mat of swapped) mat.map = swapTex[mat.name][t];
-    const l = LED[t]; ledMat.color.set(l.colour).multiplyScalar(l.gain);
+    winMat.color.set(colours.window || '#dddddd');
+    setLeds();
   }
   function dispose() {
     for (const r of Object.values(rooms)) r.group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
-    for (const u of units) { for (const m of u.lit) m.dispose(); u.maps.light.tex.dispose(); u.maps.dark.tex.dispose(); }
+    for (const u of units) { for (const m of u.lit) m.dispose(); u.maps.light.tex.dispose(); u.maps.dark.tex.dispose(); for (const h of Object.values(u.high || {})) if (h.tex) h.tex.dispose(); }
     for (const t of textures.values()) t.dispose();
-    ledMat.dispose();
+    ledMat.dispose(); winMat.dispose();
   }
-  return { manifest, rooms, setTheme, dispose };
+  return { manifest, rooms, setTheme, setTier, highState, dispose };
 }

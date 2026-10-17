@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import sharp from 'sharp';
 import { computeLayout, bakedRoomSpec } from '../src/web/scene/layout.js';
-import { BAKED_ROOMS, BAKE_UNITS, unitOf, bakedLook } from '../src/web/scene/bakedlook.js';
+import { BAKED_ROOMS, BAKE_UNITS, WARM_UNITS, unitOf, bakedLook } from '../src/web/scene/bakedlook.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const ASSET_DIR = path.join(ROOT, 'src', 'web', 'assets', 'office');
@@ -41,6 +41,10 @@ export const BUDGET_BYTES = 10 * 1000 * 1000;    // the whole office's baked ass
 export const BAKE_LIGHT = { day: { sun: 2.6, sky: '#dfe6f0', skyStrength: 0.55 }, evening: { sky: '#8a90a4', skyStrength: 1.5, ledGain: 1.0, lamp: 25.0 } };
 // lightmap texels per scene unit, the same in every unit's atlas (R3b; R3a's one 3072 px atlas for two rooms was ~100)
 export const DENSITY = 100;
+// R4a: units with their own atlas size instead of the density: the warm Office at 3072 px (R3b: 2176), baked at 6144 px
+// for the high tier (high/, loaded only when the high tier is on); the default atlas is that bake halved (linear light)
+export const UNIT_ATLAS = { office: { size: 3072, high: 6144 } };
+export const HIGH_DIR = 'high';
 // fixed seeds per area (the Design and Office seeds are R3a's), so a one-unit build gives the same room as a full one
 const SEEDS = { design: 20261017, office: 20261118, research: 20261219, lounge: 20261320, atrium: 20261421 };
 
@@ -68,14 +72,18 @@ export function unitsFor(names) {
 }
 
 // the files a unit owns in the asset folder (its glTF, its buffer, its two lightmaps)
-export function unitFiles(unit, gltfJson) { return [unit + '.gltf', ...((gltfJson && gltfJson.buffers) || []).map((b) => b.uri), 'lightmap-' + unit + '-day.webp', 'lightmap-' + unit + '-evening.webp']; }
+export function unitFiles(unit, gltfJson) { return [unit + '.gltf', ...((gltfJson && gltfJson.buffers) || []).map((b) => b.uri), 'lightmap-' + unit + '-day.webp', 'lightmap-' + unit + '-evening.webp', ...(UNIT_ATLAS[unit] && UNIT_ATLAS[unit].high ? ['day', 'evening'].map((m) => HIGH_DIR + '/lightmap-' + unit + '-' + m + '.webp') : [])]; }
+// the look every unit shares (R4a: all but the warm part, which only WARM_UNITS use)
+const sharedLook = (look) => { if (!look) return look; const { warm, ...rest } = look; return rest; };
 
 // The manifest after building some units: the built units and their areas replace the old ones, the others are kept.
 // A one-unit build needs a previous full build with the same look and bake settings (they affect every unit).
 export function mergeManifest(prev, built, { look, light, density, full }) {
   if (!full) {
     if (!prev || prev.version !== 3) throw new Error('no R3b manifest yet: run a full build first (npm run build-office)');
-    if (!isDeepStrictEqual(prev.look, look)) throw new Error('the shared look (palette, textures, atlas) changed since the last build: run a full build');
+    if (!isDeepStrictEqual(sharedLook(prev.look), sharedLook(look))) throw new Error('the shared look (palette, textures, atlas) changed since the last build: run a full build');
+    const stale = WARM_UNITS.filter((u) => !built.units[u] && !(built.pending || []).includes(u));
+    if (!isDeepStrictEqual(prev.look.warm, look.warm) && stale.length) throw new Error('the warm look changed since the last build: build ' + stale.join(', ') + ' too (--room ' + WARM_UNITS.join(',') + ')');
     if (!isDeepStrictEqual(prev.build.light, light) || prev.build.density !== density) throw new Error('the bake settings changed since the last build: run a full build');
   }
   const units = {}, rooms = {};
@@ -100,10 +108,13 @@ function listFiles(dir, rel = '') {
   return out;
 }
 // compress: also what gzip and brotli would give (about 8 s for the whole folder; the budget counts bytes as served)
+// R4a: the default tier's download is every file but high/ (the high tier's lightmaps load only when it is on)
+export const isHighFile = (f) => f.startsWith(HIGH_DIR + '/');
+export function defaultBytes(sizes) { return sizes.files.filter((r) => !isHighFile(r.file)).reduce((s, r) => s + r.bytes, 0); }
 export function sizesOf(dir = ASSET_DIR, { compress = true } = {}) {
   const rows = listFiles(dir).filter((f) => f !== 'sizes.json').map((f) => { const buf = fs.readFileSync(path.join(dir, f)); return compress ? { file: f, bytes: buf.length, gzip: zlib.gzipSync(buf, { level: 9 }).length, brotli: zlib.brotliCompressSync(buf).length } : { file: f, bytes: buf.length }; });
-  const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
-  return { files: rows, total: compress ? { bytes: sum('bytes'), gzip: sum('gzip'), brotli: sum('brotli') } : { bytes: sum('bytes') }, budgetBytes: BUDGET_BYTES, budgetNote: '10 MB (10,000,000 bytes) for the whole baked office, compressed (owner, R3a); checked against bytes as served', note: 'bytes = as served (JPEG textures, WebP lightmaps: already compressed; the glTF JSON and geometry are not); gzip/brotli = what HTTP compression would give' };
+  const sum = (k, f = () => true) => rows.filter((r) => f(r.file)).reduce((s, r) => s + (r[k] || 0), 0), dflt = (f) => !isHighFile(f);
+  return { files: rows, total: compress ? { bytes: sum('bytes'), gzip: sum('gzip'), brotli: sum('brotli') } : { bytes: sum('bytes') }, defaultTier: { bytes: sum('bytes', dflt), ...(compress ? { brotli: sum('brotli', dflt) } : {}) }, highTierOnly: { bytes: sum('bytes', isHighFile) }, budgetBytes: BUDGET_BYTES, budgetNote: '10 MB (10,000,000 bytes) for the whole baked office, compressed (owner, R3a); checked against bytes as served; R4a: the default tier\'s download (all but high/)', note: 'bytes = as served (JPEG textures, WebP lightmaps: already compressed; the glTF JSON and geometry are not); gzip/brotli = what HTTP compression would give' };
 }
 
 async function buildUnit(unit, { blender, version, L, specs, look, density, samples }) {
@@ -112,21 +123,29 @@ async function buildUnit(unit, { blender, version, L, specs, look, density, samp
   const input = { unit, look: { ...look, ...BAKE_LIGHT }, rooms: BAKE_UNITS[unit].map((k) => specs[k]), place: placeIn(L, unit), seeds: SEEDS };
   fs.writeFileSync(assetJail(dir + '/input.json'), JSON.stringify(input, null, 2) + '\n');
   console.log('[build] unit', unit.padEnd(8), BAKE_UNITS[unit].map((k) => k + ' ' + specs[k].w + ' x ' + specs[k].d).join(', '));
-  const run = spawnSync(blender, ['-b', '--factory-startup', '--python-exit-code', '3', '--python', PY, '--', '--input', assetJail(dir + '/input.json'), '--out', assetJail(dir + '/stage'), '--textures', TEXTURES, '--density', String(density), '--samples', String(samples)], { stdio: 'inherit' });
+  const ua = UNIT_ATLAS[unit], scale = density / DENSITY;          // --quick halves the density, and these sizes with it
+  const sizeArgs = ua ? ['--atlas', String(Math.round(ua.size * scale)), ...(ua.high ? ['--bake-size', String(Math.round(ua.high * scale))] : [])] : [];
+  const run = spawnSync(blender, ['-b', '--factory-startup', '--python-exit-code', '3', '--python', PY, '--', '--input', assetJail(dir + '/input.json'), '--out', assetJail(dir + '/stage'), '--textures', TEXTURES, '--density', String(density), '--samples', String(samples), ...sizeArgs], { stdio: 'inherit' });
   const blenderSeconds = (Date.now() - t0) / 1000;
   if (run.status !== 0) throw new Error('Blender exited with ' + run.status + ' for unit ' + unit);
   const stage = assetJail(dir + '/stage');
   const bake = JSON.parse(fs.readFileSync(path.join(stage, '.build', 'bake.json'), 'utf8'));
-  const lightmaps = {};
+  const lightmaps = {}, high = bake.bakeSize > bake.size ? { size: bake.bakeSize } : null;
+  if (high) fs.mkdirSync(assetJail(dir + '/stage/' + HIGH_DIR), { recursive: true });
   for (const [mode, lm] of Object.entries(bake.lightmaps)) {
-    const file = 'lightmap-' + unit + '-' + mode + '.webp';
-    await sharp(path.join(stage, '.build', lm.png)).webp({ quality: 90, effort: 6 }).toFile(assetJail(dir + '/stage/' + file));
+    const file = 'lightmap-' + unit + '-' + mode + '.webp', png = path.join(stage, '.build', lm.png);
+    // R4a: a bigger bake gives the high tier's map as baked and the default map halved in linear light (gamma 2.2)
+    if (high) {
+      await sharp(png).webp({ quality: 88, effort: 6 }).toFile(assetJail(dir + '/stage/' + HIGH_DIR + '/' + file));
+      high[mode] = { file: HIGH_DIR + '/' + file };
+      await sharp(png).gamma(2.2).resize(bake.size, bake.size, { kernel: 'mitchell' }).webp({ quality: 90, effort: 6 }).toFile(assetJail(dir + '/stage/' + file));
+    } else await sharp(png).webp({ quality: 90, effort: 6 }).toFile(assetJail(dir + '/stage/' + file));
     lightmaps[mode] = { file, scale: lm.scale, coverage: lm.coverage, p995: lm.p995, max: lm.max };
   }
   fs.rmSync(assetJail(dir + '/stage/.build'), { recursive: true, force: true });
   const seconds = +((Date.now() - t0) / 1000).toFixed(1);
-  const info = { gltf: unit + '.gltf', rooms: BAKE_UNITS[unit], lightmaps, materials: bake.materials, atlas: { size: bake.size, density: bake.density, surface: bake.surface, uvCoverage: bake.uvCoverage }, build: { at: new Date().toISOString(), blender: version, device: bake.device, samples, blenderSeconds: +blenderSeconds.toFixed(1), seconds, phases: bake.phases } };
-  const rooms = Object.fromEntries(BAKE_UNITS[unit].map((k) => [k, { unit, spec: specs[k], node: bake.rooms[k].node, leds: bake.rooms[k].leds, strips: bake.rooms[k].strips, ...(bake.rooms[k].cushions.length ? { cushions: bake.rooms[k].cushions } : {}), triangles: bake.triangles[k] }]));
+  const info = { gltf: unit + '.gltf', rooms: BAKE_UNITS[unit], lightmaps, ...(high ? { high } : {}), materials: bake.materials, atlas: { size: bake.size, density: bake.density, surface: bake.surface, uvCoverage: bake.uvCoverage }, build: { at: new Date().toISOString(), blender: version, device: bake.device, samples, blenderSeconds: +blenderSeconds.toFixed(1), seconds, phases: bake.phases } };
+  const rooms = Object.fromEntries(BAKE_UNITS[unit].map((k) => [k, { unit, spec: specs[k], node: bake.rooms[k].node, leds: bake.rooms[k].leds, ...(bake.rooms[k].windows ? { windows: bake.rooms[k].windows } : {}), strips: bake.rooms[k].strips, ...(bake.rooms[k].cushions.length ? { cushions: bake.rooms[k].cushions } : {}), triangles: bake.triangles[k] }]));
   console.log('[build] unit', unit, 'done in', seconds + ' s |', bake.size + ' px atlas,', bake.density + ' texels per unit');
   return { stage, info, rooms };
 }
@@ -149,7 +168,7 @@ async function main() {
   const manifestPath = path.join(ASSET_DIR, 'manifest.json');
   const prev = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null;
   // a one-unit build checks first that it can merge (same look and bake settings as the published build)
-  if (!full) mergeManifest(prev, { units: {}, rooms: {}, last: null }, { look, light: BAKE_LIGHT, density, full: false });
+  if (!full) mergeManifest(prev, { units: {}, rooms: {}, last: null, pending: units }, { look, light: BAKE_LIGHT, density, full: false });
   console.log('[build]', full ? 'full build: every unit' : 'units: ' + units.join(', ') + ' (the others are kept)', '|', density, 'texels per unit,', samples, 'samples');
   fs.rmSync(assetJail('.build'), { recursive: true, force: true });
   const built = { units: {}, rooms: {}, stages: {} };
@@ -167,7 +186,8 @@ async function main() {
   fs.mkdirSync(assetJail('textures'), { recursive: true });
   for (const u of units) {
     const stage = built.stages[u];
-    for (const e of fs.readdirSync(stage)) if (e !== 'textures') fs.renameSync(path.join(stage, e), assetJail(e));
+    for (const e of fs.readdirSync(stage)) if (e !== 'textures' && e !== HIGH_DIR) fs.renameSync(path.join(stage, e), assetJail(e));
+    if (fs.existsSync(path.join(stage, HIGH_DIR))) { fs.mkdirSync(assetJail(HIGH_DIR), { recursive: true }); for (const e of fs.readdirSync(path.join(stage, HIGH_DIR))) fs.renameSync(path.join(stage, HIGH_DIR, e), assetJail(HIGH_DIR + '/' + e)); }
     for (const t of fs.readdirSync(path.join(stage, 'textures'))) {
       const src = path.join(stage, 'textures', t), dst = assetJail('textures/' + t);
       if (!fs.existsSync(dst)) fs.renameSync(src, assetJail('textures/' + t));
@@ -181,14 +201,15 @@ async function main() {
   // the areas a one-unit build left alone but whose layout changed since their last bake
   for (const [k, r] of Object.entries(manifest.rooms)) if (!units.includes(r.unit) && !isDeepStrictEqual(r.spec, specs[k])) warnings.push('the ' + k + ' area no longer matches the floor plan (the page draws it procedurally): build it with --room ' + r.unit);
   // the manifest records the folder's total, its own size included (quick passes settle it)
-  for (let i = 0; i < 3; i++) { fs.writeFileSync(assetJail('manifest.json'), JSON.stringify(manifest, null, 2) + '\n'); manifest.sizes = { total: sizesOf(ASSET_DIR, { compress: false }).total, budgetBytes: BUDGET_BYTES }; }
+  for (let i = 0; i < 3; i++) { fs.writeFileSync(assetJail('manifest.json'), JSON.stringify(manifest, null, 2) + '\n'); const z = sizesOf(ASSET_DIR, { compress: false }); manifest.sizes = { total: z.total, defaultTier: z.defaultTier, highTierOnly: z.highTierOnly, budgetBytes: BUDGET_BYTES }; }
   const sizes = sizesOf(), s = sizes.total;
   fs.writeFileSync(assetJail('sizes.json'), JSON.stringify(sizes, null, 2) + '\n');
   fs.rmSync(assetJail('.build'), { recursive: true, force: true });
-  console.log('[build] done in', last.seconds + ' s (' + units.map((u) => u + ' ' + built.units[u].build.seconds + ' s').join(', ') + ') |', (s.bytes / 1e6).toFixed(2) + ' MB as served,', (s.brotli / 1e6).toFixed(2) + ' MB with brotli |', s.bytes <= BUDGET_BYTES ? 'within' : 'OVER', 'the 10 MB budget');
+  const d = sizes.defaultTier.bytes;
+  console.log('[build] done in', last.seconds + ' s (' + units.map((u) => u + ' ' + built.units[u].build.seconds + ' s').join(', ') + ') | default tier', (d / 1e6).toFixed(2) + ' MB as served,', d <= BUDGET_BYTES ? 'within' : 'OVER', 'the 10 MB budget | high tier adds', (sizes.highTierOnly.bytes / 1e6).toFixed(2) + ' MB');
   for (const r of sizes.files) console.log('   ', r.file.padEnd(34), (r.bytes / 1024).toFixed(0).padStart(6) + ' KB');
   for (const w of warnings) console.warn('[build] warning:', w);
-  if (s.bytes > BUDGET_BYTES) process.exitCode = 2;
+  if (d > BUDGET_BYTES) process.exitCode = 2;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((e) => { console.error('[build] failed:', e.message); process.exit(1); });

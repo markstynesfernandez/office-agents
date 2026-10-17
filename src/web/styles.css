@@ -38,6 +38,7 @@ button, select, textarea, input { font: inherit; color: inherit; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .btn-icon { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .btn-icon:hover { background: var(--panel-2); }
+.tb-quality { height: 30px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 0 6px; font-size: 12px; flex: none; cursor: pointer; }   /* R4a: rendering quality */
 .btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
 .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; cursor: default; }
@@ -331,3 +332,17 @@ body[data-theme="dark"] .badge-demo { background: #7d84e8; color: #11152a; borde
 .toast-x { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 15px; line-height: 1; padding: 0 2px; }
 #app:has(#sidepanel:not(.hidden)) .toasts { left: calc((100% - 740px) / 2); width: min(520px, calc(100% - 780px)); }
 .btn-mini { white-space: nowrap; flex: none; }
+
+/* R4a: a phone layout (up to 640 px wide): the office stage gets the full width, the task panel moves under it and
+   scrolls, the side panel covers the stage, the key hints are hidden (no keyboard). Before R4a the 340 px task panel
+   left the stage about 120 px wide at 390 px. */
+@media (max-width: 640px) {
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 46px minmax(0, 1fr) auto 0; grid-template-areas: "top" "stage" "panel" "hints"; }
+  #taskpanel { border-left: 0; border-top: 1px solid var(--line); max-height: 38vh; overflow-y: auto; }
+  #hints { display: none; }
+  #sidepanel { right: 0; width: 100%; }
+  /* department cards: name and agent count only, so neighbouring rooms' cards do not cover each other */
+  .dept-card { width: 124px; padding: 4px 7px; }
+  .dept-card .metrics, .dept-card .counts { display: none; }
+  .dept-card h3 { margin: 0; }
+}
