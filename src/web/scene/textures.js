@@ -34,14 +34,24 @@ export function woodTexture() {
   return tex(c, { repeat: true });
 }
 
-// atrium floor: large stone tiles with fine grout
+// atrium floor (R2): polished concrete, not the R1 mottled stone. A smooth, faintly clouded pour with a little fine
+// aggregate and thin saw-cut joints (two panels per tile of the texture); tinted per theme by the material colour.
 export function tileTexture() {
-  const S = 512, c = canvas(S, S), g = c.getContext('2d'), r = rng(11), n = 4, t = S / n;
-  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-    const l = 236 + Math.floor(r() * 14); g.fillStyle = 'rgb(' + l + ',' + l + ',' + (l - 2) + ')'; g.fillRect(i * t, j * t, t, t);
-    g.globalAlpha = 0.05; for (let k = 0; k < 30; k++) { g.fillStyle = r() < 0.5 ? '#000' : '#fff'; g.beginPath(); g.arc(i * t + r() * t, j * t + r() * t, 2 + r() * 10, 0, 7); g.fill(); } g.globalAlpha = 1;
+  const S = 512, c = canvas(S, S), g = c.getContext('2d'), r = rng(11), n = 2, t = S / n;
+  g.fillStyle = 'rgb(238,237,234)'; g.fillRect(0, 0, S, S);
+  // broad, very soft clouding (drawn wrapped so the texture tiles without seams)
+  for (let k = 0; k < 26; k++) {
+    const x = r() * S, y = r() * S, rad = 60 + r() * 150, dark = r() < 0.5, a = 0.025 + r() * 0.03;
+    for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) {
+      const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, rad);
+      gr.addColorStop(0, dark ? 'rgba(90,86,80,' + a + ')' : 'rgba(255,255,255,' + a + ')'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x + ox - rad, y + oy - rad, rad * 2, rad * 2);
+    }
   }
-  g.fillStyle = 'rgba(120,116,108,0.55)'; for (let k = 0; k <= n; k++) { g.fillRect(k * t - 1.5, 0, 3, S); g.fillRect(0, k * t - 1.5, S, 3); }
+  // fine aggregate: tiny specks, barely there
+  for (let k = 0; k < 2600; k++) { g.fillStyle = r() < 0.5 ? 'rgba(70,66,60,0.12)' : 'rgba(255,255,255,0.18)'; g.fillRect(r() * S, r() * S, 1 + r(), 1 + r()); }
+  // saw-cut joints
+  g.fillStyle = 'rgba(96,92,86,0.38)'; for (let k = 0; k < n; k++) { g.fillRect(k * t, 0, 1.5, S); g.fillRect(0, k * t, S, 1.5); }
   return tex(c, { repeat: true });
 }
 

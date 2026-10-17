@@ -32,8 +32,8 @@ const MON_YAW = 20 * DEG;              // monitors angled a little towards the v
 export const TEXT_ZOOM = 1.8;          // monitors show their canvas text from this zoom (or when the desk is selected)
 const ANIM_HZ = 12;                    // ambient animation tick (idle bob, typing, dashed lines, crystal)
 const WALK_SPEED = 2.9;                // world units per second
-const SUN_POS = new THREE.Vector3(20, 30, 3);
-const CORE_Y = FLOOR + 2.65;           // memory core crystal centre
+const SUN_POS = new THREE.Vector3(22, 17, 11);  // R2: lower and more to the front than R1 (20, 30, 3): longer, clearer shadows
+const CORE_Y = FLOOR + 2.2;            // memory core crystal centre (R2: smaller core)
 
 const rbox = (w, h, d, r = 0.08, seg = 1) => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, Math.min(w, h, d) / 2));   // one bevel segment: furniture is small on screen
 const std = (color, opts = {}) => new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.82, metalness: 0.02, ...opts });
@@ -97,7 +97,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400);
   scene.add(camera);
   const HOME = new THREE.Vector3(-1.6, 0, -0.6);
-  const view = { target: HOME.clone(), zoom: 1, wantTarget: HOME.clone(), wantZoom: 1, frustumH: 29, ease: 0.0005 };   // ease: fraction left after 1 s (the presenter tour uses a gentler one)
+  const view = { target: HOME.clone(), zoom: 1, wantTarget: HOME.clone(), wantZoom: 1, frustumH: 25.5, ease: 0.0005 };   // ease: fraction left after 1 s (the presenter tour uses a gentler one)
   const bounds = { minX: -22, maxX: 20, minZ: -16, maxZ: 18, minZoom: 0.55, maxZoom: 4.2 };
 
   // ---- backdrop: a soft vertical gradient behind the transparent canvas (CSS)
@@ -109,7 +109,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   sun.position.copy(SUN_POS); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 4, far: 80 });
-  sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.025; sun.shadow.radius = 4;
+  sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.025; sun.shadow.radius = 6;   // R2: softer edges (same tap count)
   scene.add(sun); scene.add(sun.target);
 
   // ---- ground: a soft drop shadow under the slab, thrown away from the sun (a full-screen shadow catcher cost ~2 ms a
@@ -127,7 +127,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const M = {
     static: std('#fff', { vertexColors: true, roughness: 0.86, metalness: 0 }),
     wood: std('#fff', { map: TX.wood, roughness: 0.62, metalness: 0 }),
-    tile: std('#fff', { map: TX.tile, roughness: 0.78, metalness: 0 }),
+    tile: std('#fff', { map: TX.tile, roughness: 0.34, metalness: 0 }),   // polished concrete (R2)
     decal: std('#fff', { map: TX.atlas, roughness: 0.92, metalness: 0 }),
     emissive: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
     glow: new THREE.MeshBasicMaterial({ map: TX.glow, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
@@ -168,20 +168,20 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
 
   const world = new THREE.Group(); scene.add(world);
   const pickRoot = new THREE.Group();           // pick boxes: never rendered, raycast only
-  const anchors = { depts: {}, deptCorners: {}, agents: {}, desks: {}, hub: new THREE.Vector3(0, CORE_Y + 1.35, 0), services: {}, rack: new THREE.Vector3(), lounge: new THREE.Vector3() };
+  const anchors = { depts: {}, deptCorners: {}, agents: {}, desks: {}, hub: new THREE.Vector3(0, CORE_Y + 1.15, 0), services: {}, rack: new THREE.Vector3(), lounge: new THREE.Vector3() };
   let L = null, data = null, structureKey = null, selectedId = null;
   let statics = [], inst = {}, screens = [], workers = [], lines = [], terminals = [], pickables = [];
   const dummy = new THREE.Object3D();
 
   // ---- the memory core: crystal on its pedestal, accent ring, soft glow sprite that pulses on a new ledger row
   const hub = new THREE.Group(); world.add(hub);
-  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.72, 0).scale(1, 1.7, 1), M.crystal); crystal.position.y = CORE_Y; crystal.castShadow = true; hub.add(crystal);
-  const coreRing = new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.05, 8, 48), M.coreRing); coreRing.rotation.x = Math.PI / 2; coreRing.position.y = FLOOR + 0.45; hub.add(coreRing);
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.56, 0).scale(1, 1.7, 1), M.crystal); crystal.position.y = CORE_Y; crystal.castShadow = true; hub.add(crystal);
+  const coreRing = new THREE.Mesh(new THREE.TorusGeometry(0.98, 0.045, 8, 48), M.coreRing); coreRing.rotation.x = Math.PI / 2; coreRing.position.y = FLOOR + 0.45; hub.add(coreRing);
   const glowCanvas = document.createElement('canvas'); glowCanvas.width = glowCanvas.height = 128;
   { const g = glowCanvas.getContext('2d'); const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.35, 'rgba(255,255,255,0.45)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); }
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(glowCanvas), color: new THREE.Color('#8fc0f2'), transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
-  glow.position.y = CORE_Y - 0.1; glow.scale.set(4.2, 4.2, 1); hub.add(glow);
-  const hubPick = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R, 4.2, 12)); hubPick.position.y = FLOOR + 2.1; pickRoot.add(hubPick);
+  glow.position.y = CORE_Y - 0.1; glow.scale.set(2.4, 2.4, 1); hub.add(glow);   // R2: about half the R1 size
+  const hubPick = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R, 3.6, 12)); hubPick.position.y = FLOOR + 1.8; pickRoot.add(hubPick);
   const selectRing = new THREE.Mesh(ringGeo(2.7, 2.7, 0.35, 0.07), M.select); selectRing.visible = false; world.add(selectRing);
 
   // ---- static rooms (rebuilt on structure or theme change)
@@ -271,14 +271,15 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     const n = services.length, body = makeInst('terminal', G.terminal, M.terminal, n), scr = makeInst('termScreen', G.termScreen, M.termScreen, n, { shadow: false }), lt = makeInst('termLight', G.termLight, M.light, n, { shadow: false });
     terminals = []; anchors.services = {};
     const c = L.closet;
-    anchors.rack.set(c.cx, FLOOR + 2.55, c.z0 + 0.7);
+    anchors.rack.set(c.x0 + 0.75, FLOOR + 2.55, c.cz);
+    // R2: the cabinets face +x (towards the core); their geometry faces +z, so each is turned a quarter turn
     services.forEach((s, i) => {
       const cab = c.cabinets[i]; if (!cab) return;
-      const { x, z } = cab;
-      setInst(body, i, x, FLOOR + 0.012, z); setInst(scr, i, x, FLOOR + 1.72, z + 0.425); setInst(lt, i, x + 0.22, FLOOR + 2.08, z + 0.3);
+      const { x, z } = cab, ry = cab.yaw + Math.PI;
+      setInst(body, i, x, FLOOR + 0.012, z, ry); setInst(scr, i, x + 0.425, FLOOR + 1.72, z, ry); setInst(lt, i, x + 0.3, FLOOR + 2.08, z - 0.22, ry);
       terminals.push({ id: s.id, i, x, z, status: s.status });
-      anchors.services[s.id] = new THREE.Vector3(x, FLOOR + 2.2, z + 0.2);
-      const pick = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.1, 0.9)); pick.position.set(x, FLOOR + 1.05, z); pickRoot.add(pick); pickables.push({ object: pick, kind: 'service', id: s.id });
+      anchors.services[s.id] = new THREE.Vector3(x + 0.2, FLOOR + 2.2, z);
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.1, 0.8)); pick.position.set(x, FLOOR + 1.05, z); pickRoot.add(pick); pickables.push({ object: pick, kind: 'service', id: s.id });
     });
     for (const m of [body, scr, lt]) m.instanceMatrix.needsUpdate = true;
     pickRoot.updateMatrixWorld(true);
@@ -353,7 +354,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const d = anchors.desks[a.id]; if (!d) continue;
       for (const sid of a.services) {
         const t = terminals.find((x) => x.id === sid); if (!t) continue;
-        const start = new THREE.Vector3(d.x, PT + 1.95, d.z - 0.25), end = new THREE.Vector3(t.x, FLOOR + 2.15, t.z + 0.3);
+        const start = new THREE.Vector3(d.x, PT + 1.95, d.z - 0.25), end = new THREE.Vector3(t.x + 0.3, FLOOR + 2.15, t.z);
         const mid = start.clone().lerp(end, 0.5); mid.y += 3.4;
         const geo = new THREE.BufferGeometry().setFromPoints(new THREE.QuadraticBezierCurve3(start, mid, end).getPoints(48));
         const line = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: new THREE.Color(PALETTE.services[sid] || '#888'), dashSize: 0.35, gapSize: 0.25, transparent: true, opacity: 0.95, toneMapped: false }));
@@ -432,7 +433,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // ---- hub pulse (a new ledger row): crystal and glow brighten briefly
   let pulseAt = -1;
   function pulseHub() { pulseAt = performance.now(); invalidate(1); }
-  function setHubGlow(k) { const p = P(); glow.material.opacity = Math.min(1, p.hubGlow * (0.55 + 0.9 * k)); glow.scale.setScalar(4.2 + 1.6 * k); M.crystal.emissiveIntensity = (theme === 'dark' ? 0.9 : 0.55) + 1.4 * k; }
+  function setHubGlow(k) { const p = P(); glow.material.opacity = Math.min(1, p.hubGlow * (0.55 + 0.9 * k)); glow.scale.setScalar(2.4 + 1.0 * k); M.crystal.emissiveIntensity = (theme === 'dark' ? 0.9 : 0.55) + 1.4 * k; }
 
   // ---- selection
   function setSelected(id) {
@@ -513,8 +514,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   }
   function obstacles() {
     const out = Object.entries(anchors.desks).map(([id, d]) => ({ kind: 'desk', id, ...boxRect(d.min, d.max) }));
-    out.push({ kind: 'hub', ...boxRect(new THREE.Vector3(-1, FLOOR + 0.4, -1), new THREE.Vector3(1, CORE_Y + 1.25, 1)) });
-    if (L && terminals.length) { const c = L.closet; out.push({ kind: 'rack', ...boxRect(new THREE.Vector3(c.x0 + 0.3, FLOOR, c.z0 + 0.3), new THREE.Vector3(c.x1 - 0.3, FLOOR + 2.1, c.z0 + 1.1)) }); }
+    out.push({ kind: 'hub', ...boxRect(new THREE.Vector3(-0.8, FLOOR + 0.4, -0.8), new THREE.Vector3(0.8, CORE_Y + 1.05, 0.8)) });
+    if (L && terminals.length) { const c = L.closet; out.push({ kind: 'rack', ...boxRect(new THREE.Vector3(c.x0 + 0.25, FLOOR, c.z0 + 0.4), new THREE.Vector3(c.x0 + 1.1, FLOOR + 2.1, c.z1 - 0.2)) }); }
     if (L) { const r = L.lounge.furniture.rug; out.push({ kind: 'lounge', ...boxRect(new THREE.Vector3(r.x0 + 0.3, FLOOR, r.z0 + 0.3), new THREE.Vector3(r.x1 - 0.3, FLOOR + 1.4, r.z1 - 0.3)) }); }
     return out;
   }

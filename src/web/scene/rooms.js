@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { FLOOR, WALL_H, WALL_T, CORE_R } from './layout.js';
+import { FLOOR, WALL_H, WALL_T, CORE_R, SOFA, ARMCHAIR } from './layout.js';
 import { rng, ATLAS, atlasUV, GLOW_UV } from './textures.js';
 
 const BOOKS = ['#7b2d26', '#2f4858', '#3d5a40', '#8c6d46', '#5b5f97', '#b5533c', '#d9b26f', '#e8e1d4', '#3b3b3b', '#6b4e71', '#9a8f7a', '#2e5e6e', '#a3473a', '#c9c1b1'];
@@ -73,8 +73,68 @@ export function buildRooms(L, p, accents) {
     const nb = 4 + Math.floor(r() * 4);
     for (let i = 0; i < nb; i++) { const w = 0.035 + r() * 0.035, h = 0.18 + r() * 0.1; S.add(box(w, h, 0.18), onWall(axis, at, cu + w / 2, y + 0.02 + h / 2, 0.14), BOOKS[Math.floor(r() * BOOKS.length)]); cu += w + 0.004; }
     S.add(box(0.22, 0.12, 0.16), onWall(axis, at, u + len * 0.12, y + 0.08, 0.13), p.shelfObject);
-    S.add(cyl(0.07, 0.055, 0.12, 10), onWall(axis, at, u + len / 2 - 0.18, y + 0.08, 0.13), p.potSmall);
-    S.add(new THREE.IcosahedronGeometry(0.11, 0), onWall(axis, at, u + len / 2 - 0.18, y + 0.2, 0.13), p.leafSmall);
+    trailing(S, axis, at, u + len / 2 - 0.2, y + 0.02, 0.14, r);
+  }
+  // a trailing plant in a small pot on a shelf: a leafy crown and strands of leaves hanging over the front edge
+  function trailing(S, axis, at, u, y, v, r) {
+    S.add(cyl(0.075, 0.058, 0.13, 10), onWall(axis, at, u, y + 0.065, v), p.potSmall);
+    S.add(new THREE.IcosahedronGeometry(0.11, 0), onWall(axis, at, u, y + 0.17, v), p.leafSmall);
+    for (const [du, n] of [[-0.07, 4], [0.05, 6], [0.11, 3]]) for (let i = 0; i < n; i++) {
+      const g = new THREE.IcosahedronGeometry(0.045 + r() * 0.02, 0);
+      S.add(g, onWall(axis, at, u + du + (r() - 0.5) * 0.04, y + 0.1 - i * 0.075, v + 0.1 + Math.min(i, 2) * 0.012), i % 2 ? p.leafSmall : p.leafTrail);
+    }
+  }
+  // a wall clock (face, rim, twelve ticks, two hands; it shows no particular time), built in the wall's own frame
+  function clock(S, axis, at, u, y) {
+    const m = onWall(axis, at, u, y, 0);
+    S.add(cyl(0.21, 0.21, 0.04, 24).rotateX(Math.PI / 2).translate(0, 0, 0.02), m, p.clockRim);
+    S.add(cyl(0.185, 0.185, 0.008, 24).rotateX(Math.PI / 2).translate(0, 0, 0.042), m, p.clockFace);
+    for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6; S.add(box(0.012, k % 3 ? 0.025 : 0.045, 0.004).rotateZ(-a).translate(Math.sin(a) * 0.155, Math.cos(a) * 0.155, 0.047), m, p.clockRim); }
+    S.add(box(0.016, 0.11, 0.006).translate(0, 0.045, 0).rotateZ(-2.1).translate(0, 0, 0.05), m, p.clockRim);
+    S.add(box(0.011, 0.15, 0.006).translate(0, 0.065, 0).rotateZ(-0.5).translate(0, 0, 0.054), m, p.clockRim);
+  }
+  // ---- props (positions and footprints from layout.js; each faces local -z, turned by its yaw)
+  function bench(S, o) {
+    for (let i = 0; i < 3; i++) S.add(rbox(1.7, 0.05, 0.13, 0.02), local(o, 0, FLOOR + 0.45, -0.15 + i * 0.15), p.woodSolid);
+    for (const sx of [-0.68, 0.68]) { S.add(box(0.05, 0.42, 0.4), local(o, sx, FLOOR + 0.22, 0), p.metal); }
+    S.add(box(1.36, 0.035, 0.035), local(o, 0, FLOOR + 0.12, 0), p.metal);
+  }
+  function printer(S, o) {
+    S.add(rbox(0.9, 0.62, 0.62, 0.04), local(o, 0, FLOOR + 0.33, 0), p.printer);          // body on its cabinet
+    S.add(rbox(0.86, 0.34, 0.6, 0.04), local(o, 0, FLOOR + 0.81, 0.01), p.printerTop);     // scanner unit
+    S.add(box(0.62, 0.03, 0.42), local(o, 0, FLOOR + 1.0, 0.02), p.printerLid);
+    S.add(box(0.5, 0.02, 0.26), local(o, 0.04, FLOOR + 0.67, -0.2), p.paper);              // output tray with paper
+    S.add(box(0.2, 0.09, 0.012), local(o, 0.25, FLOOR + 0.9, -0.31, 0, -0.4), p.metal);    // control panel
+    for (let i = 0; i < 2; i++) S.add(box(0.8, 0.006, 0.004), local(o, 0, FLOOR + 0.22 + i * 0.2, -0.312), p.seam);
+    em.add(box(0.03, 0.02, 0.01), local(o, 0.32, FLOOR + 0.93, -0.33), p.rackLedA);
+  }
+  function cooler(S, o) {
+    S.add(rbox(0.38, 0.95, 0.38, 0.04), local(o, 0, FLOOR + 0.475, 0), p.cooler);
+    S.add(box(0.2, 0.12, 0.04), local(o, 0, FLOOR + 0.78, -0.2), p.metal);                 // tap recess
+    S.add(box(0.24, 0.02, 0.12), local(o, 0, FLOOR + 0.5, -0.19), p.metal);                // drip tray
+    S.add(cyl(0.15, 0.15, 0.36, 14), local(o, 0, FLOOR + 1.16, 0), p.water);               // the bottle
+    S.add(cyl(0.06, 0.15, 0.08, 14), local(o, 0, FLOOR + 1.38, 0), p.water);
+    S.add(cyl(0.05, 0.05, 0.03, 10), local(o, 0.32, FLOOR + 0.02, -0.05), p.shelfObject);   // cup bin beside it
+    S.add(cyl(0.045, 0.035, 0.22, 10), local(o, 0.32, FLOOR + 0.13, -0.05), p.label);
+  }
+  function meeting(S, o) {
+    S.add(cyl(0.5, 0.5, 0.04, 28), local(o, 0, FLOOR + 0.74, 0), p.woodSolid);
+    S.add(cyl(0.035, 0.035, 0.7, 8), local(o, 0, FLOOR + 0.37, 0), p.metal);
+    S.add(cyl(0.26, 0.28, 0.025, 16), local(o, 0, FLOOR + 0.013, 0), p.metal);
+    for (const sx of [-0.8, 0.8]) {   // two stools
+      S.add(cyl(0.19, 0.19, 0.05, 16), local(o, sx, FLOOR + 0.48, 0.05), p.leather);
+      S.add(cyl(0.025, 0.025, 0.45, 8), local(o, sx, FLOOR + 0.23, 0.05), p.metal);
+      S.add(cyl(0.16, 0.17, 0.02, 14), local(o, sx, FLOOR + 0.01, 0.05), p.metal);
+    }
+    S.add(box(0.3, 0.012, 0.22), local(o, -0.12, FLOOR + 0.766, 0.05, 0.3), p.label);      // a few papers and a mug
+    S.add(cyl(0.04, 0.035, 0.09, 10), local(o, 0.2, FLOOR + 0.805, -0.1), p.mug);
+  }
+  function easel(S, o) {
+    for (const sx of [-0.28, 0.28]) S.add(box(0.035, 1.6, 0.035), local(o, sx, FLOOR + 0.8, 0, 0, -0.08, sx > 0 ? -0.1 : 0.1), p.woodSolid);
+    S.add(box(0.035, 1.5, 0.035), local(o, 0, FLOOR + 0.75, 0.32, 0, 0.35), p.woodSolid);
+    S.add(box(0.7, 0.035, 0.08), local(o, 0, FLOOR + 0.62, -0.06), p.woodSolid);
+    S.add(box(0.7, 0.55, 0.03), local(o, 0, FLOOR + 0.93, -0.03, 0, -0.08), p.mat);
+    decals.add(regionUV(new THREE.PlaneGeometry(0.64, 0.49), atlasUV(ATLAS.art[3])), local(o, 0, FLOOR + 0.93, -0.05, Math.PI, 0.08));
   }
   function frame(S, axis, at, u, y, w, h, region) {
     S.add(box(w, h, 0.04), onWall(axis, at, u, y, 0.02), p.frame);
@@ -170,23 +230,32 @@ export function buildRooms(L, p, accents) {
   const A = bucket({ color: true }), b = L.base;
   A.add(box(b.w, FLOOR - 0.005, b.d), mat4(b.cx, (FLOOR - 0.005) / 2, b.cz), p.slabEdge);
   A.add(box(b.w + 0.06, 0.05, b.d + 0.06), mat4(b.cx, 0.025, b.cz), p.slabFoot);
-  tile.add(planarUV(new THREE.PlaneGeometry(b.w, b.d).rotateX(-Math.PI / 2).translate(b.cx, FLOOR, b.cz), 4.2));
+  tile.add(planarUV(new THREE.PlaneGeometry(b.w, b.d).rotateX(-Math.PI / 2).translate(b.cx, FLOOR, b.cz), 6.4));
   edgeLED('+z', b.z1, b.x0, b.x1, FLOOR - 0.06, 0.012, 1.6, 1.0);
   edgeLED('+x', b.x1, b.z0, b.z1, FLOOR - 0.06, 0.012, 1.6, 1.0);
-  // core plinth (octagon), pedestal and an inlay ring on the floor
+  // core plinth (octagon), pedestal and an inlay ring on the floor; R2: the plaza disc and the glow pool are about half
+  // the R1 radius
   A.add(cyl(CORE_R - 0.1, CORE_R, 0.32, 8), mat4(0, FLOOR + 0.16, 0, Math.PI / 8), p.plinthEdge);
-  A.add(cyl(CORE_R - 0.4, CORE_R - 0.3, 0.12, 8), mat4(0, FLOOR + 0.38, 0, Math.PI / 8), p.plinth);
-  A.add(cyl(0.62, 0.8, 0.55, 6), mat4(0, FLOOR + 0.7, 0), p.plinthEdge);
-  A.add(new THREE.CircleGeometry(CORE_R + 2.3, 64).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.002, 0), p.plaza);
-  A.add(new THREE.RingGeometry(CORE_R + 0.25, CORE_R + 0.33, 48).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.004, 0), p.inlay);
+  A.add(cyl(CORE_R - 0.35, CORE_R - 0.27, 0.12, 8), mat4(0, FLOOR + 0.38, 0, Math.PI / 8), p.plinth);
+  A.add(cyl(0.46, 0.6, 0.5, 6), mat4(0, FLOOR + 0.66, 0), p.plinthEdge);
+  A.add(new THREE.CircleGeometry(CORE_R + 0.75, 48).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.002, 0), p.plaza);
+  A.add(new THREE.RingGeometry(CORE_R + 0.2, CORE_R + 0.27, 48).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.004, 0), p.inlay);
   em.add(new THREE.RingGeometry(CORE_R - 0.02, CORE_R + 0.02, 8, 1, Math.PI / 8).rotateX(-Math.PI / 2), mat4(0, FLOOR + 0.322, 0), ledC);
-  pool(0, FLOOR + 0.01, 0, CORE_R + 1.6, 0.7, p.hubCore);
-  // atrium walls (outer back edge between the rooms), with caps and baseboards
+  pool(0, FLOOR + 0.01, 0, CORE_R + 0.55, 0.7, p.hubCore);
+  // atrium walls (outer back edge between the rooms), with caps and baseboards, and what hangs on them
   for (const w of L.walls) {
     if (w.owner === 'closet') continue;
     const S = w.owner === 'atrium' ? A : null; if (!S) continue;
     wallRun(S, w, p.wall);
   }
+  {
+    const printerP = L.props.find((q) => q.kind === 'printer'), coolerP = L.props.find((q) => q.kind === 'cooler');
+    if (printerP) { frame(A, 'z', b.z0, printerP.x, FLOOR + 2.08, 0.72, 0.5, ATLAS.art[4]); wallShelf(A, 'z', b.z0, printerP.x, 1.0, FLOOR + 1.36, 67); }
+    if (coolerP) clock(A, 'z', b.z0, coolerP.x + 0.05, FLOOR + 2.05);
+    const leftW = L.walls.find((w) => w.owner === 'atrium' && w.axis === 'x');
+    if (leftW) { const um = (leftW.from + leftW.to) / 2; frame(A, 'x', leftW.at, um - 0.25, FLOOR + 1.6, 1.1, 0.75, ATLAS.art[5]); clock(A, 'x', leftW.at, um + 0.95, FLOOR + 1.95); }
+  }
+  for (const q of L.props) ({ bench, printer, cooler, meeting, easel })[q.kind](A, q);
   out.statics.push({ key: 'atrium', geo: A.merge() });
 
   function wallRun(S, w, wallColour) {
@@ -220,7 +289,7 @@ export function buildRooms(L, p, accents) {
     const zA = r.z0, xA = r.x0;                     // wall 'z' at zA (back right on screen), wall 'x' at xA (back left)
     const deskU0 = r.desks.length ? Math.min(...r.desks.map((d) => d.x)) - 1.05 : r.x0 + r.pad.left, deskU1 = r.desks.length ? Math.max(...r.desks.map((d) => d.x)) + 1.05 : r.x1 - r.pad.right;
     if (r.kind === 'research') {
-      bookcase(S, 'z', zA, r.x0 + 0.35, r.x1 - 0.35, 31 + r.w * 10);
+      bookcase(S, 'z', zA, r.x0 + 0.35, r.x1 - 1.2, 31 + r.w * 10);
       // reading nook on the left wall: armchair, arc lamp, side table, a picture and a lit shelf
       const chair = { x: r.x0 + 1.25, z: r.z0 + 2.75, yaw: -Math.PI * 0.62 };
       armchair(S, chair, p.leather);
@@ -271,16 +340,18 @@ export function buildRooms(L, p, accents) {
     out.statics.push({ key: 'lounge', geo: S.merge() });
   }
 
-  // ---- server closet: dark floor, a low partition on its left, a cable tray, LEDs (cabinets are instanced: status)
+  // ---- server closet: dark floor, a low partition on its left, a cable tray over the cabinets, LEDs (cabinets are
+  // instanced: status). R2: the cabinets stand in a row along z and face +x, towards the core.
   {
-    const S = bucket({ color: true }), c = L.closet;
-    S.add(box(c.w - 0.1, 0.012, c.d - 0.05), mat4(c.cx + 0.05, FLOOR + 0.006, c.cz), p.closetFloor);
+    const S = bucket({ color: true }), c = L.closet, cx = c.x0 + WALL_T + 0.45;
+    S.add(box(c.w - 0.1, 0.012, c.d - WALL_T - 0.05), mat4(c.cx + 0.05, FLOOR + 0.006, c.cz + WALL_T / 2), p.closetFloor);
     wallRun(S, L.walls.find((w) => w.owner === 'closet'), p.closetWall);
-    S.add(box(c.w - 0.4, 0.06, 0.3), mat4(c.cx, FLOOR + 2.35, c.z0 + WALL_T + 0.35), p.metal);   // cable tray
-    em.add(box(c.w - 0.5, 0.012, 0.012), mat4(c.cx, FLOOR + 2.31, c.z0 + WALL_T + 0.5), p.closetLED);
-    wash(mat4(c.cx, FLOOR + 1.7, c.z0 + WALL_T + 0.012), c.w - 0.3, 1.3, 0.8);
+    S.add(box(0.3, 0.06, c.d - WALL_T - 0.3), mat4(cx - 0.05, FLOOR + 2.35, c.cz + WALL_T / 2), p.metal);   // cable tray
+    for (let k = 0; k < 4; k++) S.add(box(0.025, 0.4, 0.025), mat4(cx - 0.05, FLOOR + 2.55, c.z0 + WALL_T + 0.3 + k * (c.d - WALL_T - 0.6) / 3), p.metal);
+    em.add(box(0.012, 0.012, c.d - WALL_T - 0.4), mat4(cx + 0.12, FLOOR + 2.31, c.cz + WALL_T / 2), p.closetLED);
+    for (const cab of c.cabinets) pool(cab.x + 0.75, FLOOR + 0.02, cab.z, 0.55, 0.45, p.closetLED);
     // a block of tiny LEDs on each cabinet front (they do not blink: the scene renders on demand)
-    for (const cab of c.cabinets) for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) em.add(box(0.035, 0.02, 0.01), mat4(cab.x - 0.2 + j * 0.07, FLOOR + 0.55 + i * 0.12, cab.z + 0.405), r0() < 0.7 ? p.rackLedA : p.rackLedB);
+    for (const cab of c.cabinets) for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) em.add(box(0.01, 0.02, 0.035), mat4(cab.x + 0.405, FLOOR + 0.55 + i * 0.12, cab.z + 0.2 - j * 0.07), r0() < 0.7 ? p.rackLedA : p.rackLedB);
     out.statics.push({ key: 'closet', geo: S.merge() });
   }
 

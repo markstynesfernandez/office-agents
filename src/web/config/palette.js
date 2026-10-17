@@ -1,50 +1,53 @@
-// palette.js — the one place colours live (spec: "One config file holds the palette"). Redesign R1:
-// light mode: warm white walls with a soft department tint, a light wood floor, pale stone in the atrium, daylight from
-//   one side; LED strips read as pale aluminium profiles and give no glow.
+// palette.js — the one place colours live (spec: "One config file holds the palette"). Redesign R1, R2:
+// light mode (R2: more contrast): crisp warm-white walls with a clearly visible department tint, a warmer honey wood
+//   floor, pale polished concrete in the atrium, dark rugs under the desk clusters, a stronger sun with softer, darker
+//   shadows; LED strips read as pale aluminium profiles and give no glow.
 // dark mode: charcoal walls, a warm wood floor, dark rugs, warm LED strips (emissive lines plus soft additive washes),
 //   glowing monitors and desk lamps. One warm accent (ledGlowColour / --accent) runs through the scene and the UI.
 export const PALETTE = {
   light: {
-    background: ['#f6f3ee', '#e2dcd2'],   // vertical gradient, top -> bottom
-    shadowOpacity: 0.16, blobOpacity: 0.32,
+    background: ['#f1ede7', '#d9d2c7'],   // vertical gradient, top -> bottom
+    shadowOpacity: 0.2, blobOpacity: 0.36,
     slabEdge: '#d8d0c3', slabFoot: '#c4baab',
-    tile: '#ede9e2', wood: '#f2d6ae',      // multiplied by the plank / tile textures
-    wall: '#f7f2ea', wallTint: 0.15, wallCap: '#d3cabd', baseboard: '#e8e1d5',
-    rug: '#c4bbae', rugBorder: '#aca291', loungeRug: '#ddd4c6', loungeRugBorder: '#c6baa8',
+    tile: '#dcd6cd', wood: '#eab47a',      // multiplied by the plank / concrete textures
+    wall: '#fcf9f3', wallTint: 0.42, wallCap: '#cdc2b2', baseboard: '#e4dacb',
+    rug: '#6b6762', rugBorder: '#55524e', loungeRug: '#8b7f73', loungeRugBorder: '#706559',
     shelf: '#f1ebe1', shelfBack: '#e7e0d5', shelfObject: '#cbbfae', label: '#f6f3ec',
-    potSmall: '#d9cdbb', leafSmall: '#82ad7b',
-    frame: '#3a3633', mat: '#f8f5ef',
+    potSmall: '#d9cdbb', leafSmall: '#7aa872', leafTrail: '#5f9a5c',
+    frame: '#3a3633', mat: '#f8f5ef', clockRim: '#2f3034', clockFace: '#fbf9f5',
+    printer: '#e9e7e3', printerTop: '#d6d4cf', printerLid: '#55575d', paper: '#fdfcf9', cooler: '#f1efea', water: '#8fc0e2', mug: '#c2673f',
     metal: '#2f3034', leather: '#b77a50', sofa: '#d8cec0', sofaBase: '#bfb4a5', lampShade: '#2f3034', bulb: '#fff3dc', lampGlow: '#ffd9a0',
     led: '#efeae2', ledGlow: 0, ledGlowColour: '#ffb15f',
     seam: '#a0988c', locker: '#cdcac4', credenza: '#ebe5db', woodSolid: '#c99c6b', whiteboardFrame: '#babdc2',
     closetFloor: '#bdbab5', closetWall: '#dedad3', closetLED: '#e9f2ff', rackLedA: '#79d98f', rackLedB: '#f0c35a',
-    plinth: '#ece6dd', plinthEdge: '#d3cabd', inlay: '#cdbfa9', plaza: '#e3dcd1',
-    deskTop: '#ddba90', deskMetal: '#2e2f33', chair: '#45464c', monitorFrame: '#2b2c30', keyboard: '#e6e3de', trousers: '#4a4d55',
+    plinth: '#ece6dd', plinthEdge: '#cfc5b7', inlay: '#bfae94', plaza: '#cdc6bb',
+    deskTop: '#d9ae7c', deskMetal: '#2e2f33', chair: '#45464c', monitorFrame: '#2b2c30', keyboard: '#e6e3de', trousers: '#4a4d55',
     plantPot: '#dacfbf', plantPotTall: '#cfc6b9', plantLeaf: '#7dab76', plantLeafTall: '#6e9f6a',
     worker: '#ecdccb',
     terminal: '#d3d6db', terminalScreen: 0.55,
     hubCore: '#5f9fe6', hubGlow: 0.6,
     screenPool: 0, lampPool: 0,
     text: '#2b2a28',
-    hemiSky: '#fff7ec', hemiGround: '#d6cfc3', hemiIntensity: 1.2,
-    sunIntensity: 2.0, sunColour: '#fff1dc',
-    exposure: 1.0, aoBlend: 0.85
+    hemiSky: '#fff6ea', hemiGround: '#bfb4a4', hemiIntensity: 0.6,
+    sunIntensity: 3.5, sunColour: '#ffefd8',
+    exposure: 1.0, aoBlend: 1.0
   },
   dark: {
     background: ['#2a2a2d', '#111113'],   // charcoal
     shadowOpacity: 0.3, blobOpacity: 0.45,
     slabEdge: '#1d1d20', slabFoot: '#151517',
-    tile: '#7a756e', wood: '#eab47c',
+    tile: '#5a5753', wood: '#eab47c',      // tile: polished dark concrete (R2)
     wall: '#3c3d42', wallTint: 0.08, wallCap: '#111113', baseboard: '#232427',
     rug: '#4a4a4e', rugBorder: '#36363a', loungeRug: '#403d3a', loungeRugBorder: '#2f2d2b',
     shelf: '#26262a', shelfBack: '#303034', shelfObject: '#3b3a37', label: '#d9d4ca',
-    potSmall: '#4b4844', leafSmall: '#5f9a63',
-    frame: '#141414', mat: '#e8e2d8',
+    potSmall: '#4b4844', leafSmall: '#5f9a63', leafTrail: '#4f8a56',
+    frame: '#141414', mat: '#e8e2d8', clockRim: '#1b1b1e', clockFace: '#e3ddd2',
+    printer: '#3c3d42', printerTop: '#47484d', printerLid: '#232428', paper: '#d9d4ca', cooler: '#c9c6c0', water: '#5d8db2', mug: '#b5533c',
     metal: '#18191c', leather: '#93603e', sofa: '#5b5a61', sofaBase: '#38383d', lampShade: '#1b1b1e', bulb: '#ffd89c', lampGlow: '#ffae5e',
     led: '#ffd394', ledGlow: 1.0, ledGlowColour: '#ffab58',
     seam: '#19191b', locker: '#55565c', credenza: '#38383d', woodSolid: '#a06f47', whiteboardFrame: '#575a60',
     closetFloor: '#222225', closetWall: '#2a2b2f', closetLED: '#a4d2ff', rackLedA: '#5fe08a', rackLedB: '#ffcc66',
-    plinth: '#4a4846', plinthEdge: '#2c2c2f', inlay: '#806a4c', plaza: '#605b55',
+    plinth: '#4a4846', plinthEdge: '#2c2c2f', inlay: '#806a4c', plaza: '#43413e',
     deskTop: '#c99769', deskMetal: '#141518', chair: '#3a3b40', monitorFrame: '#111215', keyboard: '#2d2e32', trousers: '#2e3036',
     plantPot: '#4a4743', plantPotTall: '#3f3d3a', plantLeaf: '#5e9b63', plantLeafTall: '#4f8a56',
     worker: '#dccab6',
