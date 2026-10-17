@@ -50,7 +50,7 @@ export async function dryRunScout({ quiet = false } = {}) {
       dataRoot: J.dataRoot, job: { id: job.id, state: job.state, reason: job.reason }, day,
       briefs, blocked: rejected, intakeOfBadBrief: intake && { ok: intake.ok, reasons: intake.reasons },
       blocklist: { file: 'research/scouting/blocklist.json', names: bl.terms.length, games: bl.terms.filter((t) => t.kind === 'game').length },
-      notes: 'research/scouting/' + day + '/notes.json (internal; TREND-SCOUT only)',
+      notes: 'research/scouting/' + day + '/' + job.id + '/notes.json (internal; TREND-SCOUT only; one file per job)',
       web: { calls: webRows.length, thirteenth: refused ? (refused.is_error ? 'refused: ' + refused.content : 'NOT refused') : 'not attempted' },
       ledger: { rows: engine.ledger.totals.rows, usd: engine.ledger.totals.usd, allMock: engine.ledger.rows().every((r) => r.provider === 'mock') }, textCalls: engine.providers.text.calls
     };

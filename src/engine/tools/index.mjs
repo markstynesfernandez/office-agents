@@ -20,7 +20,7 @@ import { realResolve } from '../store/jail.mjs';
 import { screenText, hitLine } from '../lib/originality.mjs';
 import { sha256 } from '../lib/common.mjs';
 import { latestSet } from '../lib/digital-prep.mjs';
-import { isScoutPath, SCOUT_DIR, SCOUT_DRAFTS_DIR } from '../lib/scouting.mjs';
+import { isScoutPath, notesRel, SCOUT_DIR, SCOUT_DRAFTS_DIR } from '../lib/scouting.mjs';
 import { blockedDomains, fetchRefusedDomains, blockedBy, canonicalUrl, urlsIn, returnedUrls } from '../lib/web-sources.mjs';
 import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT } from '../lib/scout-brief.mjs';
 
@@ -115,6 +115,9 @@ export function createToolbox(ctx) {
       const { abs, rel } = inFolder(p, { forWrite: true });
       if (!WRITE_EXT.test(rel)) throw new ToolError('only .md, .json and .txt files can be written (images come from image_generate): ' + rel);
       if (!writeRes.some((re) => re.test(rel))) throw new ToolError('your role may not write ' + rel + ' (allowed: ' + (agent.writes || []).join(', ') + ')');
+      // E6 b3: one notes file per job, so a run never overwrites another run's notes: only this job's own file
+      const ownNotes = job && job.data && job.data.day ? notesRel(job.data.day, job.id) : null;
+      if (isScoutPath(rel) && rel !== ownNotes) throw new ToolError('scouting notes go to this job\'s own file only (' + (ownNotes || 'no job') + '), not ' + rel);
       if (typeof content !== 'string') throw new ToolError('content must be text');
       if (/\.json$/i.test(rel)) { try { JSON.parse(content); } catch (e) { throw new ToolError(rel + ' is not valid JSON: ' + e.message); } }
       // owner D3: a genre-scout draft is validated against the one brief schema before it is written; an invalid draft is

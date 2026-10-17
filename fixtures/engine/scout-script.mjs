@@ -34,6 +34,8 @@ const results = (params) => { const last = params.messages[params.messages.lengt
 export const FIXTURE_PRODUCT_KEY = 'pngtuber-prop-pack';
 const productKeyOf = (params) => (/^product_key: (\S+)$/m.exec(String(params.messages[0].content)) || [])[1] || null;
 const dayOf = (params) => (/Today \(Dublin\) is (\d{4}-\d{2}-\d{2})/.exec(String(params.messages[0].content)) || [])[1];
+// E6 b3: the notes file is the job's own, named in the run input (scouting/<day>/<jobId>/notes.json)
+const notesOf = (params) => (/Your internal scouting notes for this run: (\S+?\/notes\.json)/.exec(String(params.messages[0].content)) || [])[1];
 const draftsOf = (params) => (/Drafts for this batch: (\S+?)\/\d{4}-\d{2}-\d{2}\//.exec(String(params.messages[0].content)) || [])[1] || 'drafts';
 
 // public trend coverage (FIXTURE pages). E6 b2 (owner D1): every URL the scout fetches or a brief cites is one a FIXTURE
@@ -110,7 +112,7 @@ export function createScoutScript({ bad = true, extraWebCall = true, badSlug = '
       SEARCHES.map((query, i) => tool('s' + i, 'web_search', { query })),
       FETCHES.map((url, i) => tool('f' + i, 'web_fetch', { url })),
       ...(extraWebCall ? [[tool('x', 'web_search', { query: 'one more chart' })]] : []),
-      [tool('n', 'fs_write', { path: 'scouting/' + day + '/notes.json', content: JSON.stringify({ day, entries: games.map((g, i) => ({ ...g, evidence: [{ url: FETCHES[i < 2 ? 0 : 1], signal: 'FIXTURE popularity signal' }], date: day })) }, null, 1) })],
+      [tool('n', 'fs_write', { path: notesOf(params), content: JSON.stringify({ day, entries: games.map((g, i) => ({ ...g, evidence: [{ url: FETCHES[i < 2 ? 0 : 1], signal: 'FIXTURE popularity signal' }], date: day })) }, null, 1) })],
       [...GENRES.map((g, i) => tool('b' + i, 'fs_write', { path: dd + '/' + day + '/' + day + '--genre-' + g.slug + '-desk-props.md', content: genreBrief(day, g, { productKey }) })),
         ...(bad ? [tool('bad', 'fs_write', { path: dd + '/' + day + '/' + day + '--genre-' + badSlug + '-desk-props.md', content: genreBrief(day, GENRES[2], { bad: true, badSlug, productKey }) })] : [])],
       [text(GENRES.map((g) => day + '--genre-' + g.slug + '-desk-props, ' + g.genre + ', 1,140, medium').join('\n'))]

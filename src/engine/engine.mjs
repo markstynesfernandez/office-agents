@@ -84,6 +84,8 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     const prov = providers || createProviders({ mode: process.env.STATION_PROVIDER || cfg.engine.provider, script, delayMs: mockDelayMs, log, engineCfg: cfg.engine, halt, demo });
     const engine = { J, cfg, store, ledger, bus, halt, guard, providers: prov, log, clock, upscaler, recovered: { charged: recovered, ...rec } };
     engine.orchestrator = createOrchestrator(engine, { hooks });
+    // E6 b3: a scout job that restart recovery ended (blocked) still puts its notes' names on the scouting blocklist
+    for (const j of rec.jobs.filter((x) => x.action === 'blocked')) engine.orchestrator.blocklistOnEnd(j.id);
     engine.owner = createOwnerActions(engine);   // the owner's decisions and owner-started mechanical steps (port batch 17/10/2026)
     // a routine fires a line (verified briefs, up to its daily limit) or a research batch; created disabled, enabled by the owner only
     engine.runRoutine = async (routine) => {

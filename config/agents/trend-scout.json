@@ -14,7 +14,7 @@
   ],
   "folder": "research",
   "writes": [
-    "scouting/*/notes.json",
+    "scouting/*/*/notes.json",
     "scout-drafts/*/*.md"
   ],
   "scoutingNotes": true,

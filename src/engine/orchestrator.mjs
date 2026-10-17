@@ -29,7 +29,7 @@ import { publicView } from './lib/digital-files.mjs';
 import { canonicalDesignFile } from './tools/index.mjs';
 import { COLUMNS as LEGACY_COLUMNS } from '../lib/legacy-readers/tracker.mjs';
 import { dublinDay } from './time.mjs';
-import { validateNotes, termsOf, addToBlocklist, scoutingBriefProblems, isScoutBrief, notesFile, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
+import { validateNotes, blocklistFromNotes, readDayNotes, scoutingBriefProblems, isScoutBrief, notesFile, notesRel, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
 import { checkScoutBrief, validateScoutBrief, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
 import { returnedUrls, urlsIn } from './lib/web-sources.mjs';
 
@@ -135,7 +135,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (halt.isHalted()) throw new Error('e-stop is on');
     const L = lineOf(job.line), cur = active.get(L.id);
     if (cur && (L.maxConcurrentJobs || 1) <= 1) { setJob(id, { reason: 'waiting: ' + cur.jobId + ' is on the line (one job at a time)', data: { autoStart: true } }); return null; }
-    const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { active.delete(L.id); const next = store.listJobs({ states: ['queued'] }).filter((j) => j.line === L.id && !/^interrupted/.test(j.reason || '') && !(j.data && j.data.waitingFor) && j.id !== id).pop(); if (next && !halt.isHalted() && next.data && next.data.autoStart) startJob(next.id); });
+    const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { blocklistOnEnd(id); active.delete(L.id); const next = store.listJobs({ states: ['queued'] }).filter((j) => j.line === L.id && !/^interrupted/.test(j.reason || '') && !(j.data && j.data.waitingFor) && j.id !== id).pop(); if (next && !halt.isHalted() && next.data && next.data.autoStart) startJob(next.id); });
     active.set(L.id, { jobId: id, promise });
     return promise;
   }
@@ -252,7 +252,18 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       // the product key is data (owner, 17/10/2026): one exact line, validated against products.json before the job started
       const pk = L.requiresProductKey ? '\nproduct_key: ' + job.product_key + '\n(the products.json entry for this batch; every brief\'s product_type is exactly this key)' : '';
       J.makeDir(path.join(folder, dd, job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + pk + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: ' + dd + '/' + job.data.day + '/.' + (dd !== 'drafts' ? ' This line keeps its drafts in ' + dd + '/: wherever your orders say drafts/<today>/, use ' + dd + '/' + job.data.day + '/.' : '');
-      if ((cfg.agents[def.agent] || {}).scoutingNotes) { J.makeDir(path.join(folder, SCOUT_DIR, job.data.day)); input += ' Your internal scouting notes for this run: ' + SCOUT_DIR + '/' + job.data.day + '/notes.json.'; }
+      if ((cfg.agents[def.agent] || {}).scoutingNotes) {
+        // E6 b3: this job's own notes file. An earlier attempt of this job (a restart, or a resume after an engine stop)
+        // left notes: their names go on the blocklist first, then the file is moved aside (never overwritten)
+        const nf = notesFile(folder, job.data.day, job.id);
+        if (fs.existsSync(nf)) {
+          blocklistJobNotes(store.getJob(job.id), 'before a new ' + step + ' attempt');
+          let to, n = 0; do to = path.join(path.dirname(nf), 'notes-replaced-' + stamp() + (n++ ? n : '') + '.json'); while (fs.existsSync(to));
+          J.move(nf, to);
+          log.info('scouting notes of an earlier attempt moved aside', { jobId: job.id, to: path.relative(dataRoot, to).split(path.sep).join('/') });
+        }
+        J.makeDir(path.dirname(nf)); input += ' Your internal scouting notes for this run: ' + notesRel(job.data.day, job.id) + '.';
+      }
       // owner D1: the checker verifies every citation against what this job's web calls really returned (the transcript)
       if (def.returnedSources) {
         const got = [...returnedUrls(transcriptOf(job.id))];
@@ -493,13 +504,17 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // blocklist; then each genre-scout draft of the day is screened whole, and one naming a scouted game (or using
   // derivative wording) is moved to scouting/blocked/<day>/ with the reasons (it names a game, so it stays inside the
   // scout-only folder), so EVIDENCE-CHECKER never sees it. Idempotent on a re-run.
+  // E6 b3: the notes are this job's own file (scouting/<day>/<jobId>/notes.json); the other jobs' notes of the day go
+  // through the same blocklist pass (fail closed), and the job's own names reach the blocklist at its end in any case
   function scoutNotesStep(job, def) {
-    const day = job.data.day || dublinDay(), rdir = path.join(dataRoot, 'research'), nf = notesFile(rdir, day);
-    if (!fs.existsSync(nf)) return { blocked: 'TREND-SCOUT wrote no scouting notes (' + SCOUT_DIR + '/' + day + '/notes.json)' };
+    const day = job.data.day || dublinDay(), rdir = researchDir(), nf = notesFile(rdir, day, job.id);
+    if (!fs.existsSync(nf)) return { blocked: 'TREND-SCOUT wrote no scouting notes (' + notesRel(day, job.id) + ')' };
     const v = validateNotes(readJson(nf), { day });
     if (!v.ok) return { blocked: 'scouting notes refused: ' + v.problems.join('; ') };
-    const added = addToBlocklist(J, rdir, termsOf(v.entries), { day, jobId: job.id, log });
-    log.info('scouting blocklist updated', { jobId: job.id, added: added.length, refusedNotNames: added.refused.length, games: v.entries.length });
+    const own = blocklistJobNotes(job, 'scout-notes', day);
+    let others = 0, otherAdded = 0;
+    for (const n of readDayNotes(rdir, day).filter((x) => x.file !== nf)) { others++; otherAdded += blocklistFromNotes(J, rdir, n.notes, { day, jobId: n.jobId, log }).added.length; }
+    log.info('scouting blocklist updated', { jobId: job.id, added: own.added, refusedNotNames: own.refused.length, games: v.entries.length, otherNotesToday: others, addedFromOtherNotes: otherAdded });
     const drafts = path.join(rdir, draftsDirOf(lineOf(job.line)), day), out = [];
     // E6 b2: EVERY draft in this line's drafts folder is a genre draft (b1's drafts were skipped because their origin line
     // was malformed): each is screened whole for scouted names and derivative wording, then checked against the one
@@ -527,9 +542,37 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       log.warn('genre brief blocked by the scouting screen', { jobId: job.id, file: f, reasons: sp });
     }
     // refused blocklist terms are reported by kind and reason only (a refused term is a placeholder, but never assume)
-    const refused = added.refused.map((r) => ({ kind: r.kind, reason: r.reason }));
-    store.updateJob(job.id, { data: { scouting: { games: v.entries.length, added: added.length, refusedNotNames: refused, drafts: out } } });
-    return { next: def.next, note: 'scouting notes valid (' + v.entries.length + ' games, ' + added.length + ' new blocklist names' + (refused.length ? ', ' + refused.length + ' not-a-name term(s) refused' : '') + '); ' + (out.join(' | ') || 'no genre drafts') };
+    const refused = own.refused;
+    store.updateJob(job.id, { data: { scouting: { games: v.entries.length, added: own.added, refusedNotNames: refused, ...(others ? { otherNotesToday: others, addedFromOtherNotes: otherAdded } : {}), drafts: out } } });
+    return { next: def.next, note: 'scouting notes valid (' + v.entries.length + ' games, ' + own.added + ' new blocklist names' + (refused.length ? ', ' + refused.length + ' not-a-name term(s) refused' : '') + (others ? '; ' + others + ' other notes file(s) today, ' + otherAdded + ' name(s) added from them' : '') + '); ' + (out.join(' | ') || 'no genre drafts') };
+  }
+
+  // ---- E6 b3 (owner, 17/10/2026): a scout job's names reach the blocklist whatever the job's outcome (done, research-done,
+  // incomplete, report_blocked, failed, cap, e-stop, the owner's Stop, a crash, restart recovery), not only after a normal
+  // TREND-SCOUT finish. Once per job: the job record keeps the sha256 of the notes it passed (data.scoutBlocklist; kinds
+  // and counts only, never a name), so the same notes are not passed again (scout-notes, then the job's end); the pass
+  // itself is idempotent in any case.
+  const ENDED = [...TERMINAL, 'incomplete', 'archived'];
+  const isScoutJob = (job) => job.kind === 'research' && Object.values((cfg.lines[job.line] || {}).steps || {}).some((s) => s.kind === 'agent' && (cfg.agents[s.agent] || {}).scoutingNotes);
+  function blocklistJobNotes(job, when, day = job.data.day) {
+    const nf = day ? notesFile(researchDir(), day, job.id) : null;
+    if (!nf || !fs.existsSync(nf)) return null;
+    const bytes = fs.readFileSync(nf), sha = sha256(bytes), prev = job.data.scoutBlocklist;
+    if (prev && prev.notesSha256 === sha) return prev;
+    let notes = null; try { notes = JSON.parse(bytes.toString('utf8')); } catch (_) { /* unreadable: blocklistFromNotes says so */ }
+    const r = blocklistFromNotes(J, researchDir(), notes, { day, jobId: job.id, log });
+    const rec = { notesSha256: sha, when, at: Date.now(), games: r.games, added: r.added.length, refused: r.refused.map((x) => ({ kind: x.kind, reason: x.reason })), notesProblems: r.problems.length, unreadable: r.unreadable };
+    store.updateJob(job.id, { data: { scoutBlocklist: rec } });
+    log.info('scouting blocklist pass', { jobId: job.id, when, games: r.games, added: r.added.length, refused: r.refused.length, notesProblems: r.problems.length });
+    return rec;
+  }
+  // called when a job has ended (startJob, the owner's Stop of a queued job, restart recovery); never throws
+  function blocklistOnEnd(id) {
+    try {
+      const job = store.getJob(id);
+      if (!job || !ENDED.includes(job.state) || !isScoutJob(job)) return null;
+      return blocklistJobNotes(job, 'job end (' + job.state + ')');
+    } catch (e) { log.error('scouting blocklist pass at the job end failed', { jobId: id, error: String(e && e.stack || e) }); return null; }
   }
 
   // ---- scouting retention (owner, 17/10/2026): the first step of every scout run deletes the scouting notes
@@ -608,6 +651,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const out = store.updateJob(id, { state: 'stopped', reason: 'stopped by the owner at ' + (j.step || 'the start'), ended_at: Date.now(), data: { waitingFor: null, autoStart: false } }, { expectedVersion });
     bus.emit('job.stopped', { jobId: id, data: { state: out.state, step: out.step, reason: out.reason, by } });
     log.warn('job stopped', { jobId: id, by });
+    blocklistOnEnd(id);
     return { jobId: id, stopped: true };
   }
 
@@ -804,5 +848,5 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  return { createJob, startJob, runJob, createResearchJob, decide, qaOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive };
+  return { createJob, startJob, runJob, createResearchJob, decide, qaOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
 }

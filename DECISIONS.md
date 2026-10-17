@@ -1145,6 +1145,63 @@ Tests: new `tests/product-key.test.mjs` 5/5 (an unknown key: incomplete, USD 0, 
 missing: the config default only, and with no default incomplete the same way; the routine seed's key; no prompt or skill
 describes a product as its key; the mock takes the key from the run input, a draft with another key refused on write).
 
+## E6 step b3: blocklist on every outcome, per-job notes (owner-approved, 17/10/2026)
+
+Two gaps found in rerun 4 (job `2026-10-17--genre-scout-4`): TREND-SCOUT noted 4 games, then called report_blocked, so
+(1) its names never reached the blocklist (the scout-notes step that adds them runs only after a normal TREND-SCOUT
+finish), and (2) it overwrote the day's shared `scouting/2026-10-17/notes.json`. The owner's two fixes:
+
+1. **Blocklist on every outcome.** The names in a job's notes go on the scouting blocklist whenever the job ends, whatever
+   the outcome: done, research-done, incomplete, report_blocked, failed, cap hit, E-STOP, crash on restart recovery. It
+   runs once per job, is idempotent, and uses the existing name-like filter (placeholders refused, short names to the
+   review list). Backfill: run it over all existing scouting notes in data/, run 4's included.
+2. **Notes never overwritten.** Each job writes its own notes file, keyed by job id: `scouting/<day>/<jobId>/notes.json`.
+   Anything that reads notes reads all jobs for the day. The existing `scouting/2026-10-17/notes.json` moves into run 4's
+   job folder (it holds run 4's notes).
+
+Unchanged, as the owner said: caps, blocked domains, the IP rule, the name-like filter and the short-name review list.
+
+### As built
+- `lib/scouting.mjs`: `blocklistFromNotes` is the one pass over one notes file (validate, take every entry's names, the
+  existing `addToBlocklist` with its filter). **Fails closed:** names are taken even from notes that fail validation (a
+  wrong count, a missing link); only the name-like filter refuses a term. Unreadable notes add nothing and are logged.
+- `orchestrator.mjs`: `blocklistOnEnd(jobId)` runs when a job has ended: in `startJob`'s `finally` (every end of
+  `runSteps`: research-done, incomplete, blocked, stopped by the e-stop or the owner, and a crash), after the owner's Stop
+  of a queued job, and at engine start for a job that restart recovery blocked (`engine.mjs`). Only research jobs on a
+  line with a `scoutingNotes` agent; it never throws (an error is logged). **Once per job:** the job record keeps the
+  sha256 of the notes it passed (`data.scoutBlocklist`: when, counts, refused kinds and reasons, never a name), so
+  scout-notes and the job end do not pass the same notes twice. The scout-notes step still adds the names before the
+  screen (it must, to block a draft naming a scouted game).
+- **Restart or resume of the TREND-SCOUT step:** if this job's notes file already exists (an earlier attempt), its names
+  are passed first and the file is moved aside to `notes-replaced-<stamp>.json` in the same job folder (never
+  overwritten, never deleted; retention removes it with the day). Not asked for by name; it closes the same gap within one
+  job.
+- **Per-job path:** the run input names `scouting/<day>/<jobId>/notes.json`; `fs_write` refuses any other path in
+  `scouting/` (another job's file or the old day file), and the role's `writes` is `scouting/*/*/notes.json`.
+  `prompts/agents/trend-scout.md` step 3 now says "the notes file your run input names
+  (`scouting/<today>/<job id>/notes.json`, this run's own file)". The IP-rule lines are unchanged.
+- **Readers:** `readDayNotes(researchDir, day)` returns every job's notes for a day (and any pre-b3 day file, and any
+  moved-aside attempt). scout-notes validates its own job's notes and passes every other notes file of the day through
+  the same step. Retention is unchanged (it deletes the whole day folder after 90 days, job folders included).
+- **The backfill** (`node scripts/blocklist-hygiene.mjs --backfill [--apply]`, `backfillScouting`): a pre-b3 day file moves
+  into the job whose transcript holds the last `fs_write` to that path with byte-for-byte the same content; no such job,
+  or that job already has its own notes, and it stays where it is, reported (never guessed). Then every notes file in
+  data/ goes through the pass. Report-only unless `--apply`; idempotent; it takes the engine lock like any engine process.
+
+### Backfill run (17/10/2026, mock only, no model call)
+- **Moved:** `scouting/2026-10-17/notes.json` -> `scouting/2026-10-17/2026-10-17--genre-scout-4/notes.json`, identified
+  from run 4's transcript (its notes write is byte for byte the file; sha256 `74c552cd…ba35dc52` before and after).
+- **Added:** 4 names from run 4's notes, 2 games and 2 studios (the notes had no `alsoBlock` names); its other 2 games
+  and 2 studios were already listed from earlier runs. Refused: none. Blocklist 10 -> 14 entries. Short-name review
+  list: none. A second `--apply` moved nothing and added nothing. The names are on the internal blocklist only and were
+  reported to the owner; none is written here.
+- **The earlier runs' notes were lost to the overwrite** (b, job `-1`; b1, job `-2`; rerun 3 wrote none). Checked
+  against the blocklist, not assumed: job `-1`'s 4 games and 4 studios are listed with its job id (b ran before the job
+  transcripts, so its notes cannot be compared); job `-2`'s notes survive in its transcript (`data/jobs/2026-10-17--genre-scout-2/transcript.jsonl`,
+  the full `fs_write` input): all 12 of its entries are on the blocklist except 4 copies of the b1 placeholder
+  "UNKNOWN — needs owner check", which D4 removed on purpose. Every real name from the earlier runs is listed.
+- Customer-facing check for 17/10/2026 (`--check-day`): 4 files, clean.
+
 ## R4a build record: warm office prototype and quality tiers (17/10/2026)
 
 The owner's R4a brief: a visual pass on one room (the main office room) plus quality tiers, then stop for review; R4b

@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (R4a: the warm Office prototype and quality tiers, for the owner's review; R4b next. Before that, E6 step b2: the product key as data, then live rerun 4 (incomplete: TREND-SCOUT reported blocked, search-result prices below the brief floor); before that scout fixes D1–D4, the owner's part-2 decisions and rerun 3 (blocked on the product key); E6 steps b0 and b: live web search with the owner's source rule, and the first live scout run (no briefs); E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (E6 step b3: a scout job's noted names go on the blocklist whatever its outcome, one notes file per job, and the backfill (run 4's 4 names added); c0 next. Before that, R4a: the warm Office prototype and quality tiers, for the owner's review; R4b next. Before that, E6 step b2: the product key as data, then live rerun 4 (incomplete: TREND-SCOUT reported blocked, search-result prices below the brief floor); before that scout fixes D1–D4, the owner's part-2 decisions and rerun 3 (blocked on the product key); E6 steps b0 and b: live web search with the owner's source rule, and the first live scout run (no briefs); E6 steps a0 and a: the live Anthropic text provider and one Haiku smoke call; E6 readiness: the owner's decisions recorded, prices and caps in the guard; scouting decisions built and approved by the owner; genre-trend scouting line approved by the owner; R3b and the importer label fix approved by the owner; port batch before E6 approved by the owner; R3a approved by the owner; R3 spike decided by the owner; pre-E6 housekeeping; E4, R1, R2 and E5 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -24,11 +24,40 @@ Last updated: 17/10/2026 (R4a: the warm Office prototype and quality tiers, for 
 | **Genre-trend scouting** Research line | Done (17/10/2026), **approved by the owner** (17/10/2026); the owner's 7 scouting decisions built the same day (DECISIONS.md "Scouting decisions") and **approved by the owner** (17/10/2026). TREND-SCOUT (12 web calls, engine-enforced) writes internal notes and 4 genre-only desk-props briefs; every scouted name goes on an engine-written blocklist that the brief, intake, image-prompt, design and listing screens all apply; the notes are visible to TREND-SCOUT only. "Weekly genre scout" seeded disabled. Desk in Research; Research, Design and atrium re-baked. Mock only, $0. See below. |
 | E6 readiness | Done (17/10/2026). The owner's decisions on Q1 (verbal), Q2 caps, prices, image models, keys and scout sources recorded; the guard prices Haiku's long-prompt tier and cache reads and writes; the scout run cap. Mock only, $0. See below. |
 | **R4a** Warm office prototype + quality tiers | Done (17/10/2026), **for the owner's review**. The Office room in the warm look (owner's style direction from 02.png and 01-main.png): cream plaster walls with bevelled caps, a window wall with daylight across the floor, beige large-format tile in a light wood band, the plinth deck, one charcoal rug for the department, light wood desks, bookcase and shelves, desk, wall and pendant lamps, plants. Quality tiers: default (no post-processing; 163.6+ fps on the Intel iGPU, vsync-capped; 8.14 MB) and high (6144 px lightmaps loaded lazily, MSAA, AO, selective bloom; +3.41 MB), auto-selected from the GPU, a Quality control in the top bar. AgX tone mapping. A phone layout. Screenshots in `docs/screens/r4a/`. See below. **R4b** (the other rooms) next, on the owner's go-ahead. |
-| E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **b1** (output contract + job transcripts, `795adcb`) done; the **b1 rerun** (17/10/2026, USD 0.053095) completed research-done but **0 verified** briefs: the scout's Etsy demand fetch is refused (`url_not_allowed`), so no brief can carry demand evidence; see "E6 step b1". **b2** (D1–D4 `0ab5b1d`; owner's part 2 `308c91a`) done; rerun 3 (USD 0.002051) ended **incomplete** on the product key; the key is now data (`0542676`); **rerun 4** (17/10/2026, USD 0.16586) ended **incomplete**: TREND-SCOUT reported blocked because the search-result prices (USD 1.80–5.00) are below the brief floor (USD 7.19); see "E6 step b2". Step **c** needs a verified genre brief. Images not built yet. The plan is under "Exact next step". |
+| E6 First real job | In progress. **a0**, **a** (smoke call, USD 0.000005), **b0** (live web search, `80b034c`; source rule `1b912a7`) done 17/10/2026. **b** ran once on 17/10/2026: within every cap (USD 0.033242), but **no genre brief** (TREND-SCOUT stopped after its notes); not rerun. **b1** (output contract + job transcripts, `795adcb`) done; the **b1 rerun** (17/10/2026, USD 0.053095) completed research-done but **0 verified** briefs: the scout's Etsy demand fetch is refused (`url_not_allowed`), so no brief can carry demand evidence; see "E6 step b1". **b2** (D1–D4 `0ab5b1d`; owner's part 2 `308c91a`) done; rerun 3 (USD 0.002051) ended **incomplete** on the product key; the key is now data (`0542676`); **rerun 4** (17/10/2026, USD 0.16586) ended **incomplete**: TREND-SCOUT reported blocked because the search-result prices (USD 1.80–5.00) are below the brief floor (USD 7.19); see "E6 step b2". **b3** (mock only, $0): blocklist on every outcome, per-job notes, the backfill (run 4's notes moved into its job folder, 4 names added); see "E6 step b3". **c0** next, on the owner's go-ahead. Step **c** needs a verified genre brief. Images not built yet. The plan is under "Exact next step". |
 | E7 Routines and cut-over | Not started |
 
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
+
+### E6 step b3: blocklist on every outcome, per-job notes (17/10/2026)
+
+The owner's two fixes from rerun 4 (DECISIONS.md "E6 step b3", owner-approved 17/10/2026). Mock only: no live call, no
+spend; `.env` not read; caps, blocked domains, the IP rule, the name-like filter and the short-name review list unchanged.
+- **Blocklist on every outcome.** A scout job's noted names go on the blocklist whenever the job ends: done,
+  research-done, incomplete, report_blocked, failed, cap hit, E-STOP, the owner's Stop, a crash, restart recovery
+  (`blocklistOnEnd` in the orchestrator; at engine start for a job recovery blocked). Once per job (the job record keeps
+  the notes' sha256, never a name), idempotent, through the existing name-like filter; names are taken even from notes
+  that fail validation (fails closed). A restarted or resumed TREND-SCOUT step passes the earlier attempt's notes first
+  and moves them aside (`notes-replaced-<stamp>.json`), never overwriting them.
+- **Per-job notes.** `scouting/<day>/<jobId>/notes.json`; `fs_write` refuses any other notes path (another job's, the old
+  day file); readers read every job's notes for the day (`readDayNotes`); scout-notes passes the day's other notes too.
+  TREND-SCOUT's prompt step 3 names the run's own file; the role's `writes` is `scouting/*/*/notes.json`.
+- **Backfill** (`node scripts/blocklist-hygiene.mjs --backfill --apply`; report-only without `--apply`): the shared
+  `scouting/2026-10-17/notes.json` moved into `scouting/2026-10-17/2026-10-17--genre-scout-4/` (run 4 identified from its
+  transcript, byte for byte); **4 names added** from run 4's notes (2 games, 2 studios; its other 2 games and 2 studios
+  were already listed), **0 refused**; blocklist 10 -> 14; a second apply changed nothing. Names reported to the owner
+  only (internal), never written in this repository.
+- **The earlier runs' notes (b, b1) were lost to the overwrite.** From the blocklist: job `-1`'s 4 games and 4 studios
+  are listed (no transcript to compare its notes with); job `-2`'s notes survive in its transcript and every real name in
+  them is listed (the only absent entries are the b1 placeholder D4 removed). Customer-facing check for the day: clean.
+- **Tests:** 356/356 (new `scout-b3` 15/15: one test per outcome (done, research-done, incomplete, report_blocked,
+  failed, cap hit, E-STOP, the owner's Stop, crash on restart recovery) plus a resume, idempotency, the filter, two jobs on
+  one day, two backfill cases; changed: `genre-scout` retention test for the per-job path). Port drift: none.
+- **Parity:** `npm run parity -- --rebuild` 26/26, output identical to before. `npm run dry-run:scout`: same result (4
+  verified, 1 blocked, 13 blocklist names, 12 web calls, 23 ledger rows, USD 0.00; REPORT.md differs only in its run
+  time). The log differs in TREND-SCOUT's prompt hash (step 3 wording, +68 characters), one new log line (the
+  blocklist pass) and the notes path in the run record.
 
 ### R4a: warm office prototype and quality tiers (17/10/2026) — for the owner's review
 
@@ -111,7 +140,7 @@ scheduled). 330/330 tests, port drift none, scout dry run and parity unchanged (
 - For the owner: (1) the market finding: the search results price this kind of pack well below the brief floor; (2) the
   run's notes name 4 games, but scout-notes runs only after TREND-SCOUT, so they are NOT on the scouting blocklist; (3)
   the run rewrote `scouting/2026-10-17/notes.json` (the b/b1 runs' notes for the day; their names were already added to
-  the blocklist).
+  the blocklist). (2) and (3) fixed in b3 (below "E6 step b3"); (1) is still the owner's.
 
 ### E6 step b1: output contract, job transcripts, one live rerun (17/10/2026)
 
@@ -745,7 +774,7 @@ The repository was initialised on 16/10/2026 on branch `main`. Each milestone ge
 
 ## Test status
 
-`npm test`: **341 passed, 0 failed**, after R4a (17/10/2026; new: `r4a-warm` 6/6; changed: `baked-room`, `write-guard`). Earlier: **281 passed, 0 failed**, after E6 readiness (17/10/2026; new: `e6-prices` 8/8: the owner's prices and caps in config, Haiku just under and just over 100,000 prompt tokens with and without cache, Sonnet's cache prices, reservations by tier, the web fees, the image reservation settled to OpenRouter's reported cost or marked estimated, the scout run cap in the guard and on the whole scout line). Before that: **273 passed, 0 failed**, after the scouting decisions (17/10/2026; `genre-scout` 15/15: 5 new (derivative wording, misspellings, common-word titles, retention, own drafts folder), 3 changed for the new wording and drafts folder). Before that: **268 passed, 0 failed**, after the genre-trend scouting line (17/10/2026; new: `genre-scout` 10/10; changed: `baked-room` (the legacy fixtures view differs in the Research row only)). Before that: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
+`npm test`: **356 passed, 0 failed**, after E6 step b3 (17/10/2026; new: `scout-b3` 15/15; changed: `genre-scout` retention). Earlier: **341 passed, 0 failed**, after R4a (17/10/2026; new: `r4a-warm` 6/6; changed: `baked-room`, `write-guard`). Earlier: **281 passed, 0 failed**, after E6 readiness (17/10/2026; new: `e6-prices` 8/8: the owner's prices and caps in config, Haiku just under and just over 100,000 prompt tokens with and without cache, Sonnet's cache prices, reservations by tier, the web fees, the image reservation settled to OpenRouter's reported cost or marked estimated, the scout run cap in the guard and on the whole scout line). Before that: **273 passed, 0 failed**, after the scouting decisions (17/10/2026; `genre-scout` 15/15: 5 new (derivative wording, misspellings, common-word titles, retention, own drafts folder), 3 changed for the new wording and drafts folder). Before that: **268 passed, 0 failed**, after the genre-trend scouting line (17/10/2026; new: `genre-scout` 10/10; changed: `baked-room` (the legacy fixtures view differs in the Research row only)). Before that: **258 passed, 0 failed**, after the importer label fix (17/10/2026; new: `import-legacy` digital room label). Before that: **257 passed, 0 failed**, after the port batch and again after R3b (17/10/2026): new `port-batch` 7/7, `ported/digital-build` 21/21, `ported/owner-approval` 4/4, `ported/prop-edit` 6/6, `ported/listing-photos` 2/2, `ported/style-ref` 5/5 (replaces `ported/listing-notice`), `ported/originality` 62/62 (re-ported), `write-guard` 20/20, `live-ui` 9/9. Before that: **206 passed, 0 failed**, after R3a (17/10/2026); `baked-room` rewritten for both rooms (8/8: both rooms match the engine and fixtures layouts, a layout change makes only that room stale, the look matches the palette and atlas, the 10 MB budget, lightmap UVs and shared textures, default on with `?scene=procedural`, jail). After the R3 spike: 204 passed; new: `baked-room` 6/6 (the bake matches the engine and fixtures layouts, size budget, lightmap UVs, flag only, jail); changed: `write-guard` (the two new scripts' jails). After E5: 198 passed; new: `live-ui` 9/9, `people-looks` 2/2; changed: `import-legacy` (the Legacy lane), `engine-server` and `demo` (idempotency key, resume version), `write-guard` (the E5 capture script's own jail). After Redesign R2: 187 passed; new: `scene-layout` 5/5 (the lounge-seat test), `model` 15/15 (role labels). After Redesign R1: 186 passed (16/10/2026, about 22:00 Irish time). After E4: 182 passed, 0 failed in 14 suites (16/10/2026, about 21:10 Irish time). New in E4: `import-legacy` 4/4, `demo` 9/9 (2 new) and `write-guard` 20/20 (1 new: the importer's writes and source refusals). The table below is from demo mode (175/175).
 
 | Suite | Passed |
 |---|---|
@@ -802,9 +831,10 @@ The post-E3 re-port changed:
    Q1 confirmation to be recorded when it arrives. Next lounge re-bake: a ninth seat.
 1. Done and approved by the owner (17/10/2026): R3a, R3b, the importer label fix, the port batch before E6, the
    genre-trend scouting line and the scouting decisions.
-2. **E6 a0, a, b0, b1 and b2 done; no verified genre brief yet** (rerun 4 stopped: search-result prices below the brief
-   floor; see "E6 step b2"). Owner decisions first: the price finding, the unlisted names in rerun 4's notes, and
-   whether to run the scout again. Then, on the owner's go-ahead: **c0** (images and the style-reference run; no spend). Step **c** needs a
+2. **E6 a0, a, b0, b1, b2 and b3 done; no verified genre brief yet** (rerun 4 stopped: search-result prices below the
+   brief floor; see "E6 step b2"; rerun 4's names are now on the blocklist and every job keeps its own notes, "E6 step
+   b3"). **Next: c0** (images and the style-reference run; no spend), on the owner's go-ahead. Owner decisions still
+   open: the price finding and whether to run the scout again. Step **c** needs a
    verified genre brief. Owner to-do: match b2's request ids in the Console. Owner to-do: match the b run's request ids in
    the Console (DECISIONS/PROGRESS "E6 steps b0 and b"). Owner to-do: match request `req_011Cg7xU6wxApdmaNh1rw2VC` in the Console.
 
@@ -873,7 +903,9 @@ and a" above). As built: max_tokens 32 and thinking disabled (owner), not 16.
 
 **b2. Scout fixes (D1–D4) and one live rerun (go-ahead "go scout 3").** **Done 17/10/2026 (`0ab5b1d`, `308c91a`); rerun 3 USD 0.002051, incomplete on the product key; product key as data `0542676`; rerun 4 USD 0.16586, incomplete: search-result prices below the brief floor (see "E6 step b2"). Owner decisions needed before c0.**
 
-**c0. Build: images and the style-reference run (no spend; go-ahead needed).**
+**b3. Scout fixes from rerun 4 (mock only, no spend).** **Done 17/10/2026** (commit "E6 b3: blocklist on every outcome, per-job notes"): a scout job's noted names go on the blocklist whatever its outcome; one notes file per job; the backfill moved run 4's notes into its job folder and added its 4 names (see "E6 step b3").
+
+**c0. Build: images and the style-reference run (no spend; go-ahead needed).** **Next.**
 - OpenRouter image client: `OPENROUTER_API_KEY` from the environment, the one allowed model, and the reported cost
   from the response (marked estimated otherwise).
 - The first-file run mode and the reference image in `image_generate` (row 13), mock-tested. These are needed because

@@ -312,6 +312,7 @@ test('retention: the first step of a scout run deletes notes more than 90 days o
   const day = dublinDay(), ago = (n) => new Date(Date.parse(day + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
   const old = ago(91), edge = ago(90), rdir = research(e);
   e.J.put(path.join(rdir, 'scouting', old, 'notes.json'), '{"day":"' + old + '","entries":[]}\n');
+  e.J.put(path.join(rdir, 'scouting', old, old + '--genre-scout-1', 'notes.json'), '{"day":"' + old + '","entries":[]}\n');   // E6 b3: one notes file per job
   e.J.put(path.join(rdir, 'scouting', 'blocked', old, old + '--genre-x-desk-props.md'), 'FIXTURE blocked draft\n');
   e.J.put(path.join(rdir, 'scouting', edge, 'notes.json'), '{"day":"' + edge + '","entries":[]}\n');
   e.J.put(path.join(rdir, 'scouting', 'blocklist.json'), JSON.stringify({ terms: [{ term: 'Oldhallow Quarry', kind: 'game', day: old, jobId: 'x' }] }) + '\n');
@@ -321,7 +322,7 @@ test('retention: the first step of a scout run deletes notes more than 90 days o
   assert.ok(!fs.existsSync(path.join(rdir, 'scouting', old)), 'notes 91 days old deleted');
   assert.ok(!fs.existsSync(path.join(rdir, 'scouting', 'blocked', old)), 'blocked drafts 91 days old deleted');
   assert.ok(fs.existsSync(path.join(rdir, 'scouting', edge, 'notes.json')), 'day 90 kept');
-  assert.ok(fs.existsSync(path.join(rdir, 'scouting', day, 'notes.json')), 'today kept');
+  assert.ok(fs.existsSync(path.join(rdir, 'scouting', day, j.id, 'notes.json')), 'today kept (this job\'s own notes file)');
   assert.ok(fs.existsSync(path.join(rdir, 'scouting', 'README.txt')));
   assert.ok(readBlocklist(rdir).terms.some((x) => x.term === 'Oldhallow Quarry'), 'blocklist entries stay');
   assert.equal(screenText('Oldhallow Quarry props', e.cfg.station).result, 'hit', 'and still block');

@@ -11,7 +11,7 @@ Your working folder is the Research Lab project folder. Relative paths below are
 Each run:
 1. Your run input has a line `product_key: <key>`; the station has already checked that key against `products.json`. Read `products.json` and use the entry with exactly that key: what the product is (its kind and the files it delivers) comes from that entry. Every brief's `product_type` is exactly that key.
 2. Pick 4 games from that trend coverage only: 2 currently popular AAA titles and 2 indie titles with active streaming communities. Note for each: the game, its studio, kind (`aaa` or `indie`), the genre or aesthetic in plain words, and the evidence (URL + what it shows).
-3. Write the INTERNAL scouting notes to `scouting/<today>/notes.json`, exactly:
+3. Write the INTERNAL scouting notes to the notes file your run input names (`scouting/<today>/<job id>/notes.json`, this run's own file), exactly:
    `{ "day": "<today>", "entries": [ { "game": "...", "studio": "...", "kind": "aaa", "genre": "...", "alsoBlock": ["character, place, item or slogan names you saw"], "tags": [], "evidence": [ { "url": "https://...", "signal": "what it shows" } ], "date": "<today>" }, ... ] }`
    If a title is an ordinary dictionary word (alone, or after "The" or before a subtitle), put `"tags": ["common-word"]` on that entry. Write `game` as the full title as published.
    The notes are the ONLY place a game title, studio, character, logo, UI element, signature item, named location, distinctive art style or quote may appear. The station adds every name in them to the scouting blocklist. Never record a streamer's or any other person's name, handle or channel: aggregate figures only.

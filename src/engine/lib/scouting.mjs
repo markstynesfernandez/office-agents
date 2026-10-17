@@ -1,10 +1,13 @@
 // scouting.mjs — the genre-trend scouting line's IP fence (DECISIONS.md "Genre-trend scouting"). Station code, no model.
 // TREND-SCOUT reads public popularity signals (top streamed categories, store charts) and writes two things into the
-// research folder: internal scouting notes at scouting/<day>/notes.json (games, studios, evidence links: the ONLY place a
-// game title may appear) and up to 4 genre briefs in its own drafts folder, scout-drafts/<day>/ (genre and aesthetic only,
-// `origin: genre-scout`), so the research line and this line can run on the same day without sharing drafts.
+// research folder: internal scouting notes at scouting/<day>/<jobId>/notes.json (games, studios, evidence links: the ONLY
+// place a game title may appear; one file per job, so a second run on the same day never overwrites the first's notes) and
+// up to 4 genre briefs in its own drafts folder, scout-drafts/<day>/ (genre and aesthetic only, `origin: genre-scout`), so
+// the research line and this line can run on the same day without sharing drafts.
 //   - every title the scout records (plus its studio and any `alsoBlock` names: characters, locations, items) goes into
-//     the scouting blocklist, scouting/blocklist.json, written by the engine only (never by an agent); entries stay for good
+//     the scouting blocklist, scouting/blocklist.json, written by the engine only (never by an agent); entries stay for good.
+//     E6 b3 (owner, 17/10/2026): this happens whenever a job ends, whatever the outcome (done, incomplete, report_blocked,
+//     failed, cap, e-stop, restart recovery), not only when TREND-SCOUT finishes normally (blocklistFromNotes)
 //   - the engine puts that list into the originality lists (category "scouted-games", exact plus the station's one-letter
 //     misspelling match) together with extra derivative wording (whole phrases: "fan art", "fandom", "tribute", ...); so the
 //     brief check, intake, the image-prompt screen, the design-set screen and the listing/package gates all refuse a
@@ -12,7 +15,7 @@
 //   - a title the notes tag "common-word" (an ordinary dictionary word) is the exception: the bare word only WARNS (the
 //     brief check and the listing report it; QA-LISTING judges the context), while the full title and "<word> game" still
 //     hard-fail like any scouted name
-//   - the notes (scouting/<day>/ and scouting/blocked/<day>/) are deleted 90 days after their day, by an engine step at the
+//   - the notes (scouting/<day>/ with every job's folder, and scouting/blocked/<day>/) are deleted 90 days after their day, by an engine step at the
 //     start of every scout run; the blocklist is never deleted
 //   - a brief is screened WHOLE against the scouted names (not only its Design direction); a genre-scout brief is also
 //     screened whole for derivative wording
@@ -42,7 +45,27 @@ const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 const norm = (s) => clean(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 // the bare word of a "common-word" title: the title without a subtitle (after ":" or a dash) or a leading article
 export const bareWordOf = (title) => clean(clean(title).split(/\s*[:\u2013\u2014]\s*|\s+-\s+/)[0].replace(/^(the|a|an)\s+/i, ''));
-export const notesFile = (researchDir, day) => path.join(researchDir, SCOUT_DIR, day, 'notes.json');
+// E6 b3 (owner, 17/10/2026): one notes file per job, scouting/<day>/<jobId>/notes.json; before b3 a day had one shared
+// scouting/<day>/notes.json (legacyNotesFile), which a second run overwrote
+export const notesRel = (day, jobId) => SCOUT_DIR + '/' + day + '/' + jobId + '/notes.json';
+export const notesFile = (researchDir, day, jobId) => path.join(researchDir, SCOUT_DIR, day, jobId, 'notes.json');
+export const legacyNotesFile = (researchDir, day) => path.join(researchDir, SCOUT_DIR, day, 'notes.json');
+// an earlier attempt's notes of the same job (a restart or a resume after an engine stop), moved aside, never overwritten
+export const REPLACED_NOTES_RE = /^notes-replaced-[0-9TZ]+\.json$/;
+// every scouting day folder (not blocked/)
+export const notesDays = (researchDir) => { const d = path.join(researchDir, SCOUT_DIR); return fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && DAY_RE.test(e.name)).map((e) => e.name).sort() : []; };
+// every notes file of a day, all jobs: -> [{ jobId (null for the pre-b3 shared file), rel, file, notes (parsed, or null), error }]
+// sorted by job id, the pre-b3 file first. Anything that reads notes reads them all, never one job's alone.
+export function readDayNotes(researchDir, day) {
+  const dir = path.join(researchDir, SCOUT_DIR, day), out = [];
+  if (!DAY_RE.test(String(day)) || !fs.existsSync(dir)) return out;
+  const one = (jobId, file) => { const rel = path.relative(researchDir, file).split(path.sep).join('/'); try { return { jobId, rel, file, notes: JSON.parse(fs.readFileSync(file, 'utf8')), error: null }; } catch (e) { return { jobId, rel, file, notes: null, error: e.message }; } };
+  if (fs.existsSync(legacyNotesFile(researchDir, day))) out.push(one(null, legacyNotesFile(researchDir, day)));
+  for (const e of fs.readdirSync(dir, { withFileTypes: true }).filter((x) => x.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const f of fs.readdirSync(path.join(dir, e.name)).filter((x) => x === 'notes.json' || REPLACED_NOTES_RE.test(x)).sort()) out.push(one(e.name, path.join(dir, e.name, f)));
+  }
+  return out;
+}
 export const blocklistFile = (researchDir) => path.join(researchDir, SCOUT_DIR, 'blocklist.json');
 export const isScoutPath = (rel) => String(rel || '').replace(/\\/g, '/').replace(/^\.\//, '').split('/')[0].toLowerCase() === SCOUT_DIR;
 
@@ -100,25 +123,89 @@ const writeBlocklist = (J, researchDir, terms) => J.put(blocklistFile(researchDi
 // a later run tags it common-word: fails closed); nothing is ever removed by the engine. A term that is not name-like is
 // refused: logged (log.warn) and returned in `refused`, never written.
 // -> the added entries (an array), with .refused = [{ term, kind, reason }]
-export function addToBlocklist(J, researchDir, terms, { day, jobId, log = null }) {
+// write: false (the owner's backfill, report only) works out the same result and writes nothing
+export function addToBlocklist(J, researchDir, terms, { day, jobId, log = null, write = true }) {
   const cur = readBlocklist(researchDir), have = new Set(cur.terms.map((t) => t.term.toLowerCase())), added = [], refused = [];
   for (const t of terms) {
     const term = clean(t.term), why = notNameReason(term);
     if (why) { refused.push({ term, kind: t.kind, reason: why }); if (log) log.warn('scouting blocklist: refused a term that is not a name', { jobId, kind: t.kind, term, reason: why }); continue; }
     if (have.has(term.toLowerCase())) continue; have.add(term.toLowerCase()); added.push({ term, kind: t.kind, ...(t.commonWord ? { commonWord: clean(t.commonWord) } : {}), day, jobId });
   }
-  if (added.length) writeBlocklist(J, researchDir, [...cur.terms, ...added].sort((a, b) => a.term.localeCompare(b.term)));
+  if (added.length && write) writeBlocklist(J, researchDir, [...cur.terms, ...added].sort((a, b) => a.term.localeCompare(b.term)));
   // owner decision 4 (17/10/2026): a refused SHORT name (under 3 characters, perhaps a real title) goes to the owner's
   // review list, never onto the blocklist; the owner adds it by hand if it is a real name
   const short = refused.filter((r) => r.reason === SHORT_REASON);
   if (short.length) {
     const cur2 = readShortNames(researchDir), have2 = new Set(cur2.entries.map((x) => x.kind + '|' + x.term));
     const fresh = short.filter((r) => !have2.has(r.kind + '|' + r.term)).map((r) => ({ term: r.term, kind: r.kind, day, jobId }));
-    if (fresh.length) { J.put(shortNamesFile(researchDir), JSON.stringify({ $comment: SHORT_COMMENT, entries: [...cur2.entries, ...fresh] }, null, 1) + '\n'); if (log) log.warn('scouting blocklist: short name(s) put on the owner review list, not the blocklist', { jobId, count: fresh.length }); }
+    if (fresh.length && write) { J.put(shortNamesFile(researchDir), JSON.stringify({ $comment: SHORT_COMMENT, entries: [...cur2.entries, ...fresh] }, null, 1) + '\n'); if (log) log.warn('scouting blocklist: short name(s) put on the owner review list, not the blocklist', { jobId, count: fresh.length }); }
   }
   added.refused = refused;
   return added;
 }
+// E6 b3 (owner, 17/10/2026): the one blocklist pass over one notes file, used at scout-notes, when a job ends (whatever
+// the outcome), before a restarted scout step and by the owner's backfill. Fails closed: names are taken from the notes
+// even when they fail validation (a wrong count, a missing link); only the name-like filter refuses a term (placeholders
+// refused, short names to the review list). Idempotent (addToBlocklist). Unreadable notes add nothing and say why.
+// -> { added: [...], refused: [...], problems: [validation problems], games, unreadable: reason | null }
+export function blocklistFromNotes(J, researchDir, notes, { day, jobId, log = null, write = true }) {
+  if (!notes || typeof notes !== 'object' || !Array.isArray(notes.entries)) {
+    const why = 'notes are not { "day", "entries": [...] }';
+    if (log) log.warn('scouting notes: no names could be read', { jobId, day, reason: why });
+    return { added: [], refused: [], problems: [why], games: 0, unreadable: why };
+  }
+  const v = validateNotes(notes, { day });
+  const added = addToBlocklist(J, researchDir, termsOf(v.entries), { day, jobId, log, write });
+  return { added: [...added], refused: added.refused, problems: v.problems, games: v.entries.length, unreadable: null };
+}
+
+// E6 b3 (owner, 17/10/2026): the owner's backfill (scripts/blocklist-hygiene.mjs --backfill), run by hand:
+//   1. a pre-b3 shared notes file (scouting/<day>/notes.json) moves into the folder of the job that wrote it: the job
+//      whose transcript (jobsDir/<id>/transcript.jsonl) has the LAST fs_write to that path, with content byte for byte
+//      the file. No such job, or that job already has its own notes: left where it is and reported (never guessed).
+//   2. every notes file of every day goes through the blocklist pass (blocklistFromNotes).
+// Report only unless apply (writes nothing then). Idempotent: a second apply moves nothing and adds nothing.
+// Internal only: the result names the added and refused terms; it goes to the owner, never into customer-facing text.
+// -> { migrated: [{ from, to, jobId }], unmatched: [{ file, reason }], files: [{ rel, jobId, games, notesProblems, unreadable,
+//      added: [{ term, kind }], refused: [{ term, kind, reason }] }], added: n, refused: n }
+export function backfillScouting(J, researchDir, { jobsDir, apply = false, log = null } = {}) {
+  const migrated = [], unmatched = [], files = [];
+  const rel = (f) => path.relative(researchDir, f).split(path.sep).join('/');
+  // every fs_write of a notes file in every job transcript, oldest first
+  const writes = [];
+  for (const id of fs.existsSync(jobsDir) ? fs.readdirSync(jobsDir).sort() : []) {
+    const tf = path.join(jobsDir, id, 'transcript.jsonl'); if (!fs.existsSync(tf)) continue;
+    for (const line of fs.readFileSync(tf, 'utf8').split('\n').filter(Boolean)) {
+      let l; try { l = JSON.parse(line); } catch (_) { continue; }
+      for (const c of l.toolCalls || []) if (c.name === 'fs_write' && c.input && typeof c.input.content === 'string') writes.push({ jobId: id, at: String(l.at || ''), path: String(c.input.path || '').replace(/\\/g, '/').replace(/^\.\//, ''), content: c.input.content });
+    }
+  }
+  writes.sort((a, b) => a.at.localeCompare(b.at));
+  for (const day of notesDays(researchDir)) {
+    const lf = legacyNotesFile(researchDir, day); if (!fs.existsSync(lf)) continue;
+    const last = writes.filter((w) => w.path === SCOUT_DIR + '/' + day + '/notes.json').pop();
+    if (!last) { unmatched.push({ file: rel(lf), reason: 'no job transcript wrote it' }); continue; }
+    if (last.content !== fs.readFileSync(lf, 'utf8')) { unmatched.push({ file: rel(lf), reason: 'the last write to it (job ' + last.jobId + ') differs from the file' }); continue; }
+    const to = notesFile(researchDir, day, last.jobId);
+    if (fs.existsSync(to)) { unmatched.push({ file: rel(lf), reason: 'job ' + last.jobId + ' already has its own notes file' }); continue; }
+    if (apply) J.move(lf, to);
+    migrated.push({ from: rel(lf), to: rel(to), jobId: last.jobId });
+    if (log) log.info(apply ? 'scouting notes moved into the job that wrote them (E6 b3)' : 'scouting notes would move into the job that wrote them (report only)', { from: rel(lf), to: rel(to), jobId: last.jobId });
+  }
+  // the pass over every notes file (in report-only mode a migrating file is read where it is now)
+  const seen = new Set();
+  for (const day of notesDays(researchDir)) {
+    for (const n of readDayNotes(researchDir, day)) {
+      const m = !apply && n.jobId === null ? migrated.find((x) => x.from === n.rel) : null, jobId = m ? m.jobId : n.jobId;
+      const r = n.notes ? blocklistFromNotes(J, researchDir, n.notes, { day, jobId, log, write: apply }) : { added: [], refused: [], problems: ['unreadable: ' + n.error], games: 0, unreadable: n.error };
+      // report only: the same new term from two files is reported once (an apply would add it once)
+      const added = r.added.filter((a) => !seen.has(a.term.toLowerCase())).map((a) => (seen.add(a.term.toLowerCase()), { term: a.term, kind: a.kind }));
+      files.push({ rel: m ? m.to : n.rel, jobId, games: r.games, notesProblems: r.problems.length, unreadable: r.unreadable, added, refused: r.refused.map((x) => ({ term: x.term, kind: x.kind, reason: x.reason })) });
+    }
+  }
+  return { apply, migrated, unmatched, files, added: files.reduce((s, f) => s + f.added.length, 0), refused: files.reduce((s, f) => s + f.refused.length, 0) };
+}
+
 const SHORT_REASON = 'under 3 characters';
 const SHORT_COMMENT = 'Owner review list (owner decision 4, 17/10/2026): names under 3 characters that TREND-SCOUT recorded. They are never added to the scouting blocklist automatically; add one to blocklist.json by hand if it is a real game, studio or related name. Internal: inside scouting/, never shown to any agent but TREND-SCOUT.';
 export const shortNamesFile = (researchDir) => path.join(researchDir, SCOUT_DIR, 'short-names-review.json');
