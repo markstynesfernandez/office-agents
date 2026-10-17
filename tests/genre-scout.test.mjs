@@ -16,7 +16,7 @@ import { dublinDay } from '../src/engine/time.mjs';
 import { screenListing, screenDigitalSet, screenText } from '../src/engine/lib/originality.mjs';
 import { validateNotes, readBlocklist, scoutingBriefProblems, commonWordWarnings, commonWords, SCOUTED, WORDING, DERIVATIVE_WORDING } from '../src/engine/lib/scouting.mjs';
 import { buildEngineSnapshot } from '../src/server/engine-model.mjs';
-import { createScoutScript, genreBrief, FIXTURE_GAMES, COMMON_WORD_GAMES, BAD_BRIEF_GAME } from '../fixtures/engine/scout-script.mjs';
+import { createScoutScript, genreBrief, researchBrief, FIXTURE_GAMES, COMMON_WORD_GAMES, BAD_BRIEF_GAME } from '../fixtures/engine/scout-script.mjs';
 
 const ALL_NAMES = FIXTURE_GAMES.flatMap((g) => [g.game, g.studio, ...g.alsoBlock]);
 const lower = (s) => String(s).toLowerCase();
@@ -97,21 +97,26 @@ test('scouting notes are refused unless they hold 2 AAA + 2 indie entries with h
 test('a brief naming a scouted game, studio or related name fails the brief check and intake; a clean genre brief passes', async (t) => {
   const { e } = boot(t);
   await scout(e);
-  const day = dublinDay(), g = { slug: 'lofi-study', genre: 'lofi study', segment: 'streamers who play relaxing puzzle games', props: 'a desk lamp, a stack of notebooks, a mug of tea, a cassette player, a potted fern and a sleeping cat bed', palette: 'dusty rose, cream and teal', price: 9 };
-  const clean = genreBrief(day, g).replace(/^status: candidate$/m, 'status: verified');
+  const day = dublinDay();
+  // E6 b2 (owner D1): a verified genre brief from the run, with the station's citation record from brief-check
+  const clean = fs.readFileSync(research(e, 'briefs', day + '--genre-cozy-farming-desk-props.md'), 'utf8');
+  assert.match(clean, /^- citations: \d+, all returned by web calls in job \S+ \(transcript\)$/m);
   const variants = {
     'game in the buyer persona': clean.replace('who buys transparent PNG props', 'who streams ' + 'Chromehold 2091' + ' and buys transparent PNG props'),
     'studio in the keywords': clean.replace('- pngtuber props —', '- gravemoor interactive props —'),
-    'character in the design direction': clean.replace('a sleeping cat bed', 'a statue of the Ashen Warden'),
+    'character in the design direction': clean.replace('a potted sprout', 'a statue of the Ashen Warden'),
     'game in the id (and file name)': clean.replace(/^id: (\S+)$/m, 'id: ' + day + '--cinderpine-desk-props'),
     '"fan art" wording in a genre brief': clean.replace('FIXTURE: a streamer', 'FIXTURE: a buyer of fan art and a streamer'),
-    'a one-letter misspelling of a scouted game': clean.replace('a sleeping cat bed', 'a Parsnip Holow seed tin')
+    'a one-letter misspelling of a scouted game': clean.replace('a potted sprout', 'a Parsnip Holow seed tin')
   };
   for (const [what, b] of Object.entries(variants)) {
     const c = e.orchestrator.createJob({ briefText: b, by: 'test' });
     assert.equal(c.ok, false, what + ' must fail');
     assert.match(c.reasons.join('; '), /originality: brief/, what);
   }
+  // without the station's citation record, an indicative genre brief is refused at intake (fails closed)
+  const noRecord = e.orchestrator.createJob({ briefText: clean.replace(/\n## Station brief check[\s\S]*$/, '\n'), by: 'test' });
+  assert.equal(noRecord.ok, false); assert.match(noRecord.reasons.join('; '), /citations: no transcript to check them against/);
   const ok = e.orchestrator.createJob({ briefText: clean, by: 'test' });
   assert.equal(ok.ok, true, (ok.reasons || []).join('; '));
 });
@@ -272,7 +277,7 @@ test('a common-word title warns on the bare word (QA-LISTING checks the context)
   const survival = day + '--genre-survival-camp-desk-props.md';
   assert.ok(fs.existsSync(research(e, 'briefs', survival)), 'not blocked by the bare word');
   assert.match(j.data.scouting.drafts.join(' | '), /survival-camp-desk-props\.md: screened clear \(common-word warning, not a fail: brief: "lantern"\)/);
-  assert.match(j.reason, /survival-camp-desk-props\.md: verified -> briefs\/ \(common-word warning, not a fail: brief: "lantern"\)/);
+  assert.match(j.reason, /survival-camp-desk-props\.md: verified -> briefs\/ \(evidence indicative\) \(common-word warning, not a fail: brief: "lantern"\)/);
   // listing screens: bare word clear (and reported), full title and "<word> game" hard-fail
   const cfg = e.cfg.station, id = day + '--genre-survival-camp-desk-props';
   const listing = { title: 'Survival camp desk props for streamers, 12 PNG', tags: ['camp desk props', 'pngtuber props'], description: 'Twelve original props, with a hand-crank lantern and a camp mug.', altText: 'An enamel mug and a lantern.' };
@@ -333,7 +338,7 @@ test('retention: the first step of a scout run deletes notes more than 90 days o
 
 test('the scout has its own drafts folder: the research line and the scout line run on the same day without touching each other\'s drafts', async (t) => {
   const day = dublinDay(), lofi = { slug: 'lofi-study', genre: 'lofi study', segment: 'students who stream study sessions', props: 'a desk lamp, a stack of notebooks, a mug of tea, a cassette player, a potted fern and a sleeping cat bed', palette: 'dusty rose, cream and teal', price: 9 };
-  const researchDraft = genreBrief(day, lofi).replace(/^origin: genre-scout\n/m, '');
+  const researchDraft = researchBrief(day, lofi);   // the research line keeps the ported Etsy format (E6 b2 changed only genre briefs)
   const checkerDirs = [];
   const base = createScoutScript();
   const script = (ctx, params) => {

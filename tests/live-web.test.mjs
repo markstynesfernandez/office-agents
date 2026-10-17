@@ -209,7 +209,8 @@ test('a refused reservation makes no SDK call (run cap, scout job cap, unknown p
 test('the 12-call cap holds across requests: 12 calls sent, the 13th refused before it is reserved or sent', async () => {
   const s = setup();
   try {
-    for (let i = 0; i < 12; i++) await s.box.call(i % 2 ? 'web_fetch' : 'web_search', i % 2 ? { url: 'https://news.example.com/p' + i } : { query: 'q' + i });
+    // E6 b2 (owner D1): each fetch names the URL the search before it returned
+    for (let i = 0; i < 12; i++) await s.box.call(i % 2 ? 'web_fetch' : 'web_search', i % 2 ? { url: 'https://news.example.com/charts' } : { query: 'q' + i });
     await assert.rejects(s.box.call('web_search', { query: 'thirteenth' }), (e) => e instanceof ToolError && /web call limit for this run reached \(12, enforced by the engine\)/.test(e.message));
     assert.equal(s.client.seen.length, 12);
     assert.equal(s.ledger.rows().length, 12);
@@ -295,7 +296,10 @@ test('the genre-scout line on live-shaped responses: 4 verified, 1 blocked, game
   const r = tempRoot('live-scout');
   const script = createScoutScript();
   let cur = null;
-  const client = stubClient({ text: (body) => script(cur, body) });
+  // E6 b2 (owner D1): the live-shaped search results are the FIXTURE's own ("- title | url | price" lines), so the scout
+  // fetches and cites only URLs a search returned
+  const fixtureResults = (body) => { const query = JSON.parse(String(body.messages[0].content).split('\n')[1]); return fixtureWeb('web_search', { query }).split('\n').filter((l) => /^- .+ \| https:\/\//.test(l)).map((l) => { const [title, url] = l.slice(2).split(' | '); return { type: 'web_search_result', url, title, encrypted_content: 'ENC', page_age: 'October 15, 2026' }; }); };
+  const client = stubClient({ text: (body) => script(cur, body), web: (body) => webReply(body, body.tools[0].name === 'web_search' ? { results: fixtureResults(body) } : {}) });
   const log = memLog();
   const providers = createProviders({ mode: 'live', engineCfg: ENGINE, env: LIVE_ENV, log, client });
   const create = providers.text.create; providers.text.create = (params, opts) => { cur = opts && opts.ctx; return create(params, opts); };
@@ -335,11 +339,13 @@ test('the genre-scout line on live-shaped responses: 4 verified, 1 blocked, game
 
 test('the key never appears in any log line, ledger row, event, tool result or error from the web backend', async () => {
   const leak = Anthropic.APIError.generate(500, { type: 'error', error: { type: 'api_error', message: 'echo x-api-key: ' + FAKE_KEY } }, undefined, new Headers({ 'request-id': 'req_e' }));
-  const s = setup({ engineCfg: FAST, client: stubClient({ errors: [leak, leak, leak, null] }) });
+  const s = setup({ engineCfg: FAST, client: stubClient({ errors: [leak, leak, leak] }) });
   const errs = [], outs = [];
   try {
     await s.box.call('web_search', { query: 'q' }).catch((e) => errs.push(e));
-    outs.push(await s.box.call('web_fetch', { url: 'https://a.example.com' }));
+    // E6 b2 (owner D1): a fetch names a URL a search returned
+    outs.push(await s.box.call('web_search', { query: 'q ok' }));
+    outs.push(await s.box.call('web_fetch', { url: 'https://news.example.com/charts' }));
     s.client.messages.create = async () => { throw new Error('boom ' + FAKE_KEY); };
     await s.box.call('web_search', { query: 'q2' }).catch((e) => errs.push(e));
     assert.equal(errs.length, 2);
@@ -392,7 +398,7 @@ test('source rule: the blocked list reaches BOTH web tools for every agent with 
     const s = setup({ agentKey });
     try {
       await s.box.call('web_search', { query: 'cozy game trend roundup' });
-      await s.box.call('web_fetch', { url: 'https://news.example.com/cozy-roundup' });
+      await s.box.call('web_fetch', { url: 'https://news.example.com/charts' });   // the URL the search returned (owner D1)
       const tools = s.client.seen.map((x) => x.body.tools[0]);
       assert.deepEqual(tools.map((x) => x.name), ['web_search', 'web_fetch'], agentKey);
       for (const x of tools) assert.deepEqual(x.blocked_domains, BLOCKED, agentKey + ' ' + x.name);
@@ -406,15 +412,17 @@ test('source rule: a web_fetch of a blocked site or any subdomain is refused bef
   const refused = ['https://store.steampowered.com/charts/topselling', 'https://steampowered.com/', 'https://someone.itch.io/a-game', 'https://itch.io/games/top-rated',
     'https://www.twitch.tv/directory', 'https://m.youtube.com/feed/trending', 'https://WWW.YOUTUBE.COM/watch?v=x', 'https://www.youtube.com./x', 'https://user@store.steampowered.com/x'];
   const allowed = ['https://notyoutube.com/x', 'https://steampowered.com.example.org/x', 'https://news.example.com/itch.io-roundup', 'https://example.com/?u=twitch.tv'];
+  const lookAlikes = (b) => webReply(b, { results: allowed.map((url) => ({ type: 'web_search_result', url, title: 'FIXTURE look-alike', encrypted_content: 'ENC' })) });
   for (const agentKey of ['trend-scout', 'evidence-checker', 'demand-researcher']) {
-    const s = setup({ agentKey });
+    const s = setup({ agentKey, client: stubClient({ web: lookAlikes }) });
     let reserves = 0; const reserve = s.guard.reserve; s.guard.reserve = (c) => { reserves++; return reserve(c); };
     try {
       for (const url of refused) await assert.rejects(s.box.call('web_fetch', { url }), (e) => e instanceof ToolError && /web_fetch refused: [a-z.]+ is a blocked source/.test(e.message), agentKey + ' ' + url);
       assert.equal(s.client.seen.length, 0, 'nothing sent'); assert.equal(reserves, 0, 'nothing reserved');
       assert.equal(s.ledger.rows().length, 0); assert.equal(s.box.counters.web, 0, 'not counted against the web-call cap');
+      await s.box.call('web_search', { query: 'look-alikes' });   // E6 b2 (owner D1): a fetch names a URL a search returned
       for (const url of allowed) await s.box.call('web_fetch', { url });
-      assert.equal(s.client.seen.length, allowed.length, 'look-alike and path-only mentions are not blocked');
+      assert.equal(s.client.seen.length, 1 + allowed.length, 'look-alike and path-only mentions are not blocked');
     } finally { s.t.cleanup(); }
   }
   assert.equal(blockedBy('not a url', BLOCKED), '(unparsable URL)', 'fails closed');

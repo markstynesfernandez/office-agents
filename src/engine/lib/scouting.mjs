@@ -73,22 +73,51 @@ export function validateNotes(notes, { day } = {}) {
   return { ok: problems.length === 0, problems, entries };
 }
 
-// every name a run's notes put on the blocklist: the title, the studio, and the alsoBlock names
-export const termsOf = (entries) => entries.flatMap((e) => [{ term: e.game, kind: 'game', ...(e.commonWord ? { commonWord: e.commonWord } : {}) }, ...(e.studio ? [{ term: e.studio, kind: 'studio' }] : []), ...e.alsoBlock.map((t) => ({ term: t, kind: 'related' }))]).filter((x) => clean(x.term).length >= 2);
+// every name a run's notes put on the blocklist: the title, the studio, and the alsoBlock names (addToBlocklist keeps
+// the name-like ones only)
+export const termsOf = (entries) => entries.flatMap((e) => [{ term: e.game, kind: 'game', ...(e.commonWord ? { commonWord: e.commonWord } : {}) }, ...(e.studio ? [{ term: e.studio, kind: 'studio' }] : []), ...e.alsoBlock.map((t) => ({ term: t, kind: 'related' }))]);
+
+// owner D4 (17/10/2026): only name-like strings are ever added automatically. A placeholder (UNKNOWN, TBD, TBA, N/A, none,
+// "needs owner check", ...), an empty string, one under 3 characters or one with no letter or digit is not a name: it is
+// refused and logged, never added (a placeholder on the list would match every brief that uses the same placeholder).
+const PLACEHOLDER_TERM = /\b(?:unknown|tbd|tba|n\/?a|none|null|undefined|not known|not stated|unnamed|various|placeholder|to be confirmed|needs? (?:an? )?owner check|owner check)\b|\?{2,}/i;
+export function notNameReason(term) {
+  const t = clean(term);
+  if (!t) return 'empty';
+  if (t.length < 3) return 'under 3 characters';
+  if (!/[\p{L}\p{N}]/u.test(t)) return 'no letter or digit';
+  if (PLACEHOLDER_TERM.test(t)) return 'a placeholder, not a name';
+  return null;
+}
+export const isNameLike = (term) => notNameReason(term) === null;
 
 export function readBlocklist(researchDir) {
   try { const b = JSON.parse(fs.readFileSync(blocklistFile(researchDir), 'utf8')); return Array.isArray(b.terms) ? b : { terms: [] }; } catch (_) { return { terms: [] }; }
 }
+const BLOCKLIST_COMMENT = 'Scouting blocklist: written by the engine from TREND-SCOUT notes only. Every name here hard-fails the brief check, intake, image prompts, the design set and the listing. Internal: never shown to DESIGNER, LISTER or QA. An entry with commonWord is a title that is an ordinary word: the bare word only warns (QA-LISTING checks the context); the full title and <word> game hard-fail. Only name-like strings are added (owner D4: placeholders such as UNKNOWN, TBD, N/A or "needs owner check", and anything under 3 characters, are refused and logged). The owner may add names by hand; the engine never removes one (the notes are deleted after 90 days; this list stays).';
+const writeBlocklist = (J, researchDir, terms) => J.put(blocklistFile(researchDir), JSON.stringify({ $comment: BLOCKLIST_COMMENT, terms }, null, 1) + '\n');
 // idempotent: a term already listed (any case) is not added again (so a title first listed plain stays a hard fail even if
-// a later run tags it common-word: fails closed); nothing is ever removed by the engine
-export function addToBlocklist(J, researchDir, terms, { day, jobId }) {
-  const cur = readBlocklist(researchDir), have = new Set(cur.terms.map((t) => t.term.toLowerCase())), added = [];
-  for (const t of terms) { const term = clean(t.term); if (!term || have.has(term.toLowerCase())) continue; have.add(term.toLowerCase()); added.push({ term, kind: t.kind, ...(t.commonWord ? { commonWord: clean(t.commonWord) } : {}), day, jobId }); }
-  if (added.length) {
-    const terms2 = [...cur.terms, ...added].sort((a, b) => a.term.localeCompare(b.term));
-    J.put(blocklistFile(researchDir), JSON.stringify({ $comment: 'Scouting blocklist: written by the engine from TREND-SCOUT notes only. Every name here hard-fails the brief check, intake, image prompts, the design set and the listing. Internal: never shown to DESIGNER, LISTER or QA. An entry with commonWord is a title that is an ordinary word: the bare word only warns (QA-LISTING checks the context); the full title and <word> game hard-fail. The owner may add names by hand; the engine never removes one (the notes are deleted after 90 days; this list stays).', terms: terms2 }, null, 1) + '\n');
+// a later run tags it common-word: fails closed); nothing is ever removed by the engine. A term that is not name-like is
+// refused: logged (log.warn) and returned in `refused`, never written.
+// -> the added entries (an array), with .refused = [{ term, kind, reason }]
+export function addToBlocklist(J, researchDir, terms, { day, jobId, log = null }) {
+  const cur = readBlocklist(researchDir), have = new Set(cur.terms.map((t) => t.term.toLowerCase())), added = [], refused = [];
+  for (const t of terms) {
+    const term = clean(t.term), why = notNameReason(term);
+    if (why) { refused.push({ term, kind: t.kind, reason: why }); if (log) log.warn('scouting blocklist: refused a term that is not a name', { jobId, kind: t.kind, term, reason: why }); continue; }
+    if (have.has(term.toLowerCase())) continue; have.add(term.toLowerCase()); added.push({ term, kind: t.kind, ...(t.commonWord ? { commonWord: clean(t.commonWord) } : {}), day, jobId });
   }
+  if (added.length) writeBlocklist(J, researchDir, [...cur.terms, ...added].sort((a, b) => a.term.localeCompare(b.term)));
+  added.refused = refused;
   return added;
+}
+// the owner's one-off hygiene (D4, scripts/blocklist-hygiene.mjs): the entries that are not name-like, removed only with
+// apply (the engine itself never removes a name). Idempotent: a second run finds nothing.
+// -> [{ term, kind, reason, day, jobId }]
+export function blocklistPlaceholders(J, researchDir, { apply = false } = {}) {
+  const cur = readBlocklist(researchDir), bad = cur.terms.filter((t) => notNameReason(t.term)).map((t) => ({ term: t.term, kind: t.kind, reason: notNameReason(t.term), day: t.day || null, jobId: t.jobId || null }));
+  if (apply && bad.length) { const drop = new Set(bad.map((b) => b.term)); writeBlocklist(J, researchDir, cur.terms.filter((t) => !drop.has(t.term))); }
+  return bad;
 }
 
 // the scouted names, re-read when the file changes (the engine reads this on every screen):
@@ -153,13 +182,26 @@ export function withScouting(station, terms) {
   return out;
 }
 
+// the customer-facing check (scout-live's report, scripts/blocklist-hygiene.mjs): each file (absolute paths, outside
+// scouting/) against the scouted names on the blocklist (any case, anywhere), the scouting screen and the station's
+// originality lists (brands, characters, people, derivative wording). Names are reported by kind only.
+export function customerFacingCheck(researchDir, files, station) {
+  const terms = readBlocklist(researchDir).terms, lower = (s) => String(s).toLowerCase();
+  const detail = files.map((f) => { const t = fs.readFileSync(f, 'utf8'); return { file: path.relative(researchDir, f).split(path.sep).join('/'), scoutedNames: terms.filter((x) => lower(t).includes(lower(x.term))).map((x) => x.kind), scoutingScreen: scoutingBriefProblems(t, station).length, originality: screenText(t, station).hits.map((h) => h.category + ': ' + h.phrase) }; });
+  return { files: detail.length, clean: detail.every((f) => !f.scoutedNames.length && !f.scoutingScreen && !f.originality.length), detail };
+}
+
 // the whole-brief screen: scouted names anywhere in the brief; derivative wording too when the brief is a genre-scout one
 // E6 b1: a scout run exits 0 only when its job reached research-done (incomplete, blocked or stopped exit 1)
 export const scoutRunExitCode = (job) => (job && job.state === 'research-done' ? 0 : 1);
 export const isScoutBrief = (t) => new RegExp('^origin:[ \\t]*' + ORIGIN + '[ \\t]*$', 'm').test(String(t || ''));
-export function scoutingBriefProblems(text, station) {
+// for the SCREEN only, fail closed (E6 b2): "origin: genre-scout" anywhere counts (b1's drafts had it on the
+// audience_segment line and were skipped), and the caller can say the text is a scout brief whatever it says (scout: true,
+// every draft in a genre-scout drafts folder)
+const mentionsScoutOrigin = (t) => new RegExp('\\borigin:[ \\t]*' + ORIGIN + '\\b', 'i').test(String(t || ''));
+export function scoutingBriefProblems(text, station, { scout = false } = {}) {
   const lists = (station && station.sloganScreen && station.sloganScreen.lists) || {};
-  const only = { [SCOUTED]: lists[SCOUTED] || [], ...(isScoutBrief(text) ? { [WORDING]: lists[WORDING] || [], derivative: lists.derivative || [] } : {}) };
+  const only = { [SCOUTED]: lists[SCOUTED] || [], ...(scout || mentionsScoutOrigin(text) ? { [WORDING]: lists[WORDING] || [], derivative: lists.derivative || [] } : {}) };
   const sc = screenText(text, { sloganScreen: { lists: only, nearMissAllow: (station.sloganScreen || {}).nearMissAllow } });
   return sc.hits.map((h) => 'originality: brief ' + hitLine({ field: 'text', ...h }) + (h.category === SCOUTED ? ' (a scouted game: game names stay in the internal scouting notes)' : ''));
 }

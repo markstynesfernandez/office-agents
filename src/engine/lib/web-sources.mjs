@@ -4,23 +4,31 @@
 //     for every agent with web tools (they share the relay).
 //   - The engine refuses a web_fetch to a listed host or any of its subdomains before anything is reserved or sent
 //     (tools/index.mjs), on the mock as on the live provider.
+// E6 b2 (owner D1, 17/10/2026): webSources.fetchRefusedDomains (etsy.com) is refused for web_fetch the same way, but is
+// never sent as blocked_domains, so search results from those sites still come back. And agents never construct URLs:
+// a web_fetch must name a URL that a web call of the same job already returned (returnedUrls / urlsIn below; the job
+// transcript keeps every returned URL in full).
 // Domain format follows the API's domain filtering rules (platform docs, server tools, read 17/10/2026): no scheme, ASCII
 // only, no wildcard in the domain (the API rejects "*.example.com" with a 400), and a bare domain covers its subdomains.
+import fs from 'node:fs';
 
 export class WebSourceError extends Error { constructor(msg) { super(msg); this.code = 'CONFIG'; } }
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
-// the configured list, checked (a malformed entry refuses: the API would reject it, and a typo would silently not block)
-export function blockedDomains(engineCfg) {
+function domainList(engineCfg, key) {
   const ws = engineCfg && engineCfg.webSources;
-  const list = ws && ws.blockedDomains;
+  const list = ws && ws[key];
   if (list == null) return [];
-  if (!Array.isArray(list)) throw new WebSourceError('config/engine.json webSources.blockedDomains must be a list');
-  for (const d of list) if (typeof d !== 'string' || !DOMAIN_RE.test(d)) throw new WebSourceError('config/engine.json webSources.blockedDomains: "' + d + '" is not a bare lower-case ASCII domain (no scheme, path or wildcard)');
-  if (new Set(list).size !== list.length) throw new WebSourceError('config/engine.json webSources.blockedDomains has a duplicate');
+  if (!Array.isArray(list)) throw new WebSourceError('config/engine.json webSources.' + key + ' must be a list');
+  for (const d of list) if (typeof d !== 'string' || !DOMAIN_RE.test(d)) throw new WebSourceError('config/engine.json webSources.' + key + ': "' + d + '" is not a bare lower-case ASCII domain (no scheme, path or wildcard)');
+  if (new Set(list).size !== list.length) throw new WebSourceError('config/engine.json webSources.' + key + ' has a duplicate');
   return [...list];
 }
+// the configured list, checked (a malformed entry refuses: the API would reject it, and a typo would silently not block)
+export const blockedDomains = (engineCfg) => domainList(engineCfg, 'blockedDomains');
+// engine-only: refused for web_fetch, never sent to the API (search results from these sites still come back)
+export const fetchRefusedDomains = (engineCfg) => domainList(engineCfg, 'fetchRefusedDomains');
 
 // the listed domain a URL's host falls under (the host itself or a subdomain), or null. An unparsable URL counts as
 // blocked (fail closed). The URL parser lower-cases the host and turns non-ASCII into punycode, so a look-alike
@@ -30,4 +38,30 @@ export function blockedBy(url, domains) {
   try { host = new URL(String(url)).hostname.toLowerCase().replace(/\.+$/, ''); } catch (_) { return '(unparsable URL)'; }
   for (const d of domains) if (host === d || host.endsWith('.' + d)) return d;
   return null;
+}
+
+// ---- returned URLs (owner D1): the URLs a web call actually returned, compared in one canonical form (no fragment, no
+// trailing slash on the path, lower-case host); a citation or a fetch must match one of them exactly in that form
+export function canonicalUrl(u) {
+  try { const x = new URL(String(u).trim()); if (!/^https?:$/.test(x.protocol)) return null; x.hash = ''; const s = x.href; return !x.search && s.endsWith('/') ? s.slice(0, -1) : s; } catch (_) { return null; }
+}
+// every http(s) URL in a text (a web result, a brief), canonical, de-duplicated, in order. The live relay writes a result
+// as "- title | url | date" and a citation as "- url — "quote"", so a URL ends at whitespace, "|", a bracket or a quote.
+export function urlsIn(text) {
+  const out = [], seen = new Set();
+  for (const m of String(text || '').matchAll(/https?:\/\/[^\s|<>"'`\])}]+/g)) {
+    const c = canonicalUrl(m[0].replace(/[.,;:!?]+$/, ''));
+    if (c && !seen.has(c)) { seen.add(c); out.push(c); }
+  }
+  return out;
+}
+// the URLs the web calls of a job returned, from its transcript (data/jobs/<id>/transcript.jsonl: `returnedUrls` on each
+// line, written in full by runtime.mjs, with `searchUrls` the part that web_search returned). searchOnly: only the URLs
+// search results gave (what may be fetched); otherwise every returned URL (what may be cited). A missing or unreadable
+// transcript returns an empty set (nothing can be fetched or cited).
+export function returnedUrls(transcriptFile, { searchOnly = false } = {}) {
+  const set = new Set();
+  let t = ''; try { t = fs.readFileSync(transcriptFile, 'utf8'); } catch (_) { return set; }
+  for (const l of t.split('\n')) { if (!l.trim()) continue; let r; try { r = JSON.parse(l); } catch (_) { continue; } for (const u of (searchOnly ? r.searchUrls : r.returnedUrls) || []) set.add(u); }
+  return set;
 }

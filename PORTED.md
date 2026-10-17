@@ -44,7 +44,7 @@ Every ported module starts with a header that names its source, its moment, its 
 | config/blocklist.txt | rooms/etsy-digital/blocklist.txt | 1st | copied unchanged |
 | prompts/agents/demand-researcher.md | agents/src/demand-researcher.md | 1st | copied unchanged |
 | prompts/agents/designer.md | agents/src/designer.md | 2nd | copied unchanged |
-| prompts/agents/evidence-checker.md | agents/src/evidence-checker.md | 1st | copied unchanged |
+| prompts/agents/evidence-checker.md | agents/src/evidence-checker.md | 1st | copied unchanged; E6 b2 (17/10/2026, owner D1/D2) appended one paragraph for genre-scout briefs (indicative evidence, citations against the job's returned sources, report_blocked); the legacy orders above it are unchanged |
 | prompts/agents/lister.md | agents/src/lister.md | 5th | copied unchanged |
 | prompts/agents/overseer.md | agents/src/overseer.md | 1st | copied unchanged |
 | prompts/agents/qa-design.md | agents/src/qa-design.md | 5th | copied unchanged |

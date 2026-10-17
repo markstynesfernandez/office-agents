@@ -8,12 +8,15 @@
 // or git). An output contract (the line step's `outputs`, built by the orchestrator) is checked when the agent ends its
 // turn: missing outputs get a follow-up message naming the tool, with tool_choice requiring a call, at most
 // MAX_NUDGES times; still missing -> status `incomplete` (or `done` with a shortfall when the contract allows partial).
+// E6 b2 (owner D2): report_blocked(reason) is the "cannot produce" outcome: it satisfies the contract and ends the run
+// `incomplete` with that reason at once (no nudge); a nudge offers exactly fs_write or report_blocked.
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { buildAgentPrompt, engineWrapper } from './prompts.mjs';
 import { createToolbox, ToolError } from './tools/index.mjs';
 import { CapError, GuardRefusal } from './guard.mjs';
 import { makeRedactor } from './providers/anthropic.mjs';
+import { urlsIn } from './lib/web-sources.mjs';
 
 export const MAX_NUDGES = 2;
 export const TRANSCRIPT_RESULT_CHARS = 2000;
@@ -73,8 +76,8 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   const prompt = buildAgentPrompt(agent, { promptsDir: cfg.promptsDir, budgets: cfg.station.promptBudgetChars || {} });
   const runId = 'run_' + new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14) + '_' + crypto.randomBytes(3).toString('hex');
   const run = { runId, runCapUsd };
-  let verdict = null;
-  const ctx = { J: engine.J, folder, agent, job, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, onVerdict: (v) => { verdict = v; }, callModel: null };
+  let verdict = null, blockedReason = null;
+  const ctx = { J: engine.J, folder, agent, job, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
   const box = createToolbox(ctx);
   const wrapper = engineWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, isQa: !!agent.verdict, loopNote });
   const system = [{ type: 'text', text: prompt.soul + '\n' + prompt.text, ...(cfg.engine.runtime.promptCaching ? { cache_control: { type: 'ephemeral' } } : {}) }, { type: 'text', text: wrapper }];
@@ -102,12 +105,15 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   const redactKey = makeRedactor([]), redact = (t) => redactKey(log && log.redact ? log.redact(t) : t);
   const transcriptFile = job ? path.join(engine.J.dataRoot, 'jobs', job.id, 'transcript.jsonl') : null;
   const addLine = (rec) => { if (!transcriptFile) return; try { engine.J.add(transcriptFile, redact(JSON.stringify(rec)) + '\n'); } catch (e) { log.warn('transcript write failed (ignored)', { runId, error: e.message }); } };
-  const transcript = (resp, uses, results, extra = {}) => addLine({ at: new Date().toISOString(), runId, agent: agentKey, step, pass, turn: totals.turns, requestId: resp.request_id || null, stop_reason: resp.stop_reason || null,
+  // E6 b2 (owner D1): the URLs each web call returned are kept IN FULL (returnedUrls; searchUrls = the web_search part), so a
+  // fetch or a citation can be checked against what the web really gave this job, whatever the excerpt length
+  const transcript = (resp, uses, results, extra = {}, web = null) => addLine({ at: new Date().toISOString(), runId, agent: agentKey, step, pass, turn: totals.turns, requestId: resp.request_id || null, stop_reason: resp.stop_reason || null,
     text: resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n'), toolCalls: uses.map((u) => ({ name: u.name, input: u.input })),
-    toolResults: results.map((r) => ({ tool_use_id: r.tool_use_id, is_error: !!r.is_error, content: String(r.content).slice(0, TRANSCRIPT_RESULT_CHARS) })), ...extra });
+    toolResults: results.map((r) => ({ tool_use_id: r.tool_use_id, is_error: !!r.is_error, content: String(r.content).slice(0, TRANSCRIPT_RESULT_CHARS) })),
+    ...(web && web.all.size ? { returnedUrls: [...web.all], searchUrls: [...web.search] } : {}), ...extra });
 
   const messages = [{ role: 'user', content: String(input) }];
-  let status = 'done', endReason = 'end_turn', error = null, lastText = '', nudges = 0, toolChoice = null, shortfall = null, missing = null;
+  let status = 'done', endReason = 'end_turn', error = null, lastText = '', nudges = 0, toolChoice = null, shortfall = null, missing = null, nudgeOnly = null;
   try {
     for (;;) {
       if (halt.isHalted()) throw new RunStopped('e-stop');
@@ -116,24 +122,30 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
       totals.turns++;
       const after = toolChoice ? { afterNudge: nudges } : {};
       const resp = await callModel({ messages, tools: box.defs, maxOutputTokens: agent.limits.maxOutputTokens, toolChoice });
-      toolChoice = null;
+      const only = toolChoice ? nudgeOnly : null;   // the reply to a nudge may call only the two tools the nudge offered
+      toolChoice = null; nudgeOnly = null;
       messages.push({ role: 'assistant', content: resp.content });
       lastText = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n') || lastText;
       const uses = resp.content.filter((b) => b.type === 'tool_use');
       if (resp.stop_reason !== 'tool_use' || !uses.length) {
         endReason = resp.stop_reason || 'end_turn';
         transcript(resp, [], [], after);
-        // the output contract: an agent that ends its turn with required outputs missing is nudged, at most MAX_NUDGES times;
-        // each nudge is one more model call, reserved and capped like any other
+        // the output contract: an agent that ends its turn with neither its required outputs nor report_blocked is nudged, at
+        // most MAX_NUDGES times; each nudge is one more model call, reserved and capped like any other. The nudge offers
+        // exactly two ways out (owner D2): write the outputs, or report_blocked with the reason they cannot be produced.
         const c = contract ? contract.check() : null;
         if (c && c.missing.length && nudges < MAX_NUDGES && !['max_tokens', 'refusal'].includes(endReason)) {
           nudges++;
-          const msg = '[STATION: required outputs missing, reminder ' + nudges + ' of ' + MAX_NUDGES + '] You ended your turn without: ' + c.missing.join('; ') + '. Call the ' + contract.tool + ' tool now, one call per missing file.' + (contract.hint ? ' ' + contract.hint : '');
+          const msg = '[STATION: required outputs missing, reminder ' + nudges + ' of ' + MAX_NUDGES + '] You ended your turn without: ' + c.missing.join('; ') + '. Do exactly one of two things now: call ' + contract.tool + ' (one call per missing file) if you can produce them with evidence, or call report_blocked with the reason you cannot. Never write an output without its evidence.' + (contract.hint ? ' ' + contract.hint : '');
           messages.push({ role: 'user', content: msg });
-          // a forced call where the model accepts it (Claude Haiku 5.5 does; Claude Sonnet 5.5 returns a 400, so its tier sets forcedToolChoice false and the message carries the instruction)
-          toolChoice = tier.forcedToolChoice === false ? { type: 'auto' } : { type: 'tool', name: contract.tool };
-          log.warn('required outputs missing: nudge', { runId, agent: agentKey, jobId: job && job.id, nudge: nudges, missing: c.missing, toolChoice: toolChoice.type });
-          addLine({ at: new Date().toISOString(), runId, agent: agentKey, step, pass, nudge: nudges, message: msg, tool_choice: toolChoice });
+          // tool_choice (claude-api skill, read 17/10/2026): `any` = the model must call at least one of the request's tools;
+          // there is no "one of these two" choice, so the engine refuses any other tool in the reply (nudgeOnly). Claude
+          // Haiku 5.5 accepts a forced choice; Claude Sonnet 5.5 returns a 400 for `any` and `tool`, so its tier sets
+          // forcedToolChoice false and the message alone carries the instruction (auto).
+          toolChoice = tier.forcedToolChoice === false ? { type: 'auto' } : { type: 'any' };
+          nudgeOnly = new Set([contract.tool, 'report_blocked']);
+          log.warn('required outputs missing: nudge', { runId, agent: agentKey, jobId: job && job.id, nudge: nudges, missing: c.missing, toolChoice: toolChoice.type, offered: [...nudgeOnly] });
+          addLine({ at: new Date().toISOString(), runId, agent: agentKey, step, pass, nudge: nudges, message: msg, tool_choice: toolChoice, offered: [...nudgeOnly] });
           continue;
         }
         if (c && c.missing.length) {
@@ -142,11 +154,15 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
         }
         break;
       }
-      const results = [];
+      const results = [], web = { all: new Set(), search: new Set() };
       for (const u of uses) {
         totals.tools.push(u.name);
         let out, isError = false;
-        try { out = await box.call(u.name, u.input); }
+        try {
+          if (only && !only.has(u.name)) throw new ToolError(u.name + ' refused: answer the reminder with ' + [...only].join(' or ') + ' only');
+          out = await box.call(u.name, u.input);
+          if (u.name === 'web_search' || u.name === 'web_fetch') for (const x of urlsIn(out)) { web.all.add(x); if (u.name === 'web_search') web.search.add(x); }
+        }
         catch (e) {
           if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped) { transcript(resp, uses, results, { ...after, error: e.message }); throw e; }
           if (halt.signal.aborted) throw new RunStopped('e-stop', e);
@@ -157,8 +173,11 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
         log.info('tool', { runId, agent: agentKey, tool: u.name, error: isError || undefined });
         results.push({ type: 'tool_result', tool_use_id: u.id, content: String(out).slice(0, 20000), ...(isError ? { is_error: true } : {}) });
       }
-      transcript(resp, uses, results, after);
+      transcript(resp, uses, results, after, web);
       messages.push({ role: 'user', content: results });
+      // report_blocked (owner D2): the agent says it cannot produce its outputs; that satisfies the contract and ends the
+      // run (no nudge, no further call): status incomplete with the agent's reason, so the job ends incomplete
+      if (blockedReason) { status = 'incomplete'; endReason = 'reported blocked: ' + blockedReason; log.warn('agent reported blocked', { runId, agent: agentKey, jobId: job && job.id, reason: blockedReason }); break; }
     }
   } catch (e) {
     if (e instanceof CapError) { status = 'cap'; endReason = e.message; }
@@ -169,5 +188,5 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   store.finishRun(runId, { status, usd: totals.usd, tokensIn: totals.tokensIn, tokensOut: totals.tokensOut, turns: totals.turns, endReason, error, tools: totals.tools });
   bus.emit('run.end', { jobId: job ? job.id : null, agentKey, data: { runId, status, endReason, usd: Math.round(totals.usd * 1e6) / 1e6, turns: totals.turns, tools: totals.tools.length } });
   log.info('run end', { runId, agent: agentKey, status, endReason, usd: totals.usd, turns: totals.turns, nudges, images: box.counters.images, web: box.counters.web });
-  return { runId, status, endReason, error, verdict, text: lastText, ...totals, nudges, shortfall, missing, counters: box.counters, promptSha256 };
+  return { runId, status, endReason, error, verdict, text: lastText, ...totals, nudges, shortfall, missing, reportedBlocked: blockedReason, counters: box.counters, promptSha256 };
 }

@@ -21,3 +21,5 @@ Each run:
 6. Reply with one line per brief: id — VERIFIED or REJECTED — one-line reason.
 
 You may tighten a brief (remove an unsupported keyword, remove a risky concept) before verifying it; note each change in the Evidence check section. You never add new claims or evidence of your own.
+
+GENRE-SCOUT BRIEFS (`origin: genre-scout`, in `scout-drafts/<today>/`; owner, 17/10/2026) replace steps 2, 4 and 5: their evidence is INDICATIVE (web search results only; competitor count "not measured"). Never open etsy.com or build a URL. Every cited URL must be on the SOURCES RETURNED list in your run input; one that is not was never returned: REJECTED, naming it. VERIFIED only if every citation is on the list, the keywords and the price range each rest on at least 3 cited results, the lowest price clears the BRIEF FLOOR, and originality and policy pass. Fill in the Evidence check, set the status and write the whole brief back to its own path. If you cannot give any verdict, call `report_blocked` with the reason.

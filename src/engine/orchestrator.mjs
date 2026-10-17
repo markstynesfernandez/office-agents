@@ -30,6 +30,8 @@ import { canonicalDesignFile } from './tools/index.mjs';
 import { COLUMNS as LEGACY_COLUMNS } from '../lib/legacy-readers/tracker.mjs';
 import { dublinDay } from './time.mjs';
 import { validateNotes, termsOf, addToBlocklist, scoutingBriefProblems, isScoutBrief, notesFile, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
+import { checkScoutBrief, validateScoutBrief, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
+import { returnedUrls, urlsIn } from './lib/web-sources.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -54,8 +56,19 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // screen of the WHOLE brief (scouted game names; derivative wording in a genre-scout brief). warnings: a scouted
   // common-word title used as a bare word (never a fail)
   const researchDir = () => path.join(dataRoot, 'research');
-  function checkBriefAll(t) {
-    const c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
+  // E6 b2 (owner D1/D3): a genre-scout brief is judged on the genre brief schema with "indicative" evidence instead of
+  // the ported Etsy demand-evidence format, and every URL in it must be one the scout job's web calls returned: at
+  // brief-check the running job's transcript (citationsJob); at intake the job named in the station's citation line
+  // (no line or no transcript: refused, fails closed)
+  const transcriptOf = (id) => path.join(dataRoot, 'jobs', id, 'transcript.jsonl');
+  function checkBriefAll(t, { citationsJob = null } = {}) {
+    let c;
+    if (isScoutBrief(t)) {
+      const jid = citationsJob || ([...t.matchAll(new RegExp(STATION_CITATIONS_RE.source, 'gm'))].pop() || [])[2] || null;   // the last one: brief-check appends it
+      const tf = jid && isListingId(jid) ? transcriptOf(jid) : null;
+      c = tf && fs.existsSync(tf) ? checkScoutBrief(t, { products: cfg.products, cfg: cfg.station, returned: returnedUrls(tf) })
+        : { ok: false, reasons: ['citations: no transcript to check them against (' + (jid ? 'job ' + jid + ' has none' : 'no station citation line from brief-check') + ')'], key: briefField(t, 'product_type') };
+    } else c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
     const sp = scoutingBriefProblems(t, cfg.station), warnings = commonWordWarnings({ brief: t }, commonWords(researchDir()));
     return sp.length ? { ...c, ok: false, reasons: [...(c.ok ? [] : c.reasons), ...sp], warnings } : { ...c, warnings };
   }
@@ -213,7 +226,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const mds = () => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : []);
     if (o.kind === 'drafts') {
       const before = new Set(mds()), want = o.count;
-      return { tool: o.tool, partialOk: o.partialOk !== false, hint: 'Write each genre draft to ' + rel + '<id>.md in the RESEARCH BRIEF FORMAT, status: candidate, one ' + o.tool + ' call per draft.',
+      return { tool: o.tool, partialOk: o.partialOk !== false, hint: 'Write each genre draft to ' + rel + '<id>.md in the GENRE BRIEF FORMAT (evidence level: indicative, from web search results only), status: candidate, one ' + o.tool + ' call per draft.',
         check() { const have = mds().filter((f) => !before.has(f)).length; return { want, have, missing: have >= want ? [] : [(want - have) + ' of ' + want + ' genre drafts (' + rel + '<id>.md)'] }; } };
     }
     if (o.kind === 'verdicts') {
@@ -232,6 +245,11 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const dd = draftsDirOf(L);
       J.makeDir(path.join(folder, dd, job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: ' + dd + '/' + job.data.day + '/.' + (dd !== 'drafts' ? ' This line keeps its drafts in ' + dd + '/: wherever your orders say drafts/<today>/, use ' + dd + '/' + job.data.day + '/.' : '');
       if ((cfg.agents[def.agent] || {}).scoutingNotes) { J.makeDir(path.join(folder, SCOUT_DIR, job.data.day)); input += ' Your internal scouting notes for this run: ' + SCOUT_DIR + '/' + job.data.day + '/notes.json.'; }
+      // owner D1: the checker verifies every citation against what this job's web calls really returned (the transcript)
+      if (def.returnedSources) {
+        const got = [...returnedUrls(transcriptOf(job.id))];
+        input += '\n\nSOURCES RETURNED to this job\'s web calls so far (from the job transcript; a brief may cite ONLY these URLs, and you may fetch only one a web search returned; never etsy.com):\n' + (got.length ? got.map((u) => '- ' + u).join('\n') : '(none)');
+      }
     }
     else if (step === 'designer') {
       const n = latestSet(dataRoot, job.id) + 1;
@@ -250,6 +268,11 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else if (step === 'rejects-desk') { input = '[LOOP — escalated] ' + (job.data.escalation || 'the work was not approved') + '\nRecord why in REJECTED.md.\n\n' + handoff(job); loopNote = 'This job is being stopped: write REJECTED.md only.'; }
     else input = handoff(job);
     const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart } });
+    // owner D2: the agent said it cannot produce its outputs: the job ends incomplete with its reason, nothing downstream
+    if (run.reportedBlocked && run.status === 'incomplete') {
+      store.updateJob(job.id, { data: { reportedBlocked: { step, agent: def.agent, reason: run.reportedBlocked } } });
+      return { incomplete: def.agent.toUpperCase() + ' reported blocked: ' + run.reportedBlocked };
+    }
     const stop = stopFrom(run, def.agent.toUpperCase());
     if (stop) return stop;
     if (run.shortfall) {
@@ -447,8 +470,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')) : []) {
       const t = fs.readFileSync(path.join(drafts, f), 'utf8'), st = briefField(t, 'status');
       if (st !== 'verified') { out.push(f + ': ' + (st || 'no status') + ' (not moved)'); continue; }
-      const c = checkBriefAll(t);
-      if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), t); out.push(f + ': verified -> briefs/' + (c.warnings.length ? ' (common-word warning, not a fail: ' + c.warnings.join('; ') + ')' : '')); }
+      const scout = isScoutBrief(t), c = checkBriefAll(t, { citationsJob: scout ? job.id : null });
+      // a verified genre brief carries the station's citation record, so intake can check the citations again later
+      const kept = scout && c.ok ? t.replace(/\s*$/, '\n') + '\n## Station brief check\n' + stationCitationLine(urlsIn(t).length, job.id) + '\n- evidence level: indicative (web search results only; competitor count not measured)\n' : t;
+      if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), kept); out.push(f + ': verified -> briefs/' + (scout ? ' (evidence indicative)' : '') + (c.warnings.length ? ' (common-word warning, not a fail: ' + c.warnings.join('; ') + ')' : '')); }
       else { J.put(path.join(dataRoot, 'research', 'rejected', f), t + '\n\n## Station brief check\n' + c.reasons.map((r) => '- ' + r).join('\n') + '\n'); out.push(f + ': rejected -> ' + c.reasons.join('; ')); }
     }
     return { end: 'research-done', reason: out.join(' | ') || 'no drafts for ' + day };
@@ -464,25 +489,38 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (!fs.existsSync(nf)) return { blocked: 'TREND-SCOUT wrote no scouting notes (' + SCOUT_DIR + '/' + day + '/notes.json)' };
     const v = validateNotes(readJson(nf), { day });
     if (!v.ok) return { blocked: 'scouting notes refused: ' + v.problems.join('; ') };
-    const added = addToBlocklist(J, rdir, termsOf(v.entries), { day, jobId: job.id });
-    log.info('scouting blocklist updated', { jobId: job.id, added: added.length, games: v.entries.length });
+    const added = addToBlocklist(J, rdir, termsOf(v.entries), { day, jobId: job.id, log });
+    log.info('scouting blocklist updated', { jobId: job.id, added: added.length, refusedNotNames: added.refused.length, games: v.entries.length });
     const drafts = path.join(rdir, draftsDirOf(lineOf(job.line)), day), out = [];
+    // E6 b2: EVERY draft in this line's drafts folder is a genre draft (b1's drafts were skipped because their origin line
+    // was malformed): each is screened whole for scouted names and derivative wording, then checked against the one
+    // genre brief schema (owner D3); a draft that fails the schema goes to rejected/ with the reasons
     for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')).sort() : []) {
-      const t = fs.readFileSync(path.join(drafts, f), 'utf8'); if (!isScoutBrief(t)) continue;
-      const sp = scoutingBriefProblems(t, cfg.station);
+      const t = fs.readFileSync(path.join(drafts, f), 'utf8');
+      const sp = scoutingBriefProblems(t, cfg.station, { scout: true });
       if (!sp.length) {
+        const sv = validateScoutBrief(t, { day, file: f });
+        if (!sv.ok) {
+          J.move(path.join(drafts, f), path.join(rdir, 'rejected', f));
+          J.put(path.join(rdir, 'rejected', f), t + '\n\n## Station brief schema\n' + sv.problems.map((r) => '- ' + r).join('\n') + '\n');
+          out.push(f + ': schema invalid -> rejected/ (' + sv.problems.length + ' problem' + (sv.problems.length > 1 ? 's' : '') + ')');
+          log.warn('genre draft refused by the brief schema at the screen', { jobId: job.id, file: f, problems: sv.problems });
+          continue;
+        }
         const w = commonWordWarnings({ brief: t }, commonWords(rdir));
         if (w.length) log.warn('genre brief uses a scouted common-word title as a bare word (warning, not a fail)', { jobId: job.id, file: f, warnings: w });
         out.push(f + ': screened clear' + (w.length ? ' (common-word warning, not a fail: ' + w.join('; ') + ')' : '')); continue;
       }
       const rf = J.move(path.join(drafts, f), path.join(rdir, SCOUT_DIR, 'blocked', day, f));   // moved, never deleted; it names a game, so it stays in scouting/
       J.put(rf, t + '\n\n## Station scouting screen\n' + sp.map((r) => '- ' + r).join('\n') + '\n');
-      const shown = scoutingBriefProblems(f.replace(/\.md$/, '').replace(/-/g, ' '), cfg.station).length ? '(a draft whose file name names a scouted game)' : f;   // job notes reach the office page
+      const shown = scoutingBriefProblems(f.replace(/\.md$/, '').replace(/-/g, ' '), cfg.station, { scout: true }).length ? '(a draft whose file name names a scouted game)' : f;   // job notes reach the office page
       out.push(shown + ': BLOCKED -> ' + SCOUT_DIR + '/blocked/' + day + '/ (' + sp.length + ' hit' + (sp.length > 1 ? 's' : '') + ')');
       log.warn('genre brief blocked by the scouting screen', { jobId: job.id, file: f, reasons: sp });
     }
-    store.updateJob(job.id, { data: { scouting: { games: v.entries.length, added: added.length, drafts: out } } });
-    return { next: def.next, note: 'scouting notes valid (' + v.entries.length + ' games, ' + added.length + ' new blocklist names); ' + (out.join(' | ') || 'no genre drafts') };
+    // refused blocklist terms are reported by kind and reason only (a refused term is a placeholder, but never assume)
+    const refused = added.refused.map((r) => ({ kind: r.kind, reason: r.reason }));
+    store.updateJob(job.id, { data: { scouting: { games: v.entries.length, added: added.length, refusedNotNames: refused, drafts: out } } });
+    return { next: def.next, note: 'scouting notes valid (' + v.entries.length + ' games, ' + added.length + ' new blocklist names' + (refused.length ? ', ' + refused.length + ' not-a-name term(s) refused' : '') + '); ' + (out.join(' | ') || 'no genre drafts') };
   }
 
   // ---- scouting retention (owner, 17/10/2026): the first step of every scout run deletes the scouting notes

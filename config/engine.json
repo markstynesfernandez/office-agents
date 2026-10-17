@@ -79,7 +79,9 @@
   },
   "webSources": {
     "$comment": "OWNER DECISION 17/10/2026 (DECISIONS.md 'E6 readiness' item 1 and 'E6 step b0: owner decisions'): v1 scout sources are trend articles, editorial roundups and community discussion found by web search. Store chart, browse and streaming pages are out: Steam, itch.io, Twitch, YouTube, written as bare domains (the API includes subdomains, e.g. store.steampowered.com, any itch.io page, www.twitch.tv, m.youtube.com, and rejects wildcards such as '*.itch.io'). Sent as blocked_domains on BOTH web_search and web_fetch for every agent with web tools (one shared relay), and the engine refuses a web_fetch to these hosts before anything is reserved or sent (lib/web-sources.mjs). Add nothing without the owner. Twitch and YouTube data come later through their official APIs only.",
-    "blockedDomains": ["steampowered.com", "itch.io", "twitch.tv", "youtube.com"]
+    "blockedDomains": ["steampowered.com", "itch.io", "twitch.tv", "youtube.com"],
+    "$fetchComment": "OWNER DECISION D1, 17/10/2026 (DECISIONS.md 'E6 step b2: owner decisions'): agents never fetch etsy.com pages (Etsy's terms restrict automated reads). The engine refuses a web_fetch to these hosts or any subdomain before anything is reserved or sent, like blockedDomains, but they are NOT sent to the API as blocked_domains, so etsy.com results still come back from web_search (titles, prices and keywords as shown in the results). Until the Etsy Open API is in place (owner applying; terms check first) genre-scout demand evidence is 'indicative' and the competitor count 'not measured'.",
+    "fetchRefusedDomains": ["etsy.com"]
   },
   "runtime": {
     "resumeOnRestart": 1,

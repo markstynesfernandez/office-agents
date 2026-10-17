@@ -948,3 +948,107 @@ entries; the list on both tools for every agent with web tools; a blocked fetch 
 or sent, for each web agent and on the mock; the prompt). `npm test` 312/312. Port drift: none (69 files).
 `npm run dry-run:scout` (mock): 4 verified, 1 blocked and refused at intake, 13 names, 12 web calls with the 13th
 refused, USD 0.00, unchanged.
+
+## E6 step b2: owner decisions (17/10/2026)
+
+The owner's decisions after the b1 rerun (0 verified briefs), recorded as given. Built on the mock only, $0.
+
+- **D1. Etsy demand evidence, short term.** Agents never fetch etsy.com pages (Etsy's terms restrict automated
+  scraping). Evidence comes from web search results only: listing titles, prices and keywords as shown in the results,
+  plus fetches of non-marketplace pages (articles, roundups, community posts) whose URLs appeared in those results.
+  Agents never construct URLs. The competitor count is recorded as "not measured" and the brief's evidence level as
+  "indicative" until the Etsy Open API is in place (the owner is applying; a later step, terms check first).
+  EVIDENCE-CHECKER verifies every cited source against the job transcript (the URL or snippet must actually have been
+  returned) and accepts "indicative" evidence when the keywords and a price range are each supported by at least 3 cited
+  results.
+- **D2. A "cannot produce" outcome for the output contract:** a `report_blocked(reason)` tool. Calling it satisfies the
+  contract and ends the job "incomplete" with that reason, non-zero exit, no downstream steps. Nudges fire only when an
+  agent ended its turn with neither its required outputs nor report_blocked; the forced choice offers exactly those two
+  (fs_write or report_blocked).
+- **D3. One scout brief schema,** validated when the draft is written. An invalid draft returns a validation error to the
+  agent (counted as a turn, within caps) so it can fix and rewrite it. The screen uses the same schema. Draft path and id
+  naming: keep the existing brief convention; if there are two, pick the one the screen and intake use, and report which.
+- **D4. Blocklist:** remove the "UNKNOWN — needs owner check" entry. Only name-like strings are ever auto-added;
+  placeholders (UNKNOWN, TBD, N/A, "needs owner check", empty or under 3 characters) are rejected and logged. The
+  customer-facing check must come back clean once the placeholder is gone.
+
+## E6 step b2a build record (17/10/2026)
+
+Mock only, $0: no call made, no key value read. Caps, the 4 blocked domains, the IP rule and the originality checks are
+unchanged. Commit "E6 b2: scout evidence, blocked outcome, schema, blocklist hygiene".
+
+### As built
+- **D1.** `config/engine.json` `webSources.fetchRefusedDomains: ["etsy.com"]`: `web_fetch` to etsy.com or a subdomain is
+  refused by the engine before anything is reserved, counted or sent (like the blocked domains), but it is not sent to the
+  API, so etsy.com results still come back from `web_search` (`buildRequest` still sends only the owner's four). A
+  `web_fetch` must also name a URL that a `web_search` of the same job returned (this run's own results, or any earlier
+  run's in the job transcript); anything else is refused before reserve. The runtime now writes every URL a web call
+  returned, in full, to the transcript line (`returnedUrls`, `searchUrls`), so the 2,000-character excerpt limit does
+  not hide one.
+- **Citations.** EVIDENCE-CHECKER's run input lists the URLs the job's web calls returned (`returnedSources` on its line
+  step). The engine enforces the rule as well: at brief-check every URL anywhere in a genre brief must be in the job's
+  transcript, or the brief goes to `rejected/` ("citations not returned by any web call in this job"). A verified genre
+  brief gets a `## Station brief check` record (citation count, job id, "evidence level: indicative"); intake checks the
+  citations again against that job's transcript and refuses an indicative brief with no record or no transcript (fails
+  closed).
+- **Indicative evidence** (`src/engine/lib/scout-brief.mjs`): `evidence level: indicative`, `competitor count: not
+  measured`, `checked:` within 30 days, the search queries, a table of at least 3 search results (title, price as shown,
+  result URL); keywords (at least 5 sourced, the owner's 2026-10-16 rule) citing at least 3 distinct results; the price
+  range citing at least 3; every cited URL listed under Sources. After that, the same checks as the ported brief check:
+  digital product, originality of the Design direction, image policy, price floor. The ported Etsy demand-evidence check
+  is unchanged and still applies to research-line briefs.
+- **D2.** `report_blocked(reason)` is offered to any agent whose line step has an output contract (TREND-SCOUT,
+  EVIDENCE-CHECKER). It ends the run at once (no further model call, no nudge); the job ends `incomplete` with
+  "<AGENT> reported blocked: <reason>", nothing downstream, scout-live exits 1. A nudge now offers exactly fs_write or
+  report_blocked. **tool_choice** (claude-api skill, read 17/10/2026): `any` means "at least one of the request's tools"
+  and `tool` names one tool, so the API has no "one of these two" choice. The nudge uses `any` on the Haiku tier and the
+  engine refuses any other tool in the reply (a tool error, not run). Claude Sonnet 5.5 returns a 400 for `any` and
+  `tool`, so that tier (forcedToolChoice false) gets `auto` plus the instruction. Per the skill, a forced call on Claude
+  Haiku 5.5 skips thinking. Narrowing the request's `tools` instead would need the mid-conversation tool-changes beta,
+  which the skill does not list for Haiku.
+- **D3. Naming: the brief-format and intake convention**, `YYYY-MM-DD--<slug>` (a–z, 0–9, hyphens, at most 60
+  characters; `isListingId`), file `scout-drafts/<day>/<id>.md`, date = the folder's day. The screen and intake never
+  used the other convention: the `--genre-` file-name prefix was only a filter in scout-live's report and the mock
+  fixtures, and is why b1's report was empty. scout-live now selects genre briefs by the `origin: genre-scout` line. The
+  schema is checked in `fs_write` (an invalid draft is NOT written; the problems go back to the agent), at the
+  scout-notes screen (an invalid draft goes to `rejected/` with "## Station brief schema") and at brief-check and intake.
+  The screen now screens EVERY draft in the scout drafts folder for scouted names and derivative wording (b1's drafts
+  were skipped because their origin line was malformed). A rejected brief needs only its front matter and its Evidence
+  check, so the checker can always record a rejection.
+- **D4.** `addToBlocklist` adds only name-like strings: empty, under 3 characters, no letter or digit, or a placeholder
+  (unknown, TBD, TBA, N/A, none, null, "needs owner check", "to be confirmed", "??", ...) is refused, logged and recorded
+  on the job by kind and reason. The engine still never removes a name; the b1 entry was removed by the owner's one-off
+  `node scripts/blocklist-hygiene.mjs --apply` (engine lock, data jail, each removal logged; idempotent). On the real
+  data: 11 → 10 entries (the placeholder only), a second run removed nothing, and the customer-facing check of b1's 4
+  drafts (`--check-day 2026-10-17`) came back clean (before: all 4 matched the placeholder only).
+- **Prompts.** TREND-SCOUT: the DEMAND EVIDENCE and RESEARCH BRIEF FORMAT skills (which say to open etsy.com) are
+  replaced by a new GENRE BRIEF FORMAT skill (`prompts/skills/scout-brief-format.md`); new lines: never build a URL,
+  never fetch etsy.com, indicative evidence from search results, 3+ results each for keywords and price range,
+  `report_blocked` when no draft can be evidenced. The IP-rule lines are word for word (tested). EVIDENCE-CHECKER: one
+  paragraph appended for genre-scout briefs (PORTED.md notes it); its standing orders are 15,843 of the 16,000-character
+  limit.
+
+### For the owner (open; nothing decided here)
+1. **b1's diagnosis, corrected from the transcript:** the Etsy fetch came back `url_not_allowed` with "You don't have
+   permission to access this domain", a domain-level refusal, not only the "URL not in the conversation" rule. D1
+   covers both.
+2. **Intake now accepts an indicative genre brief** (with the station's citation record), so step c could start from
+   one. It has no competitor count, review counts or bestseller badges. Should c need your explicit go-ahead per brief?
+3. **Partial drafts and report_blocked:** if TREND-SCOUT writes 2 of 4 drafts and, when nudged, calls report_blocked,
+   the job ends incomplete and the 2 drafts are not checked (D2 as written). Without report_blocked, a partial set
+   continues with the shortfall recorded.
+4. **EVIDENCE-CHECKER's legacy step 5** says to write `briefs/` or `rejected/`, but its config allows only the drafts
+   folders (b1 tried `rejected/` and was refused). The genre-scout paragraph says to write back to the draft; the
+   research line's orders are unchanged.
+5. **Under 3 characters:** a real 2-character game title would now be refused from the blocklist (your D4 rule), logged.
+6. **Transcripts become evidence:** intake of an indicative brief needs its scout job's `data/jobs/<id>/transcript.jsonl`.
+   No retention rule deletes transcripts today; if one is added, those briefs would be refused at intake.
+
+Tests: new `tests/scout-b2.test.mjs` 10/10; changed for the new behaviour: `live-web` (fetches follow a search that
+returned the URL; the live-shaped scout uses the fixture's search results), `genre-scout` (intake uses a verified brief
+with its citation record and refuses one without; "(evidence indicative)" in the note; the research-line draft uses the
+research-format fixture), `output-contract` (the nudge's `any` and two-tool offer). `npm test` 326/326. Port drift:
+none (69 files). `npm run dry-run:scout`: 4 verified, 1 blocked and refused at intake, 13 names, 12 web calls with the
+13th refused, USD 0.00, as before (the bad brief's intake refusal now also names the missing citation record).
+`npm run parity`: 22/22 (baseline 22/22); `npm run parity -- --rebuild`: 26/26, 73 differences, 0 unexplained, as
+recorded.

@@ -1,5 +1,5 @@
 // output-contract.test.mjs — E6 b1 on the mock provider: the output contract (an agent that ends its turn with required
-// outputs missing is nudged, at most twice, with tool_choice requiring the write tool; still missing -> the job ends
+// outputs missing is nudged, at most twice, with tool_choice any and exactly fs_write or report_blocked on offer (E6 b2); still missing -> the job ends
 // incomplete; a partial set of drafts continues with the shortfall recorded) and the job transcripts
 // (data/jobs/<id>/transcript.jsonl, every line key-redacted, never in logs/).
 import { test } from 'node:test';
@@ -52,19 +52,21 @@ async function scout(e) {
 }
 const transcriptOf = (e, job) => fs.readFileSync(path.join(e.J.dataRoot, 'jobs', job.id, 'transcript.jsonl'), 'utf8').split('\n').filter(Boolean);
 
-test('(a) the scout ends its turn with no drafts -> one nudge (tool_choice: fs_write) -> it writes them -> the job completes', async (t) => {
+test('(a) the scout ends its turn with no drafts -> one nudge (tool_choice any; fs_write or report_blocked) -> it writes them -> the job completes', async (t) => {
   const s = scripted({ skip: true, obey: true });
   const { e } = boot(t, s.script);
   const job = await scout(e);
   assert.equal(job.state, 'research-done', job.reason);
   assert.equal(scoutRunExitCode(job), 0);
-  assert.deepEqual(s.toolChoices, [{ type: 'tool', name: 'fs_write' }]);
+  // E6 b2 (owner D2): the nudge offers exactly fs_write or report_blocked (tool_choice any; the engine refuses any other tool)
+  assert.deepEqual(s.toolChoices, [{ type: 'any' }]);
   assert.equal(fs.readdirSync(path.join(e.J.dataRoot, 'research', 'briefs')).length, 4);
   const lines = transcriptOf(e, job).map((l) => JSON.parse(l));
   const n = lines.filter((l) => l.nudge);
   assert.equal(n.length, 1);
   assert.match(n[0].message, /4 of 4 genre drafts \(scout-drafts\/\d{4}-\d{2}-\d{2}\/<id>\.md\)/);
-  assert.match(n[0].message, /Call the fs_write tool now/);
+  assert.match(n[0].message, /call fs_write \(one call per missing file\) if you can produce them with evidence, or call report_blocked with the reason you cannot/);
+  assert.deepEqual(n[0].offered, ['fs_write', 'report_blocked']);
   assert.equal(lines.filter((l) => l.afterNudge === 1 && l.toolCalls.filter((c) => c.name === 'fs_write').length === 4).length, 1);
   // the nudge is one more model call through the guard: every scout turn has a ledger row
   const runs = e.store.runsOf({ agentKey: 'trend-scout', limit: 5 });
