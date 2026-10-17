@@ -34,7 +34,36 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // (the upper-case markers only, so "an unknown land" in a Design direction is not one; the phrases in any case)
 const MARKER_RE = /\b(?:UNKNOWN|TBD|TBA|N\/A)(?![\w/])/, PHRASE_RE = /\b(?:to be confirmed|needs? owner check)\b/i;
 export const placeholderIn = (t) => { const m = MARKER_RE.exec(t) || PHRASE_RE.exec(t); return m ? m[0] : null; };
-const PRICE_RE = /^(USD|EUR|GBP|CAD|AUD)\s*\d+(?:\.\d{1,2})?$/i;
+// E6 c (owner, 17/10/2026, "prices as shown"): a Demand evidence price is the raw string the search result showed, in one of
+// three forms: one price "USD 4.99"; a sale "USD 7.49 (was 9.99)" (the current price, the original kept alongside); a range
+// "USD 4.50–18.75" (both ends kept). The current price (a range: the low end) is what the floor and the price range use.
+const CUR = '(USD|EUR|GBP|CAD|AUD)', NUM = '(\\d+(?:\\.\\d{1,2})?)';
+const SINGLE_RE = new RegExp('^' + CUR + '\\s*' + NUM + '$', 'i');
+const SALE_RE = new RegExp('^' + CUR + '\\s*' + NUM + '\\s*\\(\\s*was\\s+(?:' + CUR + '\\s*)?' + NUM + '\\s*\\)$', 'i');
+const RANGE_RE = new RegExp('^' + CUR + '\\s*' + NUM + '\\s*(?:–|—|-|to)\\s*(?:' + CUR + '\\s*)?' + NUM + '$', 'i');
+export const PRICE_FORMS = '"USD 4.99", a sale "USD 7.49 (was 9.99)" or a range "USD 4.50–18.75", exactly as the result showed it';
+// -> { ok, kind: single|sale|range, currency, current (the floor price: a range's low end), high, was, numbers } or { ok: false, problem }
+export function parsePrice(cell) {
+  const c = String(cell || '').trim(); let m;
+  if ((m = SINGLE_RE.exec(c))) { const v = Number(m[2]); return { ok: true, kind: 'single', currency: m[1].toUpperCase(), current: v, high: v, was: null, numbers: [v] }; }
+  if ((m = SALE_RE.exec(c))) {
+    const cur = m[1].toUpperCase(), v = Number(m[2]), was = Number(m[4]);
+    if (m[3] && m[3].toUpperCase() !== cur) return { ok: false, problem: 'a sale price and its original must be in one currency' };
+    if (!(was > v)) return { ok: false, problem: 'a sale\'s original ("was") price must be above the current price' };
+    return { ok: true, kind: 'sale', currency: cur, current: v, high: v, was, numbers: [v, was] };
+  }
+  if ((m = RANGE_RE.exec(c))) {
+    const cur = m[1].toUpperCase(), lo = Number(m[2]), hi = Number(m[4]);
+    if (m[3] && m[3].toUpperCase() !== cur) return { ok: false, problem: 'both ends of a range must be in one currency' };
+    if (!(lo < hi)) return { ok: false, problem: 'a range runs from its low end to a higher end' };
+    return { ok: true, kind: 'range', currency: cur, current: lo, high: hi, was: null, numbers: [lo, hi] };
+  }
+  return { ok: false, problem: 'price must be ' + PRICE_FORMS };
+}
+const demandRows = (de) => (de || '').split('\n').filter((l) => /^\s*\|\s*\d+\s*\|/.test(l)).map((l) => l.trim().replace(/^\||\|$/g, '').split('|').map((x) => x.trim()));
+// owner, 17/10/2026: Seasonality is "not measured (no source)" (as the competitor count is "not measured"), or a season or
+// "evergreen" that a cited result supports
+export const SEASON_NOT_MEASURED = 'not measured (no source)';
 
 const norm = (t) => String(t || '').replace(/\r\n/g, '\n');
 function section(t, heading) {
@@ -82,13 +111,14 @@ export function validateScoutBrief(text, { day = null, file = null, agent = fals
     const checked = line(de, 'checked');
     if (!checked || !DAY_RE.test(checked)) problems.push('Demand evidence: "checked: YYYY-MM-DD" missing');
     if (!line(de, 'search queries')) problems.push('Demand evidence: "search queries: ..." (the web searches the rows come from) missing');
-    const rows = de.split('\n').filter((l) => /^\s*\|\s*\d+\s*\|/.test(l)).map((l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+    const rows = demandRows(de);
     if (rows.length < MIN_RESULT_ROWS) problems.push('Demand evidence: ' + rows.length + ' search-result row(s), needs at least ' + MIN_RESULT_ROWS + ' (| # | listing title | price | result URL |)');
     rows.forEach((r, i) => {
       const [, title, price, url] = r;
       if (r.length < 4) { problems.push('Demand evidence row ' + (i + 1) + ': needs 4 cells (#, listing title, price, result URL)'); return; }
       if (!title) problems.push('Demand evidence row ' + (i + 1) + ': listing title missing');
-      if (!PRICE_RE.test(price || '')) problems.push('Demand evidence row ' + (i + 1) + ': price must be a currency code and a number as the result showed it (e.g. USD 4.99), got "' + price + '"');
+      const pp = parsePrice(price);
+      if (!pp.ok) problems.push('Demand evidence row ' + (i + 1) + ': ' + pp.problem + ' (got "' + price + '")');
       if (!urlsIn(url).length) problems.push('Demand evidence row ' + (i + 1) + ': result URL missing');
     });
   }
@@ -103,15 +133,35 @@ export function validateScoutBrief(text, { day = null, file = null, agent = fals
     if (!briefUsdRange(t)) problems.push('Price range: "USD <low>–<high>" missing');
     const n = urlsIn(pr).length;
     if (n < MIN_CITED_RESULTS) problems.push('Price range: supported by ' + n + ' distinct cited result(s), needs at least ' + MIN_CITED_RESULTS);
+    // owner, 17/10/2026: the price range uses the current prices (a range: its low and high ends), never a "was" price
+    const range = briefUsdRange(t), usd = demandRows(de).map((r) => parsePrice(r[2])).filter((x) => x.ok && x.currency === 'USD');
+    if (range && usd.length) {
+      const lo = Math.min(...usd.map((x) => x.current)), hi = Math.max(...usd.map((x) => x.high));
+      if (Math.abs(range.min - lo) > 0.005 || Math.abs(range.max - hi) > 0.005) problems.push('Price range: must be USD ' + lo.toFixed(2) + '–' + hi.toFixed(2) + ', the lowest and highest current prices of the Demand evidence rows (a sale counts at its current price, a range at its ends; never a "was" price), got USD ' + range.min + '–' + range.max);
+    }
+  }
+  const se = section(t, '## Seasonality');
+  if (se !== null) {
+    const v = se.split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+    if (!v) problems.push('Seasonality: write "' + SEASON_NOT_MEASURED + '", or the season with a cited result that supports it');
+    else if (v.replace(/\.$/, '').toLowerCase() !== SEASON_NOT_MEASURED && !urlsIn(se).length) problems.push('Seasonality: a season (or "evergreen") needs a cited result that supports it (its URL); with none, write "' + SEASON_NOT_MEASURED + '"');
   }
   const src = section(t, '## Sources');
   if (src !== null) {
     const listed = new Set(urlsIn(src));
-    const used = urlsIn([de, gt, section(t, '## Keywords'), pr].filter(Boolean).join('\n'));
+    const used = urlsIn([de, gt, section(t, '## Keywords'), pr, se].filter(Boolean).join('\n'));
     const missing = used.filter((u) => !listed.has(u));
     if (missing.length) problems.push('Sources: every cited URL must be listed under ## Sources; not listed: ' + missing.slice(0, 5).join(', ') + (missing.length > 5 ? ' (+' + (missing.length - 5) + ' more)' : ''));
   }
   return { ok: problems.length === 0, problems, id: f.id, status: f.status, day: f.date, cited: urlsIn(t) };
+}
+
+// owner, 17/10/2026 ("prices as shown"): every number in every Demand evidence price must be one a web call of the job
+// returned (returnedPrices: a Set of 2-decimal strings, lib/web-sources.mjs)
+export function priceStringProblems(text, returnedPrices) {
+  const bad = [];
+  demandRows(section(norm(text), '## Demand evidence')).forEach((r, i) => { const pp = parsePrice(r[2]); if (pp.ok) { const miss = pp.numbers.filter((n) => !returnedPrices.has(n.toFixed(2))); if (miss.length) bad.push('row ' + (i + 1) + ' "' + r[2] + '" (' + miss.map((n) => n.toFixed(2)).join(', ') + ')'); } });
+  return bad.length ? ['prices not shown by any web call in this job: ' + bad.slice(0, 5).join('; ') + (bad.length > 5 ? ' (+' + (bad.length - 5) + ' more)' : '')] : [];
 }
 
 // D1: every URL in the brief must be one that a web call of the job returned (returned: a Set of canonical URLs)
@@ -121,10 +171,11 @@ export function citationProblems(text, returned) {
 }
 
 // a genre-scout brief at brief-check and intake: the schema (status verified), its age, the citations against the
-// job's returned URLs (when given), then the same checks in the same order as brief-check.mjs checkBrief after its
+// job's returned URLs (when given), every Demand evidence price figure against the job's returned prices (when given:
+// owner, 17/10/2026, "prices as shown"), then the same checks in the same order as brief-check.mjs checkBrief after its
 // demand-evidence step: a digital product, the originality of the Design direction, the image policy, the price floor
 // (or the owner price line). -> { ok, reasons, key, product, evidence, price }
-export function checkScoutBrief(text, { products = [], cfg, returned = null, today = new Date(), productKey = null } = {}) {
+export function checkScoutBrief(text, { products = [], cfg, returned = null, returnedPrices = null, today = new Date(), productKey = null } = {}) {
   const t = norm(text), key = briefField(t, 'product_type'), prod = products.find((x) => x.key === key) || null;
   const v = validateScoutBrief(t, { productKey });
   if (!v.ok) return { ok: false, reasons: ['genre brief format: ' + v.problems.join('; ')], key, product: prod };
@@ -132,6 +183,7 @@ export function checkScoutBrief(text, { products = [], cfg, returned = null, tod
   if (age > MAX_AGE_DAYS) return { ok: false, reasons: ['demand evidence: ' + Math.floor(age) + ' days old (max ' + MAX_AGE_DAYS + ')'], key, product: prod };
   if (age < -1) return { ok: false, reasons: ['demand evidence: checked date is in the future'], key, product: prod };
   if (returned) { const c = citationProblems(t, returned); if (c.length) return { ok: false, reasons: c, key, product: prod }; }
+  if (returnedPrices) { const c = priceStringProblems(t, returnedPrices); if (c.length) return { ok: false, reasons: c, key, product: prod }; }
   const evidence = { level: EVIDENCE_LEVEL, competitorCount: COUNT_NOT_MEASURED, checked, cited: v.cited.length };
   if (!(prod && prod.digital === true)) return { ok: false, reasons: ['product_type ' + key + ' is not a digital product in products.json'], key, product: prod };
   const og = screenText(designDirectionOf(t), cfg, { ignore: SOFT_CATEGORIES });

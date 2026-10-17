@@ -1428,3 +1428,44 @@ No spend: everything below is tested against stubs (no network, no key read).
 
 Checks after the change: `npm test` 371/371; the mock dry run and `npm run parity -- --rebuild` (26/26) unchanged; port
 drift none. EVIDENCE-CHECKER's built prompt is 15,962 chars, 38 under StarNet's 16,000 clamp (flagged: little room left).
+
+## E6 step c: price and seasonality formats (owner-approved, 17/10/2026)
+
+After scout run 5 (`2026-10-17--genre-scout-5`, below in PROGRESS.md): TREND-SCOUT reported blocked because the genre
+brief format took only a single price per row and refused UNKNOWN seasonality. The owner's decisions:
+
+1. **Prices as shown.** A Demand evidence price is the raw string the search result showed, in one of three forms: one
+   price (`USD 4.99`); a sale, the current price with the original kept alongside (`USD 7.49 (was 9.99)`); a range, both
+   ends kept (`USD 4.50–18.75`). The floor and the price-range checks use the current price; for a range, the low end is
+   used for the floor. EVIDENCE-CHECKER verifies each raw price string against the job transcript.
+2. **Seasonality** `not measured (no source)` is a valid value, as the competitor count is "not measured". A season may be
+   claimed only when a cited result supports it.
+3. **The .env metadata check** is dropped from reports: the deny rule (`Read(./.env)` in `.claude/settings.json`) is the
+   guarantee now.
+
+### As built
+- `lib/scout-brief.mjs`: `parsePrice` (the three forms; a sale's original must be above its current price, a range runs low
+  to high, one currency); the Price range must be the lowest and highest CURRENT prices of the USD rows (a range at its
+  ends, never a "was" price), so the floor check (on the Price range low, as before) uses the current price or a range's
+  low end; Seasonality is `not measured (no source)` or carries a URL (listed under Sources and, at brief-check and
+  intake, returned by the job's web calls like every citation); `priceStringProblems`: every number in every price must be
+  one the job's web calls showed. `checkScoutBrief` takes `returnedPrices`.
+- `lib/web-sources.mjs` `pricesIn` / `returnedPrices`; `runtime.mjs` keeps each web call's price figures in full on its
+  transcript line (`returnedPrices`, like `returnedUrls`; the transcript's result excerpts are cut at 2,000 chars).
+- `orchestrator.mjs`: the scout-notes screen, brief-check and intake check the prices against the job transcript (a
+  transcript without price figures, i.e. before this change, fails closed); EVIDENCE-CHECKER's input gets a PRICES
+  RETURNED list next to SOURCES RETURNED.
+- Prompts: `skills/scout-brief-format.md` (the three price forms, the Price range rule, Seasonality), TREND-SCOUT step 4
+  (one sentence; the IP-rule lines unchanged word for word, test passes), EVIDENCE-CHECKER's genre-brief paragraph.
+
+### EVIDENCE-CHECKER trimmed first: 15,962 -> 13,972 chars (at most 14,000, owner)
+Merged duplicated rules; the IP rules (ORIGINALITY RULES, ORIGINALITY SOURCES) are unchanged word for word:
+- The `brief-format` skill (2,389 chars) is no longer inlined for EVIDENCE-CHECKER: it is the Researcher's writing template.
+  Its two rules the checker uses (the brief's front matter and headings, and the Evidence check's line format) are now
+  one paragraph in its orders. Keyword sourcing, the id rules and the UNKNOWN rule it also carried are in DEMAND EVIDENCE /
+  DATA HYGIENE and enforced by station code (brief-check). DEMAND-RESEARCHER still has the skill.
+- The source check (OPENED / NOT REACHABLE; YES / PARTLY / NO) was stated in step 2 and in the template: once now.
+- The owner-recorded rule was in step 2 and in DEMAND EVIDENCE: one short line in step 1 now (the skill keeps the full rule).
+- The floor in step 4 ("the lowest price clears the BRIEF FLOOR (or the owner price line does: BRIEF PRICE RULES)") is now
+  "the BRIEF PRICE RULES pass" (the rule itself is in those skills).
+- The 15-call limit and the reply line are stated once (they were per run and at the end).

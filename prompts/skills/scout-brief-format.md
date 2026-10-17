@@ -27,7 +27,7 @@ competitor count: not measured
 | # | listing title (as shown in the result) | price (as shown) | result URL |
 |---|---|---|---|
 | 1 | <title as the result shows it> | USD 4.99 | <the URL the result gave> |
-(at least 3 rows; price = a currency code and a number exactly as the result showed it)
+(at least 3 rows; price = the raw string exactly as the result showed it, in one of three forms: `USD 4.99`; a sale `USD 7.49 (was 9.99)`; a range `USD 4.50–18.75`. A note such as "on sale" goes in the title cell. Every number must be one the results showed: the station checks it against the job transcript)
 
 ## Genre trend evidence
 - <URL a search returned> — what it shows about the genre as a whole
@@ -38,10 +38,10 @@ competitor count: not measured
 
 ## Price range
 USD <low>–<high> — <result URL>, <result URL>, <result URL>
-(at least 3 different results that show those prices)
+(at least 3 different results that show those prices; low = the lowest current price of the rows (a range counts at its low end), high = the highest (a range at its high end), never a "was" price. The floor check uses the low)
 
 ## Seasonality
-When demand peaks, or "evergreen", with a source if one was returned.
+`not measured (no source)`, or when demand peaks (or "evergreen") with the URL of a result that supports it. Never claim a season no cited result shows.
 
 ## Design direction
 What the files are and two or three ORIGINAL concept ideas in plain words. Never describe another seller's design.

@@ -30,6 +30,20 @@ Last updated: 17/10/2026 (E6 step c0: the OpenRouter image client, vision pricin
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
 
+### E6 step c: scout run 5, then the price and seasonality formats (17/10/2026)
+
+- **Scout run 5** (`2026-10-17--genre-scout-5`, live, per-process override, product_key pngtuber-prop-pack, run cap USD
+  0.50, per-run cap USD 2.00): **incomplete**, no brief. TREND-SCOUT reported blocked after 8 of 12 searches: its 3 drafts
+  were refused by the format on write (row prices as a range or a sale, "USD 4.50 to 18.75 on sale", "USD 7.49 (was 9.99)";
+  Seasonality UNKNOWN with no source). EVIDENCE-CHECKER did not run. USD 0.116136 (Haiku 0.012375, relay tokens 0.023761,
+  search fees 0.08), 14 ledger rows (`req_011Cg8LeTse3B5WxPxEzcQ18` … `req_011Cg8LmNrx6pBx7YMZ9Tcgx`), none estimated;
+  5 names to the blocklist (3 games, 2 studios); customer-facing check clean (no file). The USD 3.50 floor was not the block.
+- **Owner decisions** (DECISIONS.md "E6 step c: price and seasonality formats"): sale and range prices as shown, the current
+  price (a range's low end) for the floor, every price string checked against the transcript; Seasonality
+  `not measured (no source)`; the .env metadata check dropped from reports. EVIDENCE-CHECKER trimmed to 13,972 chars first.
+- **Checks:** `npm test` 377/377 (new `e6-c-formats` 6/6; `live-web`'s live-shaped results now show their prices); the mock
+  dry run, `npm run dry-run:scout` (4 verified, 1 blocked) and `npm run parity -- --rebuild` (26/26) unchanged; port drift none.
+
 ### E6 step c0: OpenRouter images, vision pricing, floor USD 3.50 (17/10/2026)
 
 Built and tested on stubs only: no network, no key read, $0. Decisions and the build record: DECISIONS.md "E6 step c0".
@@ -573,6 +587,7 @@ Also needed before a real job on the product (added here; not in the owner's lis
 | 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **built**: Anthropic text (a0/a) and the live web backend (b0, first live run in b) done 17/10/2026; OpenRouter images built in c0 (17/10/2026), **not yet run live** | `@anthropic-ai/sdk` 0.131.0; `providers/anthropic.mjs`, `providers/anthropic-web.mjs`, `providers/openrouter.mjs` (plain `fetch`, no new dependency). |
 | 19 | Per-run cap | **closed** (owner, 17/10/2026) | `perRunUsd` USD 2.00 (owner spend rule; was 1.00 from the StarNet era). Job USD 5.00 and day USD 10.00 unchanged. |
 | 20 | Image token estimate in reservations | **done** (E6 c0, 17/10/2026) | `image_analyze` reserves the image as vision tokens from its pixel size (ceil(w/28) × ceil(h/28), capped at 4,784 on Haiku 5.5 and Sonnet 5.5, from the vision docs), settled from the usage: a 1024×1024 image reserves 1,369 tokens (USD 0.0027 on Sonnet). |
+| 21 | A verified genre brief for step c | **open** | Scout run 5 (17/10/2026): none (the format refused range and sale prices and UNKNOWN seasonality). Formats changed by the owner the same day; one more run next. |
 
 ### E5 Live UI (17/10/2026)
 

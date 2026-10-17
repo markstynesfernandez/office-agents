@@ -75,7 +75,7 @@ export function genreBrief(day, g, { bad = false, badSlug = 'cozy-farming-named'
     '## Genre trend evidence', '- ' + trendPage(g) + ' — FIXTURE genre trend roundup (genre-level signal only)', '',
     '## Keywords', ...kws.map((k, i) => '- ' + k + ' — ' + urls[i]), '',
     '## Price range', 'USD ' + g.price.toFixed(2) + '–' + (g.price + 2).toFixed(2) + ' — ' + urls.slice(0, 3).join(', '), '',
-    '## Seasonality', 'evergreen (FIXTURE)', '',
+    '## Seasonality', 'not measured (no source)', '',
     '## Design direction', 'Twelve original desk props for a ' + g.genre + ' stream setup: ' + g.props + '. Palette: ' + g.palette + '. Ours gives twelve matching props where the results above sell six to eight.', '',
     '## Risks', 'FIXTURE: genre and aesthetic only; no game, studio, character, place, item or logo; AI disclosure in the listing.', '',
     '## Sources', '- ' + trendPage(g) + ' — FIXTURE genre trend roundup', ...urls.map((u, i) => '- ' + u + ' — FIXTURE search result ' + (i + 1) + ' (title and price as shown; the page is not opened)'), ''

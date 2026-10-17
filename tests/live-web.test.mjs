@@ -296,9 +296,10 @@ test('the genre-scout line on live-shaped responses: 4 verified, 1 blocked, game
   const r = tempRoot('live-scout');
   const script = createScoutScript();
   let cur = null;
+  // E6 c (owner, 17/10/2026): each result's title shows its price, as a real result does (the prices are checked against the transcript)
   // E6 b2 (owner D1): the live-shaped search results are the FIXTURE's own ("- title | url | price" lines), so the scout
   // fetches and cites only URLs a search returned
-  const fixtureResults = (body) => { const query = JSON.parse(String(body.messages[0].content).split('\n')[1]); return fixtureWeb('web_search', { query }).split('\n').filter((l) => /^- .+ \| https:\/\//.test(l)).map((l) => { const [title, url] = l.slice(2).split(' | '); return { type: 'web_search_result', url, title, encrypted_content: 'ENC', page_age: 'October 15, 2026' }; }); };
+  const fixtureResults = (body) => { const query = JSON.parse(String(body.messages[0].content).split('\n')[1]); return fixtureWeb('web_search', { query }).split('\n').filter((l) => /^- .+ \| https:\/\//.test(l)).map((l) => { const [title, url, price] = l.slice(2).split(' | '); return { type: 'web_search_result', url, title: title + (price ? ' — ' + price : ''), encrypted_content: 'ENC', page_age: 'October 15, 2026' }; }); };
   const client = stubClient({ text: (body) => script(cur, body), web: (body) => webReply(body, body.tools[0].name === 'web_search' ? { results: fixtureResults(body) } : {}) });
   const log = memLog();
   const providers = createProviders({ mode: 'live', engineCfg: ENGINE, env: LIVE_ENV, log, client });

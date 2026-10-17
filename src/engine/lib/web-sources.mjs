@@ -55,6 +55,28 @@ export function urlsIn(text) {
   }
   return out;
 }
+// E6 c (owner, 17/10/2026, "prices as shown"): the price figures a web result showed, normalised to 2 decimals: every number
+// after a currency code or sign (USD 4.99, $4.99, €7, £3.50), the far end of a range after one ("$4.50 to 18.75",
+// "USD 4.50–18.75"), an original price after "was" ("(was $9.99)"), and any number with exactly 2 decimals. A brief's price
+// string is checked against these: every number in it must be one a web call of the job returned (the transcript keeps them).
+const CUR_TOKEN = '(?:USD|EUR|GBP|CAD|AUD|US\\$|\\$|€|£)';
+const PRICE_NUM = '(\\d{1,5}(?:[.,]\\d{1,2})?)';
+const priceKey = (n) => { const v = Number(String(n).replace(',', '.')); return Number.isFinite(v) ? v.toFixed(2) : null; };
+export function pricesIn(text) {
+  const t = String(text || ''), out = new Set(), add = (n) => { const k = priceKey(n); if (k) out.add(k); };
+  for (const m of t.matchAll(new RegExp(CUR_TOKEN + '\\s?' + PRICE_NUM + '(?:\\s*(?:–|—|-|to)\\s*' + CUR_TOKEN + '?\\s?' + PRICE_NUM + ')?', 'gi'))) { add(m[1]); if (m[2]) add(m[2]); }
+  for (const m of t.matchAll(new RegExp('\\bwas\\s*' + CUR_TOKEN + '?\\s?' + PRICE_NUM, 'gi'))) add(m[1]);
+  for (const m of t.matchAll(/(?<![\d.])(\d{1,5}\.\d{2})(?![\d.])/g)) add(m[1]);
+  return [...out];
+}
+// the price figures the web calls of a job returned (transcript `returnedPrices`, written in full by runtime.mjs); a missing
+// transcript, or one written before E6 c, returns an empty set (no price can be confirmed: fails closed)
+export function returnedPrices(transcriptFile) {
+  const set = new Set();
+  let t = ''; try { t = fs.readFileSync(transcriptFile, 'utf8'); } catch (_) { return set; }
+  for (const l of t.split('\n')) { if (!l.trim()) continue; let r; try { r = JSON.parse(l); } catch (_) { continue; } for (const p of r.returnedPrices || []) set.add(p); }
+  return set;
+}
 // the URLs the web calls of a job returned, from its transcript (data/jobs/<id>/transcript.jsonl: `returnedUrls` on each
 // line, written in full by runtime.mjs, with `searchUrls` the part that web_search returned). searchOnly: only the URLs
 // search results gave (what may be fetched); otherwise every returned URL (what may be cited). A missing or unreadable
