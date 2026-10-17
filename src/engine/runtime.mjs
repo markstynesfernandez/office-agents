@@ -123,13 +123,14 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   const redactKey = makeRedactor([]), redact = (t) => redactKey(log && log.redact ? log.redact(t) : t);
   const transcriptFile = job ? path.join(engine.J.dataRoot, 'jobs', job.id, 'transcript.jsonl') : null;
   const addLine = (rec) => { if (!transcriptFile) return; try { engine.J.add(transcriptFile, redact(JSON.stringify(rec)) + '\n'); } catch (e) { log.warn('transcript write failed (ignored)', { runId, error: e.message }); } };
-  // E6 c (owner, 17/10/2026): the price figures each web call returned are kept in full too (returnedPrices, lib/web-sources.mjs).
+  // E6 c (owner, 17/10/2026): the price figures each web call returned are kept in full too (returnedPrices, lib/web-sources.mjs),
+// and per web_search call with its query (searchPrices: what each search showed, so a brief cannot hide a cheaper result).
 // E6 b2 (owner D1): the URLs each web call returned are kept IN FULL (returnedUrls; searchUrls = the web_search part), so a
   // fetch or a citation can be checked against what the web really gave this job, whatever the excerpt length
   const transcript = (resp, uses, results, extra = {}, web = null) => addLine({ at: new Date().toISOString(), runId, agent: agentKey, step, pass, turn: totals.turns, requestId: resp.request_id || null, stop_reason: resp.stop_reason || null,
     text: resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n'), toolCalls: uses.map((u) => ({ name: u.name, input: u.input })),
     toolResults: results.map((r) => ({ tool_use_id: r.tool_use_id, is_error: !!r.is_error, content: String(r.content).slice(0, TRANSCRIPT_RESULT_CHARS) })),
-    ...(web && web.all.size ? { returnedUrls: [...web.all], searchUrls: [...web.search] } : {}), ...(web && web.prices.size ? { returnedPrices: [...web.prices] } : {}), ...extra });
+    ...(web && web.all.size ? { returnedUrls: [...web.all], searchUrls: [...web.search] } : {}), ...(web && web.prices.size ? { returnedPrices: [...web.prices] } : {}), ...(web && web.searches.length ? { searchPrices: web.searches } : {}), ...extra });
 
   const messages = [{ role: 'user', content: String(input) }];
   let status = 'done', endReason = 'end_turn', error = null, lastText = '', nudges = 0, toolChoice = null, shortfall = null, missing = null, nudgeOnly = null;
@@ -173,14 +174,14 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
         }
         break;
       }
-      const results = [], web = { all: new Set(), search: new Set(), prices: new Set() };
+      const results = [], web = { all: new Set(), search: new Set(), prices: new Set(), searches: [] };
       for (const u of uses) {
         totals.tools.push(u.name);
         let out, isError = false;
         try {
           if (only && !only.has(u.name)) throw new ToolError(u.name + ' refused: answer the reminder with ' + [...only].join(' or ') + ' only');
           out = await box.call(u.name, u.input);
-          if (u.name === 'web_search' || u.name === 'web_fetch') { for (const x of urlsIn(out)) { web.all.add(x); if (u.name === 'web_search') web.search.add(x); } for (const p of pricesIn(out)) web.prices.add(p); }
+          if (u.name === 'web_search' || u.name === 'web_fetch') { for (const x of urlsIn(out)) { web.all.add(x); if (u.name === 'web_search') web.search.add(x); } const ps = pricesIn(out); for (const p of ps) web.prices.add(p); if (u.name === 'web_search') web.searches.push({ query: String((u.input && u.input.query) || ''), prices: ps }); }
         }
         catch (e) {
           if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped) { transcript(resp, uses, results, { ...after, error: e.message }); throw e; }

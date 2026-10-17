@@ -22,7 +22,7 @@ Who buys it, for what use. No real people.
 ## Demand evidence
 evidence level: indicative
 checked: YYYY-MM-DD
-search queries: <the web_search queries the rows come from, separated by ;>
+search queries: <the exact web_search queries the rows come from, separated by ;>
 competitor count: not measured
 | # | listing title (as shown in the result) | price (as shown) | result URL |
 |---|---|---|---|
@@ -38,7 +38,9 @@ competitor count: not measured
 
 ## Price range
 USD <low>–<high> — <result URL>, <result URL>, <result URL>
-(at least 3 different results that show those prices; low = the lowest current price of the rows (a range counts at its low end), high = the highest (a range at its high end), never a "was" price. The floor check uses the low)
+(at least 3 different results that show those prices; the FULL range as shown: low = the lowest current price of the rows (a range at its low end), high = the highest, never a "was" price)
+
+FLOOR (owner, 17/10/2026; for genre briefs this replaces BRIEF PRICE RULES' lowest-price rule): the floor is our minimum listing price, not a limit on the market. A brief passes when at least 3 rows show a current price at or above the BRIEF FLOOR. Record every result your named searches showed below the floor as a row too: never drop or hide a cheap row (the station checks the transcript).
 
 ## Seasonality
 `not measured (no source)`, or when demand peaks (or "evergreen") with the URL of a result that supports it. Never claim a season no cited result shows.

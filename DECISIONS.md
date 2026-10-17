@@ -1469,3 +1469,30 @@ Merged duplicated rules; the IP rules (ORIGINALITY RULES, ORIGINALITY SOURCES) a
 - The floor in step 4 ("the lowest price clears the BRIEF FLOOR (or the owner price line does: BRIEF PRICE RULES)") is now
   "the BRIEF PRICE RULES pass" (the rule itself is in those skills).
 - The 15-call limit and the reply line are stated once (they were per run and at the end).
+
+## E6 step c: the floor rule corrected (owner decision, 17/10/2026)
+
+Replaces decision 1's floor wording of "E6 step c: price and seasonality formats" (`74da080`), after scout run 6. **The floor
+is our minimum listing price, not a requirement that the market has no cheaper listings.**
+- Price range: the full range exactly as shown, listings below the floor included. Cheap rows are never dropped or hidden.
+- Floor check for a brief: passes when at least 3 cited listings show a current price at or above USD 3.50 (a sale price
+  counts as current). The low end of the range is no longer used for the floor check.
+- LISTER and QA-LISTING still never price below USD 3.50 (unchanged: the price fill and the package gate hold the floor).
+
+### As built (genre-scout briefs)
+- `lib/scout-brief.mjs`: `floorRows` counts the Demand evidence rows with a result URL whose USD current price is at or
+  above the product's floor (a sale at its current price; a range counts only when its low end clears the floor, i.e. when
+  every option it sells is at or above it: my reading, flagged); `MIN_FLOOR_ROWS` 3. `checkScoutBrief` uses it instead
+  of the Price range's low end (the owner price line keeps its own rule). The Price range must still be the rows' full
+  current range (unchanged since `74da080`), so cheap rows show in it.
+- "Never hide a cheap row": `hiddenRowProblems` — every price under the floor that the brief's own searches (its
+  `search queries:` line, matched to the job's web_search calls) returned must appear in a Demand evidence price, and every
+  named query must be one a web search of the job ran. The transcript now keeps each web_search's price figures with its
+  query (`searchPrices`). Applied at the scout-notes screen, brief-check and intake (checked against the job transcript).
+  Known limit: the figures are read from the result text, so a non-listing figure under the floor in a result (a shipping
+  fee, say) would count as a result to record.
+- Prompts: `skills/scout-brief-format.md` (the full range; the FLOOR rule replacing BRIEF PRICE RULES' lowest-price rule for
+  genre briefs; record every cheaper result; exact query names), EVIDENCE-CHECKER's genre paragraph (13,974 chars, under
+  14,000). TREND-SCOUT reads the rule from its skill; its prompt and IP-rule lines are unchanged.
+- **Not changed (flagged):** the research line's Etsy briefs (DEMAND-RESEARCHER, `checkBrief`, `price-rules-brief.md`) still
+  need the lowest top-5 price at or above the floor. The correction named the genre-scout pieces; say if it applies there too.

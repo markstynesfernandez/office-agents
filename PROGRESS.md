@@ -30,6 +30,20 @@ Last updated: 17/10/2026 (E6 step c0: the OpenRouter image client, vision pricin
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
 
+### E6 step c: scout run 6, then the floor rule corrected (17/10/2026)
+
+- **Scout run 6** (`2026-10-17--genre-scout-6`, live, per-process override, same caps): **incomplete**, no brief. TREND-SCOUT
+  reported blocked after 10 of 12 searches: every genre's results included listings under USD 3.50, and the low end of the
+  range was then the floor check, so no brief could pass; 2 drafts refused on write (a price cell with a note; a Price range
+  leaving out its own USD 1.00 row; a season without a citation). EVIDENCE-CHECKER did not run. USD 0.145386 (Haiku text
+  0.016332, relay tokens 0.029054, search fees 0.10), 17 ledger rows (`req_011Cg8MwXdgs72h5PbKRNvTZ` …
+  `req_011Cg8N5Lhr7yVn1CFmEXDDJ`), none estimated; 19 names to the blocklist (2 games, 1 studio, 16 related); customer-facing
+  check clean (no file).
+- **Owner correction** (DECISIONS.md "E6 step c: the floor rule corrected"): the floor passes on 3 cited listings at or above
+  USD 3.50; the full range is recorded, cheap rows included and never hidden (checked against the transcript).
+- **Checks:** `npm test` 378/378 (`e6-c-formats` 7/7, 3 tests changed to the corrected rule, 1 new); the mock dry run,
+  `npm run dry-run:scout` (4 verified, 1 blocked) and `npm run parity -- --rebuild` (26/26) unchanged; port drift none.
+
 ### E6 step c: scout run 5, then the price and seasonality formats (17/10/2026)
 
 - **Scout run 5** (`2026-10-17--genre-scout-5`, live, per-process override, product_key pngtuber-prop-pack, run cap USD
@@ -587,7 +601,7 @@ Also needed before a real job on the product (added here; not in the owner's lis
 | 18 | Live providers (Anthropic text, the live web backend, OpenRouter images) | **built**: Anthropic text (a0/a) and the live web backend (b0, first live run in b) done 17/10/2026; OpenRouter images built in c0 (17/10/2026), **not yet run live** | `@anthropic-ai/sdk` 0.131.0; `providers/anthropic.mjs`, `providers/anthropic-web.mjs`, `providers/openrouter.mjs` (plain `fetch`, no new dependency). |
 | 19 | Per-run cap | **closed** (owner, 17/10/2026) | `perRunUsd` USD 2.00 (owner spend rule; was 1.00 from the StarNet era). Job USD 5.00 and day USD 10.00 unchanged. |
 | 20 | Image token estimate in reservations | **done** (E6 c0, 17/10/2026) | `image_analyze` reserves the image as vision tokens from its pixel size (ceil(w/28) × ceil(h/28), capped at 4,784 on Haiku 5.5 and Sonnet 5.5, from the vision docs), settled from the usage: a 1024×1024 image reserves 1,369 tokens (USD 0.0027 on Sonnet). |
-| 21 | A verified genre brief for step c | **open** | Scout run 5 (17/10/2026): none (the format refused range and sale prices and UNKNOWN seasonality). Formats changed by the owner the same day; one more run next. |
+| 21 | A verified genre brief for step c | **open** | Scout run 5 (17/10/2026): none (the format refused range and sale prices and UNKNOWN seasonality); formats changed by the owner. Scout run 6: none (cheaper listings in every genre failed the low-end floor check); the floor rule corrected by the owner (3 listings at or above USD 3.50). One more run next. |
 
 ### E5 Live UI (17/10/2026)
 

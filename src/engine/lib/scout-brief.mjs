@@ -61,6 +61,31 @@ export function parsePrice(cell) {
   return { ok: false, problem: 'price must be ' + PRICE_FORMS };
 }
 const demandRows = (de) => (de || '').split('\n').filter((l) => /^\s*\|\s*\d+\s*\|/.test(l)).map((l) => l.trim().replace(/^\||\|$/g, '').split('|').map((x) => x.trim()));
+// owner correction, 17/10/2026 (replaces the low-end floor wording): the floor is our minimum listing price, not a rule that
+// the market has no cheaper listings. A genre brief records the full range as shown, cheap rows included, and passes the floor
+// when at least MIN_FLOOR_ROWS cited listings (Demand evidence rows with a result URL, in USD) show a CURRENT price at or above
+// it (a sale counts at its current price; a range counts when its low end clears the floor, i.e. every option it sells does).
+export const MIN_FLOOR_ROWS = 3;
+export function floorRows(text, floorUsd) {
+  const rows = demandRows(section(norm(text), '## Demand evidence')).filter((r) => r.length >= 4 && urlsIn(r[3]).length).map((r) => parsePrice(r[2])).filter((p) => p.ok && p.currency === 'USD');
+  const at = rows.filter((p) => p.current >= floorUsd - 1e-9).length;
+  return { at, of: rows.length, ok: at >= MIN_FLOOR_ROWS };
+}
+const normQuery = (q) => String(q || '').toLowerCase().replace(/\s+/g, ' ').trim();
+// a brief may not hide a cheaper result it was given: every price under the floor that the brief's own searches (its
+// "search queries" line, matched to the job's web_search calls) returned must appear in a Demand evidence price; every named
+// query must be one a web search of the job ran. searches: [{ query, prices }] from the transcript (web-sources searchPrices)
+export function hiddenRowProblems(text, searches, floorUsd) {
+  const de = section(norm(text), '## Demand evidence'), named = (line(de, 'search queries') || '').split(';').map(normQuery).filter(Boolean);
+  const ran = new Set((searches || []).map((s) => normQuery(s.query))), notRun = named.filter((q) => !ran.has(q));
+  if (!named.length || notRun.length) return ['Demand evidence: search queries not run by any web search in this job: ' + (notRun.length ? notRun.map((q) => '"' + q + '"').join('; ') : '(none named)') + ' (name the exact queries the rows come from)'];
+  const shown = new Set(demandRows(de).flatMap((r) => { const p = parsePrice(r[2]); return p.ok ? p.numbers.map((n) => n.toFixed(2)) : []; }));
+  const hidden = [...new Set((searches || []).filter((s) => named.includes(normQuery(s.query))).flatMap((s) => s.prices))].filter((p) => Number(p) < floorUsd - 1e-9 && !shown.has(p)).sort((a, b) => Number(a) - Number(b));
+  return hidden.length ? ['Demand evidence hides results its searches showed below the floor USD ' + floorUsd + ': ' + hidden.map((p) => 'USD ' + p).join(', ') + ' (record every result as shown, cheaper ones included: they never fail the floor)'] : [];
+}
+// the floor in USD of a product (the owner floor, else the fee model), as briefPriceCheck has it
+export const briefFloorUsd = (prod, cfg) => briefPriceCheck(null, prod, cfg).floorUsd;
+
 // owner, 17/10/2026: Seasonality is "not measured (no source)" (as the competitor count is "not measured"), or a season or
 // "evergreen" that a cited result supports
 export const SEASON_NOT_MEASURED = 'not measured (no source)';
@@ -175,7 +200,7 @@ export function citationProblems(text, returned) {
 // owner, 17/10/2026, "prices as shown"), then the same checks in the same order as brief-check.mjs checkBrief after its
 // demand-evidence step: a digital product, the originality of the Design direction, the image policy, the price floor
 // (or the owner price line). -> { ok, reasons, key, product, evidence, price }
-export function checkScoutBrief(text, { products = [], cfg, returned = null, returnedPrices = null, today = new Date(), productKey = null } = {}) {
+export function checkScoutBrief(text, { products = [], cfg, returned = null, returnedPrices = null, searches = null, today = new Date(), productKey = null } = {}) {
   const t = norm(text), key = briefField(t, 'product_type'), prod = products.find((x) => x.key === key) || null;
   const v = validateScoutBrief(t, { productKey });
   if (!v.ok) return { ok: false, reasons: ['genre brief format: ' + v.problems.join('; ')], key, product: prod };
@@ -189,7 +214,11 @@ export function checkScoutBrief(text, { products = [], cfg, returned = null, ret
   const og = screenText(designDirectionOf(t), cfg, { ignore: SOFT_CATEGORIES });
   if (og.result === 'hit') return { ok: false, reasons: ['originality: Design direction ' + og.hits.map((h) => hitLine({ field: 'concept', ...h })).join('; ')], key, product: prod, originality: og };
   const policy = imagePolicyProblem(prod, cfg); if (policy) return { ok: false, reasons: [policy], key, product: prod };
-  const range = briefUsdRange(t), r = briefPriceCheck((range || {}).min ?? null, prod, cfg, range);
+  // owner correction, 17/10/2026: the floor passes on MIN_FLOOR_ROWS cited listings at or above it (floorRows), never on the
+  // range's low end; the brief must not hide a cheaper result its searches showed (hiddenRowProblems, when the transcript is given)
+  const range = briefUsdRange(t), bp = briefPriceCheck((range || {}).min ?? null, prod, cfg, range), fr = floorRows(t, bp.floorUsd);
+  if (searches) { const h = hiddenRowProblems(t, searches, bp.floorUsd); if (h.length) return { ok: false, reasons: h, key, product: prod }; }
+  const r = { ...bp, ok: fr.ok, reason: fr.at + ' of ' + fr.of + ' cited listings show a current price at or above the floor USD ' + bp.floorUsd + (fr.ok ? '' : ', needs at least ' + MIN_FLOOR_ROWS + ' (cheaper listings stay in the brief and never fail it)') };
   const op = ownerPrice(t);
   if (op && op.problem) { r.ok = false; r.reason = op.problem; }
   else if (op) {

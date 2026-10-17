@@ -385,8 +385,9 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
   assert.ok(!hi.reasons.some((x) => /^price:/.test(x)), hi.reasons.join('; '));
   // the scout's genre brief check (EVIDENCE-CHECKER's verified briefs go through it at brief-check and intake)
   const day = '2026-10-17', g = (p) => ({ ...GENRES[1], price: p });
+  // owner correction (17/10/2026): a genre brief passes on 3 cited listings at or above the floor (rows p, p+0.5, ... p+2: row 3 is p+1)
   const scout = (p) => { const b = genreBrief(day, g(p)).replace('status: candidate', 'status: verified') + '\n## Evidence check\n- ok\n'; return checkScoutBrief(b, { products: CFG.products, cfg: st, returned: new Set(urlsIn(b)), today }); };
-  assert.equal(scout(3.49).price.ok, false); assert.equal(scout(3.5).price.ok, true);
+  assert.equal(scout(2.49).price.ok, false); assert.equal(scout(2.5).price.ok, true);
   // intake (createJob) refuses the 3.49 brief on price and takes the 3.50 one
   const r = tempRoot('c0-floor'); t.after(r.cleanup);
   const engine = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false });

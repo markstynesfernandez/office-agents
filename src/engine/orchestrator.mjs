@@ -41,8 +41,8 @@ import { canonicalDesignFile } from './tools/index.mjs';
 import { COLUMNS as LEGACY_COLUMNS } from '../lib/legacy-readers/tracker.mjs';
 import { dublinDay } from './time.mjs';
 import { validateNotes, blocklistFromNotes, readDayNotes, scoutingBriefProblems, isScoutBrief, notesFile, notesRel, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
-import { checkScoutBrief, validateScoutBrief, priceStringProblems, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
-import { returnedUrls, returnedPrices, urlsIn } from './lib/web-sources.mjs';
+import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
+import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-sources.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -78,7 +78,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const jid = citationsJob || ([...t.matchAll(new RegExp(STATION_CITATIONS_RE.source, 'gm'))].pop() || [])[2] || null;   // the last one: brief-check appends it
       const tf = jid && isListingId(jid) ? transcriptOf(jid) : null;
       // owner, 17/10/2026 ("prices as shown"): every price figure must be one the job's web calls returned, too
-      c = tf && fs.existsSync(tf) ? checkScoutBrief(t, { products: cfg.products, cfg: cfg.station, returned: returnedUrls(tf), returnedPrices: returnedPrices(tf), productKey })
+      c = tf && fs.existsSync(tf) ? checkScoutBrief(t, { products: cfg.products, cfg: cfg.station, returned: returnedUrls(tf), returnedPrices: returnedPrices(tf), searches: searchPrices(tf), productKey })
         : { ok: false, reasons: ['citations: no transcript to check them against (' + (jid ? 'job ' + jid + ' has none' : 'no station citation line from brief-check') + ')'], key: briefField(t, 'product_type') };
     } else c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
     const sp = scoutingBriefProblems(t, cfg.station), warnings = commonWordWarnings({ brief: t }, commonWords(researchDir()));
@@ -662,7 +662,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       if (!sp.length) {
         const sv0 = validateScoutBrief(t, { day, file: f, productKey: job.product_key || null });
         // owner, 17/10/2026 ("prices as shown"): every price figure must be one this job's web calls returned
-        const sv = sv0.ok ? (() => { const pp = priceStringProblems(t, returnedPrices(transcriptOf(job.id))); return pp.length ? { ...sv0, ok: false, problems: pp } : sv0; })() : sv0;
+        // owner correction, 17/10/2026: and it may not hide a result under the floor that its own searches showed
+        const prod = (cfg.products || []).find((x) => x.key === job.product_key) || null;
+        const sv = sv0.ok ? (() => { const tf = transcriptOf(job.id), pp = [...priceStringProblems(t, returnedPrices(tf)), ...(prod ? hiddenRowProblems(t, searchPrices(tf), briefFloorUsd(prod, cfg.station)) : [])]; return pp.length ? { ...sv0, ok: false, problems: pp } : sv0; })() : sv0;
         if (!sv.ok) {
           J.move(path.join(drafts, f), path.join(rdir, 'rejected', f));
           J.put(path.join(rdir, 'rejected', f), t + '\n\n## Station brief schema\n' + sv.problems.map((r) => '- ' + r).join('\n') + '\n');

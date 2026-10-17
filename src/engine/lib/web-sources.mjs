@@ -77,6 +77,13 @@ export function returnedPrices(transcriptFile) {
   for (const l of t.split('\n')) { if (!l.trim()) continue; let r; try { r = JSON.parse(l); } catch (_) { continue; } for (const p of r.returnedPrices || []) set.add(p); }
   return set;
 }
+// the price figures each web_search of a job returned, with its query (transcript `searchPrices`): [{ query, prices }]
+export function searchPrices(transcriptFile) {
+  const out = [];
+  let t = ''; try { t = fs.readFileSync(transcriptFile, 'utf8'); } catch (_) { return out; }
+  for (const l of t.split('\n')) { if (!l.trim()) continue; let r; try { r = JSON.parse(l); } catch (_) { continue; } for (const s of r.searchPrices || []) out.push({ query: String(s.query || ''), prices: Array.isArray(s.prices) ? s.prices : [] }); }
+  return out;
+}
 // the URLs the web calls of a job returned, from its transcript (data/jobs/<id>/transcript.jsonl: `returnedUrls` on each
 // line, written in full by runtime.mjs, with `searchUrls` the part that web_search returned). searchOnly: only the URLs
 // search results gave (what may be fetched); otherwise every returned URL (what may be cited). A missing or unreadable
