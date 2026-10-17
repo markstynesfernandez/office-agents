@@ -65,6 +65,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     else if (j.state === 'blocked' || j.state === 'stopped') { out.lane = 'blocked'; out.stage = 'blocked'; out.status = 'blocked'; out.flag = j.state === 'stopped' ? 'stopped' : null; out.qaPassedGateFailed = /^QA passed, package gate failed/.test(j.reason || ''); }
     else if (j.state === 'rejected' || j.state === 'rejected_by_owner') { out.lane = 'rejected'; out.stage = 'rejected'; out.status = 'rejected'; out.rejectedBy = j.state === 'rejected' ? 'rejects-desk' : 'owner'; }
     else if (j.state === 'parked') { out.lane = 'parked'; out.stage = 'parked'; out.status = 'parked'; }
+    else if (j.state === 'archived') { out.stage = 'archived'; out.status = 'archived'; out.agentId = null; }
     out.hops = myRuns.map((r, i) => ({ i, agentId: r.agent_key, agentName: nameOf[r.agent_key] || r.agent_key, stage: (stepDef(j, r.step) || {}).column || r.step, pass: r.pass, verdict: null, usd: r6(r.usd), ms: r.ended_at ? r.ended_at - r.started_at : null, output: r.status !== 'done' && r.status !== 'running' ? r.status + ': ' + (r.end_reason || r.error || '') : null, live: r.status === 'running', at: r.ended_at || r.started_at, runId: r.run_id }));
     const qa = (sub, re) => (fs.existsSync(path.join(dir, sub)) ? fs.readdirSync(path.join(dir, sub)).map((f) => re.exec(f)).filter(Boolean).map((m) => ({ n: Number(m[1]), rec: readJson(path.join(dir, sub, m[0])) })).sort((a, b) => a.n - b.n).map((p) => ({ pass: p.n, verdict: p.rec && p.rec.verdict, reasons: ((p.rec && p.rec.reasons) || []).slice(0, 3) })) : []);
     if (j.kind !== 'research') {
@@ -98,7 +99,10 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     return out;
   }).filter(Boolean).sort((a, b) => (b.stageChangedAt || 0) - (a.stageChangedAt || 0));
 
-  const board = { columns: columns.map((c) => ({ ...c, jobIds: jobs.filter((j) => !j.lane && j.stage === c.key).map((j) => j.id) })), lanes: { blocked: jobs.filter((j) => j.lane === 'blocked').map((j) => j.id), rejected: jobs.filter((j) => j.lane === 'rejected').map((j) => j.id), parked: jobs.filter((j) => j.lane === 'parked').map((j) => j.id) } };
+  // E5 item 0b: imported legacy jobs never sit in a stage column (an unfinished legacy job is not in progress here) or in
+  // the engine's lanes; they all go to the Legacy lane. Archived engine jobs leave the board (the task list's Archived chip).
+  const own = jobs.filter((j) => j.kind !== 'legacy' && j.state !== 'archived');
+  const board = { columns: columns.map((c) => ({ ...c, jobIds: own.filter((j) => !j.lane && j.stage === c.key).map((j) => j.id) })), lanes: { blocked: own.filter((j) => j.lane === 'blocked').map((j) => j.id), rejected: own.filter((j) => j.lane === 'rejected').map((j) => j.id), parked: own.filter((j) => j.lane === 'parked').map((j) => j.id), legacy: jobs.filter((j) => j.kind === 'legacy').map((j) => j.id) } };
 
   // ---- agents
   const rows = ledger.rows();

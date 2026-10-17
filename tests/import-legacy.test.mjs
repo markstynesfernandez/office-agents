@@ -172,7 +172,11 @@ test('after an import the engine shows the legacy jobs, lanes and memory, and le
   const engine = createEngine({ J, log, startScheduler: false });
   t.after(() => engine.close());
   const s = buildEngineSnapshot(engine);
-  assert.deepEqual(Object.fromEntries(Object.entries(s.board.lanes).map(([k, v]) => [k, v.length])), { blocked: 1, rejected: 1, parked: 1 });
+  // E5 item 0b: every legacy job is in the Legacy lane only, never in a stage column or the engine's lanes
+  assert.deepEqual(Object.fromEntries(Object.entries(s.board.lanes).map(([k, v]) => [k, v.length])), { blocked: 0, rejected: 0, parked: 0, legacy: s.jobs.filter((j) => j.kind === 'legacy').length });
+  assert.ok(s.board.lanes.legacy.length >= 4);
+  for (const c of s.board.columns) assert.deepEqual(c.jobIds.filter((id) => s.jobs.find((j) => j.id === id).kind === 'legacy'), [], 'no legacy job in the ' + c.key + ' column');
+  const D0 = s.jobs.find((j) => j.id === D); assert.ok(s.board.lanes.legacy.includes(D0.id), 'the unfinished legacy job is in the Legacy lane, not a stage column');
   const a = s.jobs.find((j) => j.id === A);
   assert.equal(a.kind, 'legacy'); assert.equal(a.lane, 'blocked'); assert.equal(a.warnings.length, 1); assert.equal(a.hops.length, 1); assert.equal(a.hops[0].agentId, 'designer');
   assert.equal(a.costUsd, 0.1234605); assert.ok(a.images.some((i) => i.file === 'work/design-v1.png')); assert.equal(a.qaDesign[0].verdict, 'revise');

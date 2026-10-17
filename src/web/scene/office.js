@@ -24,6 +24,7 @@ import { makeMonitorTexture } from './monitor.js';
 import { computeLayout, pointAt, pathLength, FLOOR, WALL_H, CORE_R } from './layout.js';
 import { buildRooms } from './rooms.js';
 import { woodTexture, tileTexture, glowTexture, atlasTexture, GLOW_UV } from './textures.js';
+import { SKIN, HAIR, TROUSERS, hash, shirtColours } from './looks.js';   // people's looks (R2; shirts off the skin range, E5)
 
 const DEG = Math.PI / 180;
 const PITCH = 35 * DEG, YAW = 45 * DEG;
@@ -41,11 +42,6 @@ const clean = (g) => { const n = g.index ? g.toNonIndexed() : g; for (const k of
 const merge = (list) => mergeGeometries(list.map(clean));
 function roundedRectShape(w, h, r) { const s = new THREE.Shape(), x = -w / 2, y = -h / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s; }
 function ringGeo(w, h, r, t) { const s = roundedRectShape(w, h, r); s.holes.push(roundedRectShape(w - 2 * t, h - 2 * t, Math.max(0.01, r - t))); const g = new THREE.ShapeGeometry(s, 6); g.rotateX(-Math.PI / 2); return g; }
-// people's looks (R2): skin tones, hair colours and trousers, picked per agent from its id; the shirt is the agent's colour
-const SKIN = ['#f3d5bf', '#e8bf9c', '#d29e78', '#b07a55', '#8c5a3c', '#6a432d'];
-const HAIR = ['#2a2420', '#4b3426', '#6e4a2f', '#a57a4c', '#d3b07c', '#1d1d21', '#8f8a84', '#7c3b22'];
-const TROUSERS = ['#3a3f4b', '#4c4f57', '#2e3440', '#5a5248', '#3f4a42', '#6b6f78'];
-const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const angLerp = (a, b, k) => { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * k; };
 
 // The scene is rendered into its own 4x MSAA target and resolved once into the composer's (non-multisampled) buffer, so
@@ -275,6 +271,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     screens = []; workers = [];
     let li = 0;
     const deskY = PT + 0.73, onTop = deskY + 0.03;
+    const shirts = shirtColours(desks.map((d) => ({ id: d.agentId, color: d.a.color })));
     desks.forEach(({ a, x, z, lshape, chair: ch, agentId }, i) => {
       setInst(top, i, x, deskY, z); setInst(frame, i, x, PT, z);
       if (lshape) { setInst(ret, li, x + 0.75, deskY, z + 0.95); setInst(retFrame, li, x + 0.75, PT, z + 1.3); li++; }
@@ -282,8 +279,9 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       setInst(lamp, i, x - 0.82, onTop, z - 0.12, -0.5); setInst(bulb, i, x - 0.82 + 0.17 * Math.sin(-0.5) * -1, onTop + 0.46, z - 0.12 - 0.17 * Math.cos(-0.5));
       setInst(lampPool, i, x - 0.72, onTop + 0.004, z - 0.02, 0, 0, 1.0); setInst(screenPool, i, x + 0.12, onTop + 0.006, z + 0.12, MON_YAW, 0, 1.2);
       setInst(chair, i, ch.x, PT, ch.z);
-      // looks: the shirt takes the agent's colour; skin, hair, hair style and trousers are picked from the agent id
-      const shirt = new THREE.Color(a.color || '#8fa3b8').lerp(new THREE.Color('#ffffff'), 0.12), skin = new THREE.Color(SKIN[hash(agentId + ':skin') % SKIN.length]);
+      // looks: the shirt takes the agent's colour unless it is skin-like or too close to another shirt (looks.js); skin,
+      // hair, hair style and trousers are picked from the agent id
+      const shirt = new THREE.Color(shirts[agentId] || '#4f7cc4').lerp(new THREE.Color('#ffffff'), 0.12), skin = new THREE.Color(SKIN[hash(agentId + ':skin') % SKIN.length]);
       const hairC = new THREE.Color(HAIR[hash(agentId + ':hc') % HAIR.length]), legs = new THREE.Color(TROUSERS[hash(agentId + ':tr') % TROUSERS.length]);
       const style = styleOf(agentId), hairI = styleIx[style]++;
       parts.torso.setColorAt(i, shirt); parts.head.setColorAt(i, skin); parts.pelvis.setColorAt(i, legs); parts.hair[style].setColorAt(hairI, hairC);

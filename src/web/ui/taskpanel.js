@@ -6,7 +6,10 @@ import { esc, duration, jobStatusLabel, statusPill, synthTag } from './format.js
 
 // every job has exactly one of these statuses, so the status chip counts add up to All; Active groups the open ones
 const ACTIVE = ['in_progress', 'waiting', 'backlog', 'blocked'];
-const FILTERS = [['active', 'Active'], ['all', 'All'], ['in_progress', 'In progress'], ['waiting', 'Waiting for my OK'], ['backlog', 'Backlog'], ['done', 'Done'], ['blocked', 'Blocked'], ['rejected', 'Rejected'], ['parked', 'Parked']];
+// E5 item 0b: imported legacy jobs are only under the Legacy chip (off by default), never in Active, All or a status
+// chip; archived engine jobs only under Archived. So the status chips still add up to All.
+const FILTERS = [['active', 'Active'], ['all', 'All'], ['in_progress', 'In progress'], ['waiting', 'Waiting for my OK'], ['backlog', 'Backlog'], ['done', 'Done'], ['blocked', 'Blocked'], ['rejected', 'Rejected'], ['parked', 'Parked'], ['archived', 'Archived'], ['legacy', 'Legacy']];
+const SIDE = { legacy: (j) => j.kind === 'legacy', archived: (j) => j.kind !== 'legacy' && j.state === 'archived' };
 
 // agent · department · stage, leaving out what is unknown (lane jobs show their stage as the pill instead)
 const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(Boolean).join(' · ') || j.id;
@@ -29,12 +32,12 @@ export function createTaskPanel({ root, onOpenJob }) {
   }
   function setDept(key) { if (state.snap && state.snap.departments.some((d) => d.key === key)) { sel.value = key; state.dept = key; render(); } }
   const scoped = () => { const s = state.snap; return state.scope === 'dept' && state.dept ? s.jobs.filter((j) => j.dept === state.dept) : s.jobs; };
-  const matches = (j, f) => (f === 'all' ? true : f === 'active' ? ACTIVE.includes(j.status) : j.status === f);
+  const matches = (j, f) => (SIDE[f] ? SIDE[f](j) : Object.values(SIDE).some((x) => x(j)) ? false : f === 'all' ? true : f === 'active' ? ACTIVE.includes(j.status) : j.status === f);
   function counts() { const base = scoped(); return Object.fromEntries(FILTERS.map(([k]) => [k, base.filter((j) => matches(j, k)).length])); }
   function render() {
     if (!state.snap) return;
     const c = counts();
-    filtersEl.innerHTML = FILTERS.map(([k, l]) => '<button class="chip ' + (state.filter === k ? 'chip-on' : '') + (c[k] === 0 && k !== 'all' && k !== 'active' ? ' chip-zero' : '') + (k === 'active' ? ' chip-active' : '') + '" data-f="' + k + '">' + l + '<b>' + c[k] + '</b></button>').join('');
+    filtersEl.innerHTML = FILTERS.map(([k, l]) => '<button class="chip ' + (state.filter === k ? 'chip-on' : '') + (c[k] === 0 && k !== 'all' && k !== 'active' ? ' chip-zero' : '') + (k === 'active' ? ' chip-active' : '') + (SIDE[k] ? ' chip-side' : '') + '" data-f="' + k + '">' + l + '<b>' + c[k] + '</b></button>').join('');
     filtersEl.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => { state.filter = b.dataset.f; render(); }));
     const jobs = scoped().filter((j) => matches(j, state.filter));
     list.innerHTML = jobs.length ? jobs.map((j) => {

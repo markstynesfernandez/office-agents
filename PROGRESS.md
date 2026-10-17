@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 17/10/2026 (Redesign R2 done, awaiting review). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
+Last updated: 17/10/2026 (E5 in progress; E4, R1 and R2 approved by the owner). Plan: `ENGINE-PLAN.md` (approved). Decisions: `DECISIONS.md`. Port record: `PORTED.md`.
 
 ## Phases done
 
@@ -12,14 +12,21 @@ Last updated: 17/10/2026 (Redesign R2 done, awaiting review). Plan: `ENGINE-PLAN
 | **E3** Port, line and dry run | Done, and **approved by the owner** (16/10/2026). Agent runtime, tools, line orchestrator and package. Job A reaches the approval queue after one QA-DESIGN rework; job B is blocked by originality ("garfield"). Screenshots in `screenshots/e3/01`–`13`. |
 | Post-E3 re-port | Done (16/10/2026). The keyword-source rule was ported at a 3rd moment and the enclosed-background change (packaged products) at a 4th. Dry run re-verified. See below. |
 | Demo mode | Done (16/10/2026). `npm run demo`, presenter view, `npm run demo:record`. Demo hardening done at the start of E4 (see below). |
-| **E4** Legacy import | Done (16/10/2026), awaiting the owner's review. `npm run import-legacy`; the legacy history imported into `data/` and reconciled with the source ($8.5000719, 162 ledger rows); a second run changes nothing. Legacy jobs on the board (Blocked, Rejected, Parked lanes), in the job panel and the calendar; legacy notebooks and ledger in the memory-core viewer. Screenshots in `screenshots/e4/`. See below. |
-| **Redesign R1** Office scene look | Done (16/10/2026), awaiting the owner's review. Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
-| **Redesign R2** Office look, people, UI polish | Done (17/10/2026), awaiting the owner's review. Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
-| E5 Live UI | Not started |
+| **E4** Legacy import | Done (16/10/2026), **approved by the owner** (17/10/2026). `npm run import-legacy`; the legacy history imported into `data/` and reconciled with the source ($8.5000719, 162 ledger rows); a second run changes nothing. Legacy jobs on the board (Blocked, Rejected, Parked lanes), in the job panel and the calendar; legacy notebooks and ledger in the memory-core viewer. Screenshots in `screenshots/e4/`. See below. |
+| **Redesign R1** Office scene look | Done (16/10/2026), **approved by the owner** (17/10/2026). Cutaway department rooms, lounge with walking idle agents, atrium with the memory core, server closet; light and dark looks. 60+ fps full quality in headed Chrome on the iGPU in every view. Screenshots in `screenshots/redesign-r1/`, demo video re-recorded. See below. |
+| **Redesign R2** Office look, people, UI polish | Done (17/10/2026), **approved by the owner** (17/10/2026). Follow-ups done at the start of E5 (below). Atrium about 40% smaller with props, polished concrete, smaller core glow, light-mode contrast, low-poly people with typing/relaxed/walking poses, lounge seats on the cushions (tested), UI polish. 60+ fps full quality in every view, walking included. Screenshots in `screenshots/redesign-r2/`, demo video re-recorded. See below. |
+| E5 Live UI | In progress (17/10/2026). Item 0 (R2 follow-ups) done. |
 | E6 First real job | Not started. Blocked on owner answers Q1 (billing), Q2 (caps) and Q3/§4.3 (products). |
 | E7 Routines and cut-over | Not started |
 
 Everything so far ran on the mock provider: $0, with no API keys read.
+
+### R2 follow-ups (E5 item 0, 17/10/2026)
+
+- **Approvals recorded:** the owner approved E4, Redesign R1 and Redesign R2.
+- **Legacy jobs** (`src/server/engine-model.mjs`, `src/web/ui/board.js`, `taskpanel.js`): no imported legacy job is in the board's stage columns or its Blocked, Rejected and Parked lanes any more; they are all in a new **Legacy** lane (count, the 3 most recent, "show all"). The task list has a **Legacy** chip (off by default); Active, All and the status chips count engine jobs only, so an unfinished legacy job is never shown as in progress. (An **Archived** chip was added with it for E5's archived jobs.) `tests/import-legacy.test.mjs` checks the lanes and that no legacy job is in a stage column.
+- **Shirts** (`src/web/scene/looks.js`, new; `office.js`): a shirt is the agent's colour unless that colour is in the skin-tone range (hue 0–50°, saturation 0.1–0.65) or within a set distance of a skin tone or of another agent's shirt; then a spare colour from a fixed non-skin set is used. EVIDENCE-CHECKER's and OVERSEER's tan `#d99a5a` was the one in the skin range; agents sharing a colour now get different shirts. Desk, monitor and label colours are unchanged. `tests/people-looks.test.mjs` (2 tests).
+- **Screenshots never use page-only states:** `scripts/screenshots.mjs` no longer sets QA-DESIGN to working on the page for `07-people-closeup.png`; it was recaptured headed with the fixtures' tagged synthetic overlay states (DESIGNER working, tagged SYNTHETIC; QA-DESIGN idle): 71.5 fps full quality. `redesign-r2/fps-headed.json` row 07 updated with a note. (The walk bench still sets agents to working on the page for an fps measurement only; it takes no screenshot.)
 
 ### Redesign R2: look, people, UI polish (17/10/2026)
 

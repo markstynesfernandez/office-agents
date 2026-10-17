@@ -183,12 +183,11 @@ async function main() {
           const seated = await page.evaluate(() => window.__office.office.people().filter((p) => p.place === 'lounge').length);
           console.log('  lounge: ' + seated + ' agents seated');
         }, 'engine mode (zoomed)'],
-        // both Design desks occupied: QA-DESIGN (idle in the fixtures) is set to working on the page for this capture
-        // only, and tagged synthetic like the fixtures' own test states; no data changes
+        // the Design room close up with the fixtures' own states (the labelled synthetic overlay, tagged on the page).
+        // E5 item 0d: no state is faked on the page for a screenshot; only real engine states, the tagged overlay or the demo
         [view, '07-people-closeup.png', 'theme=light', async (page) => {
-          await page.evaluate(() => { const s = structuredClone(window.__office.snapshot()), a = s.agents.find((x) => x.name === 'QA-DESIGN'); a.status = 'working'; a.synthetic = true; a.syntheticWhat = 'R2 capture: set to working on the page to show the desk pose'; window.__office.office.setData(s); });
           await page.evaluate(() => { const o = window.__office.office, d = o.anchors.desks, ids = window.__office.snapshot().agents.filter((x) => x.dept === 'design').map((x) => x.id), p = ids.map((id) => d[id]).filter(Boolean); o.focus({ x: p.reduce((s, q) => s + q.x, 0) / p.length - 0.2, z: p.reduce((s, q) => s + q.z, 0) / p.length + 0.2 }, 3.3); });
-        }, 'legacy fixtures view (zoomed; QA-DESIGN set to working on the page)'],
+        }, 'legacy fixtures view (zoomed; states from the tagged synthetic overlay)'],
         [view, '08-desk-panel.png', 'theme=light', async (page) => {
           const id = await page.evaluate(() => window.__office.snapshot().agents.find((a) => a.name === 'DESIGNER').id);
           await page.evaluate((id) => window.__office.openAgent(id, 2.4), id);

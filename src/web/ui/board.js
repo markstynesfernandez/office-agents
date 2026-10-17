@@ -7,7 +7,8 @@ import { PALETTE } from '../config/palette.js';
 export function createBoard({ root, onOpenJob }) {
   const body = root.querySelector('#board-body');
   const REJECTED_SHOWN = 3;
-  let showAllRejected = false, lastSnap = null;
+  const showAll = { rejected: false, legacy: false };
+  let lastSnap = null;
   function card(j, agents, now) {
     const a = agents.find((x) => x.id === j.agentId);
     const head = (j.progress != null ? '<span class="pct">' + j.progress + '%</span>' : statusPill(j)) + legacyTag(j);
@@ -25,16 +26,18 @@ export function createBoard({ root, onOpenJob }) {
     const recent = (id) => { const j = byId[id] || {}, v = j.stageChangedAt || j.updatedAt || j.startedAt || 0; return typeof v === 'number' ? v : Date.parse(v) || 0; };
     const lane = (key, label, sub, ids, limit = null) => {
       const sorted = limit ? ids.slice().sort((a, b) => recent(b) - recent(a)) : ids;
-      const shown = limit && !showAllRejected ? sorted.slice(0, limit) : sorted;
-      const more = limit && ids.length > limit ? '<button class="ctl chip lane-more" data-more="' + key + '">' + (showAllRejected ? 'show the 3 most recent' : 'show all ' + ids.length) + '</button>' : '';
-      return '<div class="col lane ' + key + '"><h3>' + label + '<b>' + ids.length + '</b>' + more + '</h3><div class="sub">' + sub + (limit && !showAllRejected && ids.length > limit ? ' · the ' + limit + ' most recent' : '') + '</div><div class="lane-cards">' + (shown.map((id) => card(byId[id], snap.agents, now)).join('') || '<div class="empty">none</div>') + '</div></div>';
+      const all = limit && showAll[key];
+      const shown = limit && !all ? sorted.slice(0, limit) : sorted;
+      const more = limit && ids.length > limit ? '<button class="ctl chip lane-more" data-more="' + key + '">' + (all ? 'show the ' + limit + ' most recent' : 'show all ' + ids.length) + '</button>' : '';
+      return '<div class="col lane ' + key + '"><h3>' + label + '<b>' + ids.length + '</b>' + more + '</h3><div class="sub">' + sub + (limit && !all && ids.length > limit ? ' · the ' + limit + ' most recent' : '') + '</div><div class="lane-cards">' + (shown.map((id) => card(byId[id], snap.agents, now)).join('') || '<div class="empty">none</div>') + '</div></div>';
     };
     body.innerHTML = '<div class="board">' + cols + '</div><div class="lanes">'
       + lane('blocked', 'blocked', 'blocked or stopped, with the reason · incl. QA passed, gate failed', snap.board.lanes.blocked)
       + lane('rejected', 'rejected', 'REJECTS-DESK · rejected/ · rejected_by_owner', snap.board.lanes.rejected, REJECTED_SHOWN)
-      + (snap.board.lanes.parked ? lane('parked', 'parked', 'kept, not publishing (owner Q11): not in the approval queue', snap.board.lanes.parked) : '') + '</div>';
+      + (snap.board.lanes.parked ? lane('parked', 'parked', 'kept, not publishing (owner Q11): not in the approval queue', snap.board.lanes.parked) : '')
+      + (snap.board.lanes.legacy && snap.board.lanes.legacy.length ? lane('legacy', 'legacy', 'imported from the legacy station, read only · never in progress here', snap.board.lanes.legacy, REJECTED_SHOWN) : '') + '</div>';
     body.querySelectorAll('.card').forEach((el) => el.addEventListener('click', () => onOpenJob(el.dataset.id)));
-    body.querySelectorAll('[data-more]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); showAllRejected = !showAllRejected; render(lastSnap); }));
+    body.querySelectorAll('[data-more]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); showAll[el.dataset.more] = !showAll[el.dataset.more]; render(lastSnap); }));
   }
   return { render, show: () => root.classList.remove('hidden'), hide: () => root.classList.add('hidden'), isOpen: () => !root.classList.contains('hidden') };
 }
