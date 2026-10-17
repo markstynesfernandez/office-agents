@@ -60,6 +60,13 @@
     "imagesPerDay": 0,
     "maxHops": 12
   },
+  "live": {
+    "$comment": "E6 a0: the live Anthropic text provider (providers/anthropic.mjs). timeoutMs is per HTTP attempt. retries: further attempts after a 429, a 5xx or a network error, each reserved again through the guard; 400/401/403 are never retried. Wait between attempts: backoffMs x 2^attempt, capped at backoffMaxMs (a server retry-after is used when given, within the cap). Not caps: engine settings proposed in a0 for the owner to review.",
+    "timeoutMs": 300000,
+    "retries": 2,
+    "backoffMs": 2000,
+    "backoffMaxMs": 30000
+  },
   "runtime": {
     "resumeOnRestart": 1,
     "maxConcurrentJobsPerLine": 1,

@@ -806,3 +806,52 @@ built on the mock only: no model was called, and no key value was read, printed,
   package gate until the first-file run mode and the reference image in `image_generate` are built (E6 checklist row
   13). Step c would spend money and then stop at the gate, so the first-file mode needs building first.
 - **Web fetch reading** (item 1) and the TREND-SCOUT prompt line.
+
+## E6 step a0 build record: live Anthropic text provider (17/10/2026)
+
+The owner approved the official Anthropic SDK and billing for E6. No call was made in a0: every test stubs the SDK
+client, with a fake key; no key value was read, printed, logged or copied; nothing was written to Virtual-workers.
+
+### Choices made in the build
+
+- **SDK:** `@anthropic-ai/sdk` **0.131.0**, pinned exactly (published 30/09/2026, 17 days before the build; the newest
+  release at least 14 days old; MIT). It brings `json-schema-to-ts` 3.1.1, `@babel/runtime` 7.29.10, `ts-algebra`
+  2.0.0, `standardwebhooks` 1.1.1 and `@stablelib/base64` 1.0.1, all MIT (ASSETS.md). Its optional peer `zod` is not
+  installed. `npm audit` reports only the existing sharp/libvips advisories, nothing from the SDK.
+- **Where:** `src/engine/providers/anthropic.mjs`; `providers/index.mjs` builds it for `live` only. It refuses to be
+  built unless STATION_PROVIDER=live is in the process's own environment (exact, lower case), in demo mode, without
+  `ANTHROPIC_API_KEY`, or without `live.timeoutMs`. Web and images on the live provider refuse with "not built" (steps
+  b0 and c0); an unknown mode is still `ProviderLocked`.
+- **The key:** read once from the environment when the provider is built and kept in its closure. The SDK client gets
+  it as `apiKey`, with `authToken: null`, the base URL fixed to `https://api.anthropic.com` (so `ANTHROPIC_BASE_URL` or
+  `ANTHROPIC_AUTH_TOKEN` in the environment cannot redirect it or add a second credential) and the SDK's own logging
+  off. Every error message leaving the module passes a redactor (the key itself, anything shaped `sk-ant-...`, and
+  `x-api-key` / `authorization` values). 400, 401 and 403 get a fixed, key-free hint instead of the server's text.
+- **Models:** only the models config/engine.json gives an anthropic tier and a price (`claude-haiku-5-5`,
+  `claude-sonnet-5-5`); any other model is refused before a call (the guard also refuses an unpriced model).
+- **One choke point for retries:** the SDK's retries are off (`maxRetries: 0`). The runtime's model call is now
+  `guardedTextCall` (runtime.mjs), shared with the smoke script: reserve -> call -> settle, and on a 429, a 5xx or a
+  network error it waits and tries again up to `live.retries` times, **reserving again for each attempt** (a refused
+  reservation or the e-stop ends it with no further call). The mock path is unchanged (no retries).
+- **Billing of failed attempts** (unchanged rule from E2): an HTTP error is released (not charged); a network error or
+  timeout has no usage report, so it is charged at its reservation, marked estimated (the request may have run).
+- **Ledger row:** the guard's row now also carries `requestId` (the `request-id` header, as shown in the Console) and
+  `messageId` for live calls. Mock rows are unchanged.
+- **Request:** nothing is added. Tools and `cache_control` only when the caller sends them (the runtime sends prompt
+  caching on its system prompt, per `runtime.promptCaching`); client tools pass; any server tool or `mcp_servers` is
+  refused (none allowed in a0; b0 adds the web tools). The agent's effort is sent as `output_config.effort` when it is
+  one of `effortLevels`.
+- **Smoke script:** `scripts/smoke-live.mjs` (`npm run smoke:live`): refuses unless its own STATION_PROVIDER is live,
+  loads `.env` without overriding the shell, starts the engine without the scheduler or resumes (the engine lock
+  refuses while the server runs), makes one call through `guardedTextCall` with 0 retries and a run cap of USD 0.01,
+  and prints the reply, the request id, the usage, the USD, the ledger row and today's total.
+
+### For the owner (open; nothing decided here)
+
+- **Live settings** (new `live` block in config/engine.json; engine settings, not caps): `timeoutMs` 300000 per
+  attempt, `retries` 2, `backoffMs` 2000 doubling, `backoffMaxMs` 30000 (a server `retry-after` is used within it).
+  Change them if you want fewer retries or a shorter timeout.
+- **408 and 409** are not retried (the brief lists 429, 5xx and network only; the SDK would retry them).
+- **Thinking on Haiku 5.5** is on by default (adaptive). The smoke call sends no `thinking` setting, as specified; with
+  `max_tokens` 32 a long think could use the allowance before the word "ready" (the reply would then be empty with
+  `stop_reason` `max_tokens`, at a cost of a few hundredths of a cent).

@@ -1,13 +1,23 @@
 // providers/index.mjs — picks the model and image providers (ENGINE-PLAN.md §2.3, §2.5).
 //   mock  scripted replies and procedural images, fake usage priced at $0; reads no key (E1–E5)
-//   live  Anthropic (official SDK) for text and vision, OpenRouter for images; LOCKED in this build until E6, which
-//         needs the owner's go-ahead (Q1 billing, Q2 caps, Q3 products). Asking for it throws before any key is read.
+//   live  E6 step a0: Anthropic text (official SDK, providers/anthropic.mjs). Built only when STATION_PROVIDER=live is in
+//         this process's environment, never in demo mode, and only with ANTHROPIC_API_KEY set. The live web backend
+//         (step b0) and OpenRouter images (step c0) are not built yet: they refuse with "not built".
 import { createMockText, createMockImage } from './mock.mjs';
+import { createAnthropicText } from './anthropic.mjs';
 
-export class ProviderLocked extends Error { constructor() { super('live providers are locked until E6 (DECISIONS.md: Q1 billing, Q2 caps and Q3 products block E6). Use STATION_PROVIDER=mock.'); this.code = 'LOCKED'; } }
+export class ProviderLocked extends Error { constructor(mode) { super('provider mode "' + mode + '" is not known: use STATION_PROVIDER=mock (or live, for an approved E6 step only).'); this.code = 'LOCKED'; } }
+export class ProviderNotBuilt extends Error { constructor(what) { super(what + ' is not built yet on the live provider (E6 plan: web in step b0, images in step c0); no call was made'); this.code = 'NOT_BUILT'; } }
 
-export function createProviders({ mode = process.env.STATION_PROVIDER || 'mock', script, delayMs = 0, log } = {}) {
-  if (mode !== 'mock') throw new ProviderLocked();
+export function createProviders({ mode = process.env.STATION_PROVIDER || 'mock', script, delayMs = 0, log, engineCfg = null, halt = null, demo = false, env = process.env, client = null } = {}) {
+  if (mode === 'live') {
+    const text = createAnthropicText({ engineCfg, env, demo, halt, log, client });
+    log && log.warn('providers: LIVE (Anthropic text; web and images not built)', { models: text.models });
+    const image = { id: 'not-built', get calls() { return 0; }, async generate() { throw new ProviderNotBuilt('image generation (OpenRouter)'); } };
+    const web = async (name) => { throw new ProviderNotBuilt('the web backend (' + name + ')'); };
+    return { mode, text, image, web };
+  }
+  if (mode !== 'mock') throw new ProviderLocked(mode);
   log && log.info('providers: mock (scripted replies, $0, no keys read)');
   // researchers' web backend: canned results in the mock (E6 wires Anthropic's server-side web search and fetch, Q6)
   const web = async (name, args) => ({ text: (script && script.web ? await script.web(name, args) : 'mock ' + name + ' result for ' + JSON.stringify(args)), usd: 0, priceSource: 'mock' });

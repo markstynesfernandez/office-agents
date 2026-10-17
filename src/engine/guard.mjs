@@ -126,13 +126,14 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
   function drop(res) { reserved.delete(res.id); try { J.remove(path.join(pendingDir, res.id + '.json')); } catch (e) { log && log.error('pending reservation not removed', { id: res.id, error: e.message }); } }
 
   // settle a reservation with the real cost: `usd` given (provider-reported / image price) or computed from `usage`
-  function settle(res, { usd, usage, priceSource, estimated = false, note } = {}) {
+  // requestId / messageId (live calls): the provider's request id and message id, kept on the row to match the Console
+  function settle(res, { usd, usage, priceSource, estimated = false, note, requestId, messageId } = {}) {
     if (!reserved.has(res.id)) throw new Error('unknown or already settled reservation ' + res.id);
     const cost = usd != null ? r6(usd) : textCost(res.price, usage || {});
     const tier = usd == null && res.price.longPrompt ? priceTier(res.price, promptTokens(usage || {})).tier : null;
     const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, provider: res.provider, model: res.model, kind: res.kind, count: res.count,
       tokens: usage ? { in: usage.input_tokens || 0, out: usage.output_tokens || 0, cacheRead: usage.cache_read_input_tokens || 0, cacheWrite: usage.cache_creation_input_tokens || 0 } : null,
-      usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(note ? { note } : {}) });
+      usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(requestId ? { requestId } : {}), ...(messageId ? { messageId } : {}), ...(note ? { note } : {}) });
     if (cost > res.maxUsd + EPS) log && log.warn('a call cost more than its reservation', { id: res.id, model: res.model, kind: res.kind, usd: cost, reservedUsd: res.maxUsd, jobId: res.jobId });
     drop(res);
     bus && bus.emit('spend.row', { jobId: res.jobId, agentKey: res.agentKey, data: { entryId: row.entryId, usd: row.usd, kind: row.kind, model: row.model, provider: row.provider } });

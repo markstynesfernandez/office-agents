@@ -137,6 +137,12 @@ and the system monospace stack (`Cascadia Code`, `Consolas`, `ui-monospace`). No
 | detect-libc | 2.1.2 | Apache-2.0 | sharp dependency | transitive |
 | semver | 7.8.5 | ISC | sharp dependency | transitive |
 | croner | 10.0.1 | MIT | cron parsing and next-run times for routines (`src/engine/scheduler.mjs`), Europe/Dublin; no dependencies of its own | `dependencies` |
+| @anthropic-ai/sdk | 0.131.0 (exact pin; published 2026-09-30T23:03:22Z on npm, 17 days before it was added; the newest release at least 14 days old on 17/10/2026; integrity sha512-9+PepoU7…Mbepw==) | MIT | the official Anthropic SDK: the live text provider's client (E6 step a0, owner-approved 17/10/2026), `src/engine/providers/anthropic.mjs` only, with the SDK's retries and logging off and the base URL fixed. Its optional peer `zod` is not installed. | `dependencies` |
+| json-schema-to-ts | 3.1.1 | MIT | @anthropic-ai/sdk dependency (types for tool schemas) | transitive |
+| @babel/runtime | 7.29.10 | MIT | json-schema-to-ts dependency | transitive |
+| ts-algebra | 2.0.0 | MIT | json-schema-to-ts dependency | transitive |
+| standardwebhooks | 1.1.1 | MIT | @anthropic-ai/sdk dependency (webhook signatures; not used by the station) | transitive |
+| @stablelib/base64 | 1.0.1 | MIT | standardwebhooks dependency | transitive |
 | playwright | 1.64.1 | Apache-2.0 | Chromium / Chrome automation for `npm run screenshots` (captures station-office's own page only) | `devDependencies` |
 | playwright-core | 1.64.1 | Apache-2.0 | transitive dependency of playwright | `devDependencies` (transitive) |
 | Chromium (downloaded by `npx playwright install chromium`, build 1248) | per Playwright | BSD-3-Clause (Chromium) | headless screenshot browser; not redistributed with this project | `~/AppData/Local/ms-playwright` |
@@ -163,7 +169,7 @@ the repo; its outputs (the buyer's PNGs) are the owner's.
 npm reports an install script for sharp that is not run (`allowScripts`); it is not needed because the prebuilt
 binary package is used.
 
-Node.js built-ins only otherwise (`http`, `fs`, `path`, `os`, `url`, `crypto`, `node:test`, and `node:sqlite` for the engine store, which uses the SQLite build bundled with Node, 3.53.0 on Node 24.16, public domain). No bundler, no transpiler. `better-sqlite3` was tested against and not installed (DECISIONS.md, E2 store). The Anthropic SDK is not installed yet: E6.
+Node.js built-ins only otherwise (`http`, `fs`, `path`, `os`, `url`, `crypto`, `node:test`, and `node:sqlite` for the engine store, which uses the SQLite build bundled with Node, 3.53.0 on Node 24.16, public domain). No bundler, no transpiler. `better-sqlite3` was tested against and not installed (DECISIONS.md, E2 store). The Anthropic SDK is installed since E6 step a0 (above); no other HTTP client is used.
 
 ## Code copied from the owner's own station code
 
@@ -177,5 +183,5 @@ and changes, and each code file names its source in a header comment. Nothing fr
 
 ```
 npm ls --all --omit=optional
-node -e "for (const p of ['three','sharp','croner','@img/sharp-win32-x64','@img/colour','detect-libc','semver','playwright','playwright-core']) console.log(p, require('./node_modules/'+p+'/package.json').version, require('./node_modules/'+p+'/package.json').license)"
+node -e "for (const p of ['three','sharp','croner','@anthropic-ai/sdk','json-schema-to-ts','@babel/runtime','ts-algebra','standardwebhooks','@stablelib/base64','@img/sharp-win32-x64','@img/colour','detect-libc','semver','playwright','playwright-core']) console.log(p, require('./node_modules/'+p+'/package.json').version, require('./node_modules/'+p+'/package.json').license)"
 ```

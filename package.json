@@ -25,9 +25,11 @@
     "screenshots-r3a": "node scripts/screenshots-r3a.mjs",
     "screenshots-r3b": "node scripts/screenshots-r3b.mjs",
     "owner": "node scripts/owner.mjs",
-    "parity": "node scripts/parity-pngtuber.mjs"
+    "parity": "node scripts/parity-pngtuber.mjs",
+    "smoke:live": "node scripts/smoke-live.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.131.0",
     "croner": "10.0.1",
     "sharp": "0.34.5",
     "three": "0.186.1"

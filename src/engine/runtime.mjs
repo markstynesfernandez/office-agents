@@ -18,7 +18,41 @@ export function effectiveAgent(engine, key) {
   return { ...base, enabled: o.enabled == null ? base.enabled !== false : !!o.enabled, tier: o.tier || base.tier, effort: o.effort || base.effort };
 }
 
-const estimateTokens = (obj) => Math.ceil(JSON.stringify(obj).length / 3);   // conservative (~3 chars per token)
+export const estimateTokens = (obj) => Math.ceil(JSON.stringify(obj).length / 3);   // conservative (~3 chars per token)
+
+const abortableSleep = (ms, signal) => new Promise((res, rej) => { if (signal && signal.aborted) return rej(signal.reason || new Error('aborted')); const t = setTimeout(res, ms); if (signal) signal.addEventListener('abort', () => { clearTimeout(t); rej(signal.reason || new Error('aborted')); }, { once: true }); });
+// wait before attempt n+1: a server retry-after when given, else backoffMs x 2^n; capped at backoffMaxMs
+export function backoffDelay(retry = {}, attempt = 0, retryAfterMs = null) {
+  const base = retry.backoffMs ?? 2000, max = retry.backoffMaxMs ?? 30000;
+  return Math.min(max, retryAfterMs != null ? retryAfterMs : base * 2 ** attempt);
+}
+
+// One priced model call through the spend guard (E6 a0; the runtime's loop, image_analyze and scripts/smoke-live.mjs):
+//   reserve (every cap; the e-stop refuses) -> call with the e-stop's signal -> settle the real cost from the usage.
+// A refused reservation throws before any call. On a retryable provider error (429, 5xx, network: `retryable`), it
+// waits and tries again up to retry.retries times; EVERY attempt reserves again. A provider error with a status is
+// released (not billed); one without a usage report is charged at the reserved maximum, marked estimated.
+export async function guardedTextCall({ guard, halt, providers, call, params, ctx = {}, stopSignal = null, retry = {}, log = null, note = null, sleep = abortableSleep }) {
+  const retries = Math.max(0, Math.floor(retry.retries || 0));
+  for (let attempt = 0; ; attempt++) {
+    const res = guard.reserve(call);
+    const signal = stopSignal ? AbortSignal.any([halt.signal, stopSignal]) : halt.signal;
+    let resp;
+    try { resp = await providers.text.create(params, { signal, ctx: attempt ? { ...ctx, attempt } : ctx }); }
+    catch (e) {
+      if (halt.signal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'aborted by the e-stop mid-call; charged at the reserved maximum' }); throw new RunStopped('e-stop', e); }
+      if (stopSignal && stopSignal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'stopped by the owner mid-call; charged at the reserved maximum' }); throw new RunStopped('stopped by the owner', e); }
+      if (e && e.status) guard.release(res, 'provider error ' + e.status); else guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'call failed without a usage report; charged at the reserved maximum' });
+      if (!(e && e.retryable) || attempt >= retries) throw e;
+      const waitMs = backoffDelay(retry, attempt, e.retryAfterMs);
+      log && log.warn('provider call failed; retrying with a new reservation', { model: call.model, status: e.status ?? null, code: e.code || null, attempt: attempt + 1, retries, waitMs, runId: call.runId || null, jobId: call.jobId ?? null });
+      try { await sleep(waitMs, signal); } catch (_) { throw new RunStopped(halt.signal.aborted ? 'e-stop' : 'stopped by the owner'); }
+      continue;
+    }
+    const row = guard.settle(res, { usage: resp.usage, ...(resp.request_id ? { requestId: resp.request_id, messageId: resp.id } : {}), ...(note ? { note } : {}) });
+    return { resp, row, attempts: attempt + 1 };
+  }
+}
 
 // stopSignal (E5): the owner's Stop on this job; it aborts the call in flight like the e-stop, for this job only
 export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null }) {
@@ -45,17 +79,10 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   // one priced model call through the guard (used by the loop and by image_analyze)
   async function callModel({ messages, tools, maxOutputTokens, purpose = 'turn', extraCtx = {} }) {
     const params = { model, max_tokens: maxOutputTokens, system, messages, ...(tools && tools.length ? { tools } : {}) };
-    const res = guard.reserve({ provider, model, kind: 'text', runId, jobId: job ? job.id : null, agentKey, line, inputTokens: estimateTokens({ system, messages, tools }), maxOutputTokens, runCapUsd });
-    let resp;
-    const signal = stopSignal ? AbortSignal.any([halt.signal, stopSignal]) : halt.signal;
-    try { resp = await providers.text.create(params, { signal, ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, ...extraCtx } }); }
-    catch (e) {
-      if (halt.signal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'aborted by the e-stop mid-call; charged at the reserved maximum' }); throw new RunStopped('e-stop', e); }
-      if (stopSignal && stopSignal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'stopped by the owner mid-call; charged at the reserved maximum' }); throw new RunStopped('stopped by the owner', e); }
-      if (e && e.status) guard.release(res, 'provider error ' + e.status); else guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'call failed without a usage report; charged at the reserved maximum' });
-      throw e;
-    }
-    const row = guard.settle(res, { usage: resp.usage });
+    const { resp, row } = await guardedTextCall({ guard, halt, providers, stopSignal, log, params,
+      call: { provider, model, kind: 'text', runId, jobId: job ? job.id : null, agentKey, line, inputTokens: estimateTokens({ system, messages, tools }), maxOutputTokens, runCapUsd },
+      ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, ...extraCtx },
+      retry: providers.mode === 'live' ? cfg.engine.live || {} : {} });
     totals.usd += row.usd; totals.tokensIn += resp.usage.input_tokens || 0; totals.tokensOut += resp.usage.output_tokens || 0;
     if (purpose === 'image_analyze') return resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
     return resp;
