@@ -16,6 +16,7 @@
     "estop": "node scripts/estop.mjs",
     "legacy-view": "node src/server/index.mjs --legacy",
     "dry-run": "node scripts/dry-run.mjs",
+    "dry-run:scout": "node scripts/dry-run-scout.mjs",
     "port-drift": "node scripts/port-drift.mjs",
     "demo": "node scripts/demo.mjs",
     "demo:record": "node scripts/demo-record.mjs",

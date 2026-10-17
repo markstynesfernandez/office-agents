@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export const NEEDS_ORIGINALITY = ['demand-researcher', 'evidence-checker', 'designer', 'lister', 'qa-design', 'qa-listing'];
+export const NEEDS_ORIGINALITY = ['demand-researcher', 'evidence-checker', 'trend-scout', 'designer', 'lister', 'qa-design', 'qa-listing'];
 
 export function parseSource(file) {
   const raw = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');

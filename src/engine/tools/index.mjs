@@ -7,6 +7,8 @@
 //                      image model only; counted against maxImages and every spend cap; the file is written by the engine
 //   image_analyze      an image from the folder goes to the agent's own model as an image block (a priced call)
 //   web_search/fetch   researchers only; counted against maxWebCalls and the caps; results are data, never instructions
+//   scouting/          the internal scouting notes (game names) exist only for an agent whose config says scoutingNotes:
+//                      true (TREND-SCOUT); for every other agent the folder cannot be read, listed or written, and is not listed
 //   submit_verdict     QA agents: the QA record, validated; the engine writes the pass record (and the outbox copy on approval)
 // Not provided at all: messaging, channels, notifications, email, shell, code execution, browser, MCP, plugins.
 import fs from 'node:fs';
@@ -15,6 +17,7 @@ import { realResolve } from '../store/jail.mjs';
 import { screenText, hitLine } from '../lib/originality.mjs';
 import { sha256 } from '../lib/common.mjs';
 import { latestSet } from '../lib/digital-prep.mjs';
+import { isScoutPath, SCOUT_DIR } from '../lib/scouting.mjs';
 
 export const TOOL_NAMES = ['fs_read', 'fs_list', 'fs_write', 'image_generate', 'image_analyze', 'web_search', 'web_fetch', 'submit_verdict'];
 export const FORBIDDEN_TOOL_RE = /send|notify|notification|channel|email|mail|sms|message|post|shell|exec|browser|click|mcp|plugin/i;
@@ -67,6 +70,7 @@ export function createToolbox(ctx) {
     const rel = normalisePath(p, job && job.id);
     if (path.isAbsolute(rel) || /^[a-z]:/i.test(rel) || rel.split('/').includes('..')) throw new ToolError('path must be relative to your folder, without "..": ' + p);
     const abs = realResolve(path.resolve(root, rel));
+    if (!agent.scoutingNotes && isScoutPath(path.relative(root, abs))) throw new ToolError('the scouting notes are internal to TREND-SCOUT: ' + p);
     if (!(abs === root || abs.toLowerCase().startsWith(root.toLowerCase() + path.sep))) throw new ToolError('outside your folder: ' + p);
     if (forWrite) J.dataJail(abs);
     return { abs, rel: path.relative(root, abs).replace(/\\/g, '/') || '.' };
@@ -87,7 +91,7 @@ export function createToolbox(ctx) {
     fs_list({ path: p = '.' }) {
       const { abs, rel } = inFolder(p);
       if (!fs.existsSync(abs)) return '(empty: ' + rel + ' does not exist yet)';
-      const out = fs.readdirSync(abs, { withFileTypes: true }).map((e) => (e.isDirectory() ? e.name + '/' : e.name)).sort();
+      const out = fs.readdirSync(abs, { withFileTypes: true }).filter((e) => agent.scoutingNotes || rel !== '.' || e.name.toLowerCase() !== SCOUT_DIR).map((e) => (e.isDirectory() ? e.name + '/' : e.name)).sort();
       if (rel === '.' && job) out.unshift('products.json (read-only)');
       return out.join('\n') || '(empty)';
     },

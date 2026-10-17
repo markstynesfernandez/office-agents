@@ -124,17 +124,17 @@
       "lightmaps": {
         "day": {
           "file": "lightmap-research-day.webp",
-          "scale": 1.039252,
-          "coverage": 0.8948,
-          "p995": 0.95611,
-          "max": 1.1161
+          "scale": 1.051244,
+          "coverage": 0.9041,
+          "p995": 0.96714,
+          "max": 1.1137
         },
         "evening": {
           "file": "lightmap-research-evening.webp",
-          "scale": 10.254364,
-          "coverage": 0.8948,
-          "p995": 9.43402,
-          "max": 52.65
+          "scale": 9.568462,
+          "coverage": 0.9041,
+          "p995": 8.80299,
+          "max": 51.4252
         }
       },
       "materials": [
@@ -152,25 +152,25 @@
         "led"
       ],
       "atlas": {
-        "size": 2432,
-        "density": 105.65,
-        "surface": 327.05,
-        "uvCoverage": 0.6172
+        "size": 2688,
+        "density": 107.28,
+        "surface": 406.67,
+        "uvCoverage": 0.6478
       },
       "build": {
-        "at": "2026-10-17T11:09:16.701Z",
+        "at": "2026-10-17T13:06:43.331Z",
         "blender": "Blender 5.2.1 LTS",
         "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
         "samples": 1024,
-        "blenderSeconds": 88.1,
-        "seconds": 91,
+        "blenderSeconds": 90.2,
+        "seconds": 93.3,
         "phases": {
-          "model": 0.05,
-          "textures": 0.34,
-          "uv": 11.03,
-          "bake_day": 19.51,
-          "bake_evening": 50.7,
-          "export": 0.64
+          "model": 0.1,
+          "textures": 0.48,
+          "uv": 10.92,
+          "bake_day": 19.64,
+          "bake_evening": 53.08,
+          "export": 0.47
         }
       }
     },
@@ -182,17 +182,17 @@
       "lightmaps": {
         "day": {
           "file": "lightmap-design-day.webp",
-          "scale": 1.051853,
-          "coverage": 0.8793,
-          "p995": 0.9677,
-          "max": 1.1262
+          "scale": 1.051882,
+          "coverage": 0.9029,
+          "p995": 0.96773,
+          "max": 1.1379
         },
         "evening": {
           "file": "lightmap-design-evening.webp",
-          "scale": 10.193881,
-          "coverage": 0.8793,
-          "p995": 9.37837,
-          "max": 46.7531
+          "scale": 10.935591,
+          "coverage": 0.9029,
+          "p995": 10.06074,
+          "max": 46.9068
         }
       },
       "materials": [
@@ -212,25 +212,25 @@
         "led"
       ],
       "atlas": {
-        "size": 1984,
-        "density": 99.51,
-        "surface": 232.59,
-        "uvCoverage": 0.5852
+        "size": 2176,
+        "density": 103.42,
+        "surface": 277.46,
+        "uvCoverage": 0.6268
       },
       "build": {
-        "at": "2026-10-17T11:09:59.892Z",
+        "at": "2026-10-17T13:07:30.196Z",
         "blender": "Blender 5.2.1 LTS",
         "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
         "samples": 1024,
-        "blenderSeconds": 41.7,
-        "seconds": 43.2,
+        "blenderSeconds": 45.3,
+        "seconds": 46.9,
         "phases": {
-          "model": 0.03,
-          "textures": 0.44,
-          "uv": 9.55,
-          "bake_day": 11.53,
-          "bake_evening": 15.06,
-          "export": 0.52
+          "model": 0.05,
+          "textures": 0.34,
+          "uv": 9.31,
+          "bake_day": 12.72,
+          "bake_evening": 17.96,
+          "export": 0.46
         }
       }
     },
@@ -301,17 +301,17 @@
       "lightmaps": {
         "day": {
           "file": "lightmap-atrium-day.webp",
-          "scale": 1.150175,
-          "coverage": 0.8131,
-          "p995": 1.05816,
-          "max": 1.389
+          "scale": 1.148319,
+          "coverage": 0.8494,
+          "p995": 1.05645,
+          "max": 1.4296
         },
         "evening": {
           "file": "lightmap-atrium-evening.webp",
-          "scale": 0.80985,
-          "coverage": 0.8131,
-          "p995": 0.74506,
-          "max": 46.8117
+          "scale": 0.804412,
+          "coverage": 0.8494,
+          "p995": 0.74006,
+          "max": 45.0487
         }
       },
       "materials": [
@@ -335,25 +335,25 @@
         "led"
       ],
       "atlas": {
-        "size": 3008,
-        "density": 105.96,
-        "surface": 537.58,
-        "uvCoverage": 0.667
+        "size": 2944,
+        "density": 104.13,
+        "surface": 558.19,
+        "uvCoverage": 0.6983
       },
       "build": {
-        "at": "2026-10-17T11:12:07.477Z",
+        "at": "2026-10-17T13:08:36.891Z",
         "blender": "Blender 5.2.1 LTS",
         "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
         "samples": 1024,
-        "blenderSeconds": 79.4,
-        "seconds": 82.7,
+        "blenderSeconds": 63.9,
+        "seconds": 66.7,
         "phases": {
           "model": 0.06,
-          "textures": 0.35,
-          "uv": 11.5,
-          "bake_day": 34.32,
-          "bake_evening": 25.46,
-          "export": 0.63
+          "textures": 0.33,
+          "uv": 5.38,
+          "bake_day": 30.62,
+          "bake_evening": 21.25,
+          "export": 0.44
         }
       }
     }
@@ -365,7 +365,7 @@
         "key": "research",
         "kind": "research",
         "w": 10.9,
-        "d": 5.2,
+        "d": 8.7,
         "floor": 0.46,
         "wallH": 2.7,
         "wallT": 0.18,
@@ -387,6 +387,15 @@
               "x": 8.25,
               "z": 3.38
             }
+          },
+          {
+            "x": 4.45,
+            "z": 5.9,
+            "lshape": true,
+            "chair": {
+              "x": 4.45,
+              "z": 6.88
+            }
           }
         ],
         "plants": [
@@ -397,7 +406,7 @@
           },
           {
             "x": 0.75,
-            "z": 4.5,
+            "z": 8,
             "kind": "tall"
           }
         ],
@@ -407,7 +416,7 @@
             "axis": "x",
             "at": 0,
             "from": 0,
-            "to": 5.2,
+            "to": 8.7,
             "h": 2.7
           },
           {
@@ -451,7 +460,7 @@
           "b": [
             0.225,
             0.492,
-            5.15
+            8.65
           ],
           "emit": [
             -0.3304,
@@ -560,7 +569,7 @@
           "top": 0.91
         }
       ],
-      "triangles": 8438
+      "triangles": 9286
     },
     "design": {
       "unit": "design",
@@ -568,7 +577,7 @@
         "key": "design",
         "kind": "design",
         "w": 9.7,
-        "d": 5.2,
+        "d": 8.7,
         "floor": 0.46,
         "wallH": 2.7,
         "wallT": 0.18,
@@ -600,7 +609,7 @@
           },
           {
             "x": 0.75,
-            "z": 4.5,
+            "z": 8,
             "kind": "small"
           }
         ],
@@ -608,7 +617,7 @@
           {
             "kind": "easel",
             "x": 8.75,
-            "z": 4.25,
+            "z": 7.75,
             "yaw": -2.3562
           }
         ],
@@ -617,7 +626,7 @@
             "axis": "x",
             "at": 0,
             "from": 0,
-            "to": 5.2,
+            "to": 8.7,
             "h": 2.7
           },
           {
@@ -661,7 +670,7 @@
           "b": [
             0.225,
             0.492,
-            5.15
+            8.65
           ],
           "emit": [
             -0.3304,
@@ -1159,33 +1168,33 @@
         "key": "atrium",
         "kind": "atrium",
         "w": 26,
-        "d": 18.2,
+        "d": 21.7,
         "floor": 0.46,
         "wallH": 2.7,
         "wallT": 0.18,
         "coreR": 1.5,
         "core": {
           "x": 13.6,
-          "z": 7.35
+          "z": 10.85
         },
         "floorRects": [
           {
             "x0": 10.9,
             "x1": 16.3,
             "z0": 0,
-            "z1": 5.2
+            "z1": 8.7
           },
           {
             "x0": 0,
             "x1": 26,
-            "z0": 5.2,
-            "z1": 9.5
+            "z0": 8.7,
+            "z1": 13
           },
           {
             "x0": 10.9,
             "x1": 16.3,
-            "z0": 9.5,
-            "z1": 18.2
+            "z0": 13,
+            "z1": 21.7
           }
         ],
         "walls": [
@@ -1204,8 +1213,8 @@
           {
             "axis": "x",
             "at": 0,
-            "from": 5.2,
-            "to": 9.5,
+            "from": 8.7,
+            "to": 13,
             "h": 2.7,
             "owner": "atrium",
             "open": [
@@ -1231,7 +1240,7 @@
             "axis": "x",
             "at": 0,
             "from": 0,
-            "to": 5.2,
+            "to": 8.7,
             "h": 2.7
           },
           {
@@ -1245,7 +1254,7 @@
             "axis": "x",
             "at": 16.3,
             "from": 0,
-            "to": 5.2,
+            "to": 8.7,
             "h": 2.7
           },
           {
@@ -1258,13 +1267,13 @@
           {
             "axis": "x",
             "at": 0,
-            "from": 9.5,
-            "to": 18.2,
+            "from": 13,
+            "to": 21.7,
             "h": 2.7
           },
           {
             "axis": "z",
-            "at": 9.5,
+            "at": 13,
             "from": 0,
             "to": 10.9,
             "h": 2.7
@@ -1292,43 +1301,43 @@
           {
             "kind": "bench",
             "x": 0.5,
-            "z": 7.35,
+            "z": 10.85,
             "yaw": -1.5708
           },
           {
             "kind": "bench",
             "x": 9.95,
-            "z": 8.4,
+            "z": 11.9,
             "yaw": -1.5708
           },
           {
             "kind": "bench",
             "x": 17.55,
-            "z": 5.85,
+            "z": 9.35,
             "yaw": 3.1416
           },
           {
             "kind": "bench",
             "x": 25.25,
-            "z": 7.15,
+            "z": 10.65,
             "yaw": 1.5708
           },
           {
             "kind": "bench",
             "x": 13.6,
-            "z": 17.7,
+            "z": 21.2,
             "yaw": 0
           }
         ],
         "plants": [
           {
             "x": 0.62,
-            "z": 5.65,
+            "z": 9.15,
             "kind": "tall"
           },
           {
             "x": 0.6,
-            "z": 9,
+            "z": 12.5,
             "kind": "small"
           },
           {
@@ -1345,12 +1354,12 @@
           "a": [
             13.6,
             0.783,
-            7.35
+            10.85
           ],
           "b": [
             13.6,
             0.783,
-            7.35
+            10.85
           ],
           "emit": [
             0,
@@ -1464,12 +1473,11 @@
       "units": [
         "research",
         "design",
-        "office",
         "atrium"
       ],
-      "full": true,
-      "at": "2026-10-17T11:12:07.500Z",
-      "seconds": 261.8,
+      "full": false,
+      "at": "2026-10-17T13:08:36.909Z",
+      "seconds": 206.8,
       "blender": "Blender 5.2.1 LTS"
     },
     "blender": "Blender 5.2.1 LTS",
@@ -1486,7 +1494,7 @@
   },
   "sizes": {
     "total": {
-      "bytes": 6877262
+      "bytes": 7135513
     },
     "budgetBytes": 10000000
   }

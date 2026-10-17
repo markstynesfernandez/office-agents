@@ -29,14 +29,21 @@ test('the committed bake has every area, in its bake unit, and matches the engin
   for (const k of BAKED_ROOMS) assert.deepEqual(manifest.rooms[k].spec, specs[k], k);
 });
 
-test('the committed bake matches the legacy fixtures layout (the view the captures use; four services, not five)', async () => {
+// genre-trend scouting (17/10/2026): TREND-SCOUT's desk gives the engine's Research room a second desk row, which deepens
+// the back row (Research and Design) and so the atrium. The bake follows the ENGINE layout; the legacy fixtures view still
+// has the legacy roster's two research desks, so there exactly those three areas fall back to procedural and the Office
+// room and the lounge stay baked. The R3b captures run on the engine view (screenshots-r3b.mjs --engine) for that reason.
+test('the legacy fixtures layout differs from the bake only in the Research row (Research, Design, atrium); Office and lounge match', async () => {
   const log = { read() {}, written() {}, info() {}, warn() {}, error() {}, counts: {} };
   const { server } = createOfficeServer({ fixtures: true, log });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   try {
     const snap = await (await fetch('http://127.0.0.1:' + server.address().port + '/api/office/snapshot')).json();
     const L = computeLayout(snap.departments.map((d) => ({ key: d.key, agents: d.agents.slice() })), snap.services);
-    for (const k of BAKED_ROOMS) assert.deepEqual(bakedRoomSpec(L, k), manifest.rooms[k].spec, k);
+    const differs = BAKED_ROOMS.filter((k) => JSON.stringify(bakedRoomSpec(L, k)) !== JSON.stringify(manifest.rooms[k].spec));
+    assert.deepEqual(differs.sort(), ['atrium', 'design', 'research']);
+    assert.equal(L.rooms.find((r) => r.key === 'research').desks.length, 2, 'the legacy roster: two research desks');
+    for (const k of ['office', 'lounge']) assert.deepEqual(bakedRoomSpec(L, k), manifest.rooms[k].spec, k);
   } finally { server.close(); }
 });
 

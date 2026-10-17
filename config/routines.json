@@ -1,0 +1,14 @@
+{
+  "$comment": "Routines the station ships with (engine.mjs seedRoutines). Each is inserted once per data root, ALWAYS disabled: enabling it in the office is the owner's approval (ENGINE-PLAN.md §5.4). A seed the owner deletes stays deleted. Real runs come after E6 (no provider keys until then).",
+  "routines": [
+    {
+      "id": "rt_seed_weekly-genre-scout",
+      "name": "Weekly genre scout",
+      "target": "line:genre-scout",
+      "schedule": "0 9 * * 1",
+      "maxRunsPerDay": 1,
+      "perRunCapUsd": null,
+      "input": "Scout this week's genres for the desk-props pack (product key pngtuber-prop-pack): 2 currently popular AAA titles and 2 indie titles with active streaming communities, from public popularity signals only. Write the internal notes and 4 genre briefs."
+    }
+  ]
+}

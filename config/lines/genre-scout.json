@@ -1,0 +1,37 @@
+{
+  "$comment": "The genre-trend scouting line (DECISIONS.md 'Genre-trend scouting'). Started by the 'Weekly genre scout' routine (seeded disabled) or by hand. TREND-SCOUT writes internal notes (scouting/<day>/notes.json) and 4 genre briefs (drafts/<day>/); scout-notes (engine) checks the notes, adds every recorded name to the scouting blocklist and blocks any genre brief naming a scouted game; EVIDENCE-CHECKER then checks the rest as usual; brief-check copies a verified brief to briefs/ or rejected/. The notes never leave the research folder.",
+  "id": "genre-scout",
+  "label": "Genre scout",
+  "routineLabel": "Genre-trend scout",
+  "maxConcurrentJobs": 1,
+  "maxHops": 4,
+  "start": "trend-scout",
+  "kind": "research",
+  "steps": {
+    "trend-scout": {
+      "kind": "agent",
+      "agent": "trend-scout",
+      "column": "brief",
+      "next": "scout-notes"
+    },
+    "scout-notes": {
+      "kind": "mechanical",
+      "fn": "scoutNotes",
+      "column": "brief",
+      "next": "evidence-checker"
+    },
+    "evidence-checker": {
+      "kind": "agent",
+      "agent": "evidence-checker",
+      "column": "brief",
+      "next": "brief-check"
+    },
+    "brief-check": {
+      "kind": "mechanical",
+      "fn": "briefCheck",
+      "column": "brief",
+      "next": null,
+      "end": "research-done"
+    }
+  }
+}

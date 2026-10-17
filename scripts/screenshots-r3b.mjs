@@ -7,6 +7,8 @@
 //   node scripts/screenshots-r3b.mjs --headed --channel chromium --expect-gpu intel -> the budget run: Playwright's
 //        Chromium, headed, checked to be on the Intel iGPU (Windows sends chrome.exe to the RTX; see DECISIONS)
 //   --only 01,05  -> just those views (file name prefixes; 'fps' for the walking rows)
+//   --engine      -> the engine view (mock provider, a throwaway data root in the temp folder) instead of the legacy
+//                    fixtures view: since TREND-SCOUT's desk (17/10/2026) only the engine layout matches every baked area
 // Starts its own Station server on a random port (fixtures, mock data) and opens only that page. Playwright launches the
 // browser with a fresh temporary profile (no persistent context). Every file goes through outJail() (screenshots/
 // only): screenshots/r3b/ (procedural reference captures for the brightness check in screenshots/r3b/ref/).
@@ -26,10 +28,25 @@ const outDir = arg('--out', 'r3b'), benchMs = Number(arg('--bench-ms', 3000)), o
 const want = (name) => !only || only.split(',').some((p) => name.startsWith(p));
 fs.mkdirSync(outJail(path.join(outDir, 'ref')), { recursive: true });
 const log = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-r3b' });
-const { server } = createOfficeServer({ fixtures: true, log });
+const engineView = argv.includes('--engine'), modeLabel = engineView ? 'engine view (mock provider, empty temp data root)' : 'legacy fixtures view (mock data)';
+let server, closeEngine = () => {};
+if (engineView) {
+  if (process.env.STATION_PROVIDER && process.env.STATION_PROVIDER !== 'mock') throw new Error('R3b captures run on the mock provider only');
+  const os = await import('node:os');
+  const { createJail } = await import('../src/engine/store/jail.mjs');
+  const { createEngine } = await import('../src/engine/engine.mjs');
+  const { createEngineServer } = await import('../src/server/engine-server.mjs');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'station-r3b-engine-'));
+  const J = createJail({ dataRoot: path.join(tmp, 'data'), extraRoots: [path.join(ROOT, 'logs')] });
+  const engine = createEngine({ J, log: makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-r3b-engine', jail: J }), startScheduler: false });
+  if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
+  const es = createEngineServer({ engine, log });
+  server = es.server;
+  closeEngine = () => { es.closeAll(); engine.close(); console.log('engine data root left in the OS temp folder: ' + tmp); };   // nothing is deleted outside a jail (write-guard)
+} else ({ server } = createOfficeServer({ fixtures: true, log }));
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + server.address().port;
-console.log('station server for R3b captures:', base, '(legacy fixtures view)');
+console.log('station server for R3b captures:', base, '(' + modeLabel + ')');
 const channel = arg('--channel', null), expectGpu = arg('--expect-gpu', null);
 const { browser, label: browserLabel, gl } = await launch({ headed, channel });
 const problems = [], fpsRows = [], brightness = [], designCheck = [];
@@ -125,12 +142,14 @@ async function walkRow(theme, scene) {
       const o = window.__office.office, s0 = structuredClone(window.__office.snapshot());
       o.setAnimate(false); for (const a of s0.agents) a.status = 'working'; o.setData(s0);
       o.setAnimate(true); const s1 = structuredClone(s0); for (const a of s1.agents) a.status = 'idle'; o.setData(s1);
-      return { agents: s1.agents.length, walking: o.people().filter((p) => p.place === 'walking').length };
+      const ppl = o.people();
+      return { agents: s1.agents.length, walking: ppl.filter((p) => p.place === 'walking').length, seatless: ppl.filter((p) => p.seat == null).map((p) => p.agentId) };
     });
     const full = await bench(page, false);
     const walkingAtEnd = await page.evaluate(() => window.__office.stats().walking);
-    if (started.walking !== started.agents) problems.push('walk ' + theme + ': only ' + started.walking + ' of ' + started.agents + ' agents walking at the start');
-    fpsRows.push({ view: 'walk (overview, ' + theme + ', ' + (scene || 'baked') + ', all ' + started.agents + ' agents desk to lounge)', moving: full, full, walkingAtStart: started.walking, walkingAtEnd, note: 'animation on' });
+    // the lounge has 8 seats; an idle agent without a seat stays at its desk (layout.js), so 9 agents walk 8 (genre scout, 17/10/2026)
+    if (started.walking !== started.agents - started.seatless.length) problems.push('walk ' + theme + ': only ' + started.walking + ' of ' + (started.agents - started.seatless.length) + ' seated agents walking at the start');
+    fpsRows.push({ view: 'walk (overview, ' + theme + ', ' + (scene || 'baked') + ', all ' + started.agents + ' agents desk to lounge)', moving: full, full, walkingAtStart: started.walking, walkingAtEnd, stayAtDesk: started.seatless, note: 'animation on' + (started.seatless.length ? '; no lounge seat (stays at the desk): ' + started.seatless.join(', ') : '') });
     console.log('  fps walk', theme, scene || 'baked', '(' + started.walking + ' walking at the start, ' + walkingAtEnd + ' at the end)', 'full quality', String(full.fps).padStart(6));
   } finally { await page.close(); }
 }
@@ -158,6 +177,8 @@ try {
   }
   if (want('fps')) for (const [t, s] of [['dark', null], ['light', null], ['dark', 'procedural']]) await walkRow(t, s);
   for (const b of brightness) if (b.theme === 'dark' && b.ratio < 1) problems.push('dark ' + b.view + ' ' + b.area + ': the baked area is darker than the procedural one (' + b.baked + ' < ' + b.procedural + ')');
+  // owner, 17/10/2026: in light mode every baked area stays within 10% of its procedural version's brightness
+  for (const b of brightness) if (b.theme === 'light' && Math.abs(1 - b.ratio) > 0.1) problems.push('light ' + b.view + ' ' + b.area + ': baked ' + b.baked + ' vs procedural ' + b.procedural + ' (x' + b.ratio + '), outside the 10% target');
   for (const d of designCheck) if (d.theme === 'light' && Math.abs(1 - d.designVsOthers) > 0.1) problems.push('light-mode Design room ' + d.designVsOthers + ' x the other rooms (target within about 10%)');
   for (const r of fpsRows) if (r.full.throttled || r.moving.throttled) problems.push('fps ' + r.view + ': throttled (window covered) after four tries: no reading');
   for (const r of fpsRows) if (!/procedural/.test(r.query || r.view) && r.full.fps < 60) problems.push('fps ' + r.view + ': full quality ' + r.full.fps + ' < 60');
@@ -166,9 +187,9 @@ try {
   const perUnit = Object.fromEntries(Object.entries(manifest.units).map(([u, x]) => [u, { rooms: x.rooms, atlas: x.atlas, bytes: sizes.files.filter((f) => f.file.startsWith(u + '.') || f.file.startsWith('lightmap-' + u + '-')).reduce((s, f) => s + f.bytes, 0) }]));
   fs.writeFileSync(outJail(path.join(outDir, 'asset-sizes.json')), JSON.stringify({ ...sizes, units: perUnit, textures: sizes.files.filter((f) => f.file.startsWith('textures/')).reduce((s, f) => s + f.bytes, 0), areas: Object.keys(manifest.rooms), budgetUsed: +(sizes.total.bytes / BUDGET_BYTES).toFixed(3) }, null, 2) + '\n');
   fs.writeFileSync(outJail(path.join(outDir, 'build.json')), JSON.stringify({ build: manifest.build, units: Object.fromEntries(Object.entries(manifest.units).map(([u, x]) => [u, x.build])) }, null, 2) + '\n');
-  fs.writeFileSync(outJail(path.join(outDir, 'brightness.json')), JSON.stringify({ at: new Date().toISOString(), method: 'mean Rec. 709 luma (0-255) of the screenshot pixels inside each area\'s projected outline (rooms: floor to wall top; lounge: floor to 1.4 up; atrium: the central square round the core, floor to 1 up), baked vs ?scene=procedural, same camera', designLightCheck: { target: 'the light-mode Design room within about 10% of the other rooms (owner, R3b); overview camera, baked', rows: designCheck }, rows: brightness }, null, 2) + '\n');
-  const summary = { at: new Date().toISOString(), browser: browserLabel, gl, viewport: W + 'x' + H, benchMs, mode: 'legacy fixtures view (mock data)', views: fpsRows, problems };
+  fs.writeFileSync(outJail(path.join(outDir, 'brightness.json')), JSON.stringify({ at: new Date().toISOString(), method: 'mean Rec. 709 luma (0-255) of the screenshot pixels inside each area\'s projected outline (rooms: floor to wall top; lounge: floor to 1.4 up; atrium: the central square round the core, floor to 1 up), baked vs ?scene=procedural, same camera', lightTarget: 'every baked area within 10% of its procedural version in light mode (owner, 17/10/2026)', designLightCheck: { target: 'the light-mode Design room within about 10% of the other rooms (owner, R3b); overview camera, baked', rows: designCheck }, rows: brightness }, null, 2) + '\n');
+  const summary = { at: new Date().toISOString(), browser: browserLabel, gl, viewport: W + 'x' + H, benchMs, mode: modeLabel, views: fpsRows, problems };
   fs.writeFileSync(outJail(path.join(outDir, headed ? 'fps-headed.json' : 'fps.json')), JSON.stringify(summary, null, 2) + '\n');
   console.table(brightness); console.table(designCheck);
   console.log('problems:', problems.length ? problems : 'none');
-} finally { await browser.close(); server.close(); }
+} finally { await browser.close(); server.close(); closeEngine(); }

@@ -23,4 +23,4 @@ design-refs/
 __pycache__/
 
 # the pinned Real-ESRGAN binary and model (config/engine.json upscale; licences in ASSETS.md): local only, never committed
-tools/
+/tools/

@@ -19,6 +19,7 @@ import { createOwnerActions } from './owner.mjs';
 import { createOrchestrator } from './orchestrator.mjs';
 import { effectiveAgent } from './runtime.mjs';
 import { validSchedule } from './scheduler.mjs';
+import { withScouting, scoutedTerms } from './lib/scouting.mjs';
 
 export class LockError extends Error { constructor(msg) { super(msg); this.code = 'LOCKED'; } }
 export class DemoConfigError extends Error { constructor(msg) { super(msg); this.code = 'DEMO_CONFIG'; } }
@@ -68,6 +69,10 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
   try {
     const cfg = loadConfig({ configDir, promptsDir, overrides });
     checkDemoConfig(cfg, { demo, dataRoot: J.dataRoot });
+    // genre-trend scouting (DECISIONS.md): every originality screen reads the station config through this getter, so the
+    // scouting blocklist (data/research/scouting/blocklist.json, engine-written) applies the moment a title is recorded
+    const baseStation = cfg.station, researchDir = path.join(J.dataRoot, 'research');
+    Object.defineProperty(cfg, 'station', { enumerable: true, get: () => withScouting(baseStation, scoutedTerms(researchDir)) });
     if (overrides) log.warn('config overrides in use (dry run and demo only)', { products: overrides.productsFile ? overrides.productsFile.products.map((p) => p.key) : null, stationSet: overrides.stationSet ? Object.keys(overrides.stationSet) : null });
     const store = openStore({ J, log });
     const ledger = createLedger({ J, store, log });
@@ -83,7 +88,8 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     // a routine fires a line (verified briefs, up to its daily limit) or a research batch; created disabled, enabled by the owner only
     engine.runRoutine = async (routine) => {
       const cap = routine.per_run_cap_usd ?? null;
-      if (routine.target === 'line:research') { const r = engine.orchestrator.createResearchJob({ input: routine.input, by: 'routine ' + routine.id }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
+      const rl = /^line:(.+)$/.exec(routine.target), rline = rl && cfg.lines[rl[1]];
+      if (rline && rline.kind === 'research') { const r = engine.orchestrator.createResearchJob({ line: rline.id, input: routine.input || undefined, by: 'routine ' + routine.id }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
       if (routine.target === 'line:room1-digital') {
         // the oldest verified brief that has no job yet (owner Q13: once the owner enables a line routine)
         const b = engine.orchestrator.verifiedBriefs().find((x) => x.status === 'verified' && x.id && !x.jobId);
@@ -96,7 +102,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
       throw new Error('routine target not supported: ' + routine.target);
     };
     // routines the page may create (ENGINE-PLAN.md §5.4); an off-duty first agent makes its line's routines skip
-    engine.routineTargets = Object.values(cfg.lines).map((l) => ({ id: 'line:' + l.id, label: l.id === 'research' ? 'Research batch (research line)' : 'Next verified brief (' + l.id + ' line)', firstAgent: firstAgentOf(l) }));
+    engine.routineTargets = Object.values(cfg.lines).map((l) => ({ id: 'line:' + l.id, label: l.kind === 'research' ? (l.routineLabel || l.label + ' batch') + ' (' + l.id + ' line)' : 'Next verified brief (' + l.id + ' line)', firstAgent: firstAgentOf(l) }));
     const routineHold = (routine) => {
       const t = engine.routineTargets.find((x) => x.id === routine.target); if (!t || !t.firstAgent) return null;
       return effectiveAgent(engine, t.firstAgent).enabled ? null : ((cfg.agents[t.firstAgent] || {}).name || t.firstAgent) + ' is off duty';
@@ -104,6 +110,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.scheduler = createScheduler({ store, halt, ledger, caps: cfg.engine.caps, bus, log, clock, hold: routineHold, run: (routine) => (engine.runRoutine ? engine.runRoutine(routine) : Promise.reject(new Error('no routine runner'))) });
     if (startScheduler) engine.scheduler.start();
     engine.routines = routineAdmin(engine);
+    engine.seededRoutines = seedRoutines(engine);
     engine.updateAgent = (key, patch, opts) => updateAgent(engine, key, patch, opts);
     // jobs interrupted by the last stop resume at the start of their step, once (resumeOnRestart)
     if (resume && !halt.isHalted()) for (const j of rec.jobs.filter((x) => x.action === 'resume')) { try { engine.orchestrator.startJob(j.id); } catch (e) { log.warn('interrupted job not resumed', { id: j.id, error: e.message }); } }
@@ -112,6 +119,20 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.close = () => { try { engine.scheduler.stop(); } catch (_) {} halt.close(); store.close(); useJail(null); unlock(); log.info('engine closed'); };
     return engine;
   } catch (e) { unlock(); throw e; }
+}
+
+// config/routines.json: routines the station ships with, inserted once per data root and ALWAYS disabled (enabling is the
+// owner's approval, ENGINE-PLAN.md §5.4). A seed the owner deletes stays deleted (meta seeded:<id>); never re-enabled here.
+export function seedRoutines(engine) {
+  const { cfg, store, log } = engine, out = [];
+  for (const s of cfg.routines || []) {
+    const key = 'seeded:' + s.id;
+    if (store.meta.get(key) || store.getRoutine(s.id)) { if (!store.meta.get(key)) store.meta.set(key, Date.now()); continue; }
+    if (!engine.routineTargets.some((t) => t.id === s.target) || !validSchedule(s.schedule)) { log.warn('seed routine skipped: bad target or schedule', { id: s.id, target: s.target }); continue; }
+    store.tx(() => { store.insertRoutine({ id: s.id, name: s.name, target: s.target, input: s.input || '', schedule: s.schedule, max_runs_per_day: s.maxRunsPerDay ?? 1, per_run_cap_usd: s.perRunCapUsd ?? null }); store.meta.set(key, Date.now()); });
+    log.info('seed routine created (disabled)', { id: s.id, name: s.name, target: s.target }); out.push(s.id);
+  }
+  return out;
 }
 
 const firstAgentOf = (l) => { let step = l.start, seen = 0; while (step && seen++ < 20) { const d = l.steps[step]; if (!d) return null; if (d.kind === 'agent') return d.agent; step = d.next; } return null; };

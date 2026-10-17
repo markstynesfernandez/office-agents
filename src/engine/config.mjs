@@ -6,6 +6,7 @@
 //   config/agents/<key>.json      one file per agent
 //   config/lines/<id>.json        the written line specs
 //   config/office.json            the office layout (departments and desks)
+//   config/routines.json          routines the station ships with (seeded once per data root, always disabled)
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -48,5 +49,6 @@ export function loadConfig({ configDir, promptsDir, overrides = null }) {
   const products = overrides && overrides.productsFile ? overrides.productsFile : opt('products.json');
   const bl = path.join(configDir, 'blocklist.txt');
   const blocklist = fs.existsSync(bl) ? fs.readFileSync(bl, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
-  return { configDir, promptsDir, engine, blocklist, station: overrides && overrides.stationSet ? applySet(opt('station.config.json') || {}, overrides.stationSet) : (opt('station.config.json') || {}), overridden: !!overrides, products: (products && products.products) || [], productsFile: products, agents, lines, office: opt('office.json') || { departments: [] } };
+  const routines = opt('routines.json');
+  return { configDir, promptsDir, engine, blocklist, routines: (routines && routines.routines) || [], station: overrides && overrides.stationSet ? applySet(opt('station.config.json') || {}, overrides.stationSet) : (opt('station.config.json') || {}), overridden: !!overrides, products: (products && products.products) || [], productsFile: products, agents, lines, office: opt('office.json') || { departments: [] } };
 }

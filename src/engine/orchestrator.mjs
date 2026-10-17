@@ -29,6 +29,7 @@ import { publicView } from './lib/digital-files.mjs';
 import { canonicalDesignFile } from './tools/index.mjs';
 import { COLUMNS as LEGACY_COLUMNS } from '../lib/legacy-readers/tracker.mjs';
 import { dublinDay } from './time.mjs';
+import { validateNotes, termsOf, addToBlocklist, scoutingBriefProblems, isScoutBrief, notesFile, SCOUT_DIR } from './lib/scouting.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -49,6 +50,13 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const isActive = (id) => [...active.values()].some((a) => a.jobId === id);
   const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 
+  // the brief check everywhere a brief is judged (research brief-check, intake): the ported checks, then the scouting
+  // screen of the WHOLE brief (scouted game names; derivative wording in a genre-scout brief)
+  function checkBriefAll(t) {
+    const c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
+    const sp = scoutingBriefProblems(t, cfg.station);
+    return sp.length ? { ...c, ok: false, reasons: [...(c.ok ? [] : c.reasons), ...sp] } : c;
+  }
   function lineOf(id) { const l = cfg.lines[id]; if (!l) throw new Error('no such line: ' + id); return l; }
   function trackerRow(job, patch) {
     const cur = store.getTracker(job.id) || {};
@@ -78,7 +86,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const L = lineOf(line), t = String(briefText || '').replace(/\r\n/g, '\n'), id = briefField(t, 'id'), reasons = [];
     if (!isListingId(id)) reasons.push('the brief has no valid id (YYYY-MM-DD--slug)');
     if (briefField(t, 'status') !== 'verified') reasons.push('the brief status is "' + (briefField(t, 'status') || 'missing') + '", not "verified"');
-    const chk = checkBrief(t, { products: cfg.products, cfg: cfg.station });
+    const chk = checkBriefAll(t);
     if (!chk.ok) reasons.push(...chk.reasons);
     if (id && store.getJob(id)) reasons.push('a job with id ' + id + ' already exists (a re-run needs a new -rN id)');
     if (reasons.length) { log.warn('intake refused a brief', { id, reasons, by }); return { ok: false, id, reasons }; }
@@ -184,7 +192,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   async function agentStep(job, step, def, pass, stopSignal = null) {
     const L = lineOf(job.line), research = job.kind === 'research', folder = research ? path.join(dataRoot, 'research') : jobDir(job.id), l = job.loops || {}, max = research ? 0 : (L.steps['qa-design'].onRevise || {}).max ?? 2;
     let input, loopNote = null;
-    if (research) { J.makeDir(path.join(folder, 'drafts', job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: drafts/' + job.data.day + '/.'; }
+    if (research) {
+      J.makeDir(path.join(folder, 'drafts', job.data.day)); input = (job.data.input || 'Run your standing orders for this batch.') + '\nToday (Dublin) is ' + job.data.day + '. Drafts for this batch: drafts/' + job.data.day + '/.';
+      if ((cfg.agents[def.agent] || {}).scoutingNotes) { J.makeDir(path.join(folder, SCOUT_DIR, job.data.day)); input += ' Your internal scouting notes for this run: ' + SCOUT_DIR + '/' + job.data.day + '/notes.json.'; }
+    }
     else if (step === 'designer') {
       const n = latestSet(dataRoot, job.id) + 1;
       if (pass === 1) input = 'New verified brief for the Room 1 line. Write set-v' + n + '.\n\n' + readBrief(job.id) + '\n\n' + handoff(job);
@@ -320,7 +331,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       return { next: def.next, note: 'package gate passed' };
     },
     package(job) { return buildPackage(job); },
-    briefCheck(job) { return researchBriefCheck(job); }
+    briefCheck(job) { return researchBriefCheck(job); },
+    scoutNotes(job, def) { return scoutNotesStep(job, def); }
   };
 
   // ---- the package: what the owner uploads by hand. A ZIP product (deliverables.package zip) gets the ported digital package step
@@ -389,18 +401,46 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')) : []) {
       const t = fs.readFileSync(path.join(drafts, f), 'utf8'), st = briefField(t, 'status');
       if (st !== 'verified') { out.push(f + ': ' + (st || 'no status') + ' (not moved)'); continue; }
-      const c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
+      const c = checkBriefAll(t);
       if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), t); out.push(f + ': verified -> briefs/'); }
       else { J.put(path.join(dataRoot, 'research', 'rejected', f), t + '\n\n## Station brief check\n' + c.reasons.map((r) => '- ' + r).join('\n') + '\n'); out.push(f + ': rejected -> ' + c.reasons.join('; ')); }
     }
     return { end: 'research-done', reason: out.join(' | ') || 'no drafts for ' + day };
   }
 
-  // ---- research jobs
-  function createResearchJob({ input = 'Run your standing orders for this batch.', by = 'owner' } = {}) {
-    const day = dublinDay(), n = store.listJobs().filter((j) => j.kind === 'research' && j.id.startsWith(day)).length + 1, id = day + '--research-' + n;
-    store.insertJob({ id, line: 'research', kind: 'research', title: 'Research batch ' + n, state: 'queued', step: 'demand-researcher', data: { day, input, createdBy: by } });
-    bus.emit('job.created', { jobId: id, data: { line: 'research', by } });
+  // ---- genre-trend scouting (DECISIONS.md): after TREND-SCOUT, before anyone else reads the drafts. The notes must be
+  // valid (2 AAA + 2 indie, evidence links, dates); every recorded title, studio and alsoBlock name goes on the scouting
+  // blocklist; then each genre-scout draft of the day is screened whole, and one naming a scouted game (or using
+  // derivative wording) is moved to scouting/blocked/<day>/ with the reasons (it names a game, so it stays inside the
+  // scout-only folder), so EVIDENCE-CHECKER never sees it. Idempotent on a re-run.
+  function scoutNotesStep(job, def) {
+    const day = job.data.day || dublinDay(), rdir = path.join(dataRoot, 'research'), nf = notesFile(rdir, day);
+    if (!fs.existsSync(nf)) return { blocked: 'TREND-SCOUT wrote no scouting notes (' + SCOUT_DIR + '/' + day + '/notes.json)' };
+    const v = validateNotes(readJson(nf), { day });
+    if (!v.ok) return { blocked: 'scouting notes refused: ' + v.problems.join('; ') };
+    const added = addToBlocklist(J, rdir, termsOf(v.entries), { day, jobId: job.id });
+    log.info('scouting blocklist updated', { jobId: job.id, added: added.length, games: v.entries.length });
+    const drafts = path.join(rdir, 'drafts', day), out = [];
+    for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')).sort() : []) {
+      const t = fs.readFileSync(path.join(drafts, f), 'utf8'); if (!isScoutBrief(t)) continue;
+      const sp = scoutingBriefProblems(t, cfg.station);
+      if (!sp.length) { out.push(f + ': screened clear'); continue; }
+      const rf = J.move(path.join(drafts, f), path.join(rdir, SCOUT_DIR, 'blocked', day, f));   // moved, never deleted; it names a game, so it stays in scouting/
+      J.put(rf, t + '\n\n## Station scouting screen\n' + sp.map((r) => '- ' + r).join('\n') + '\n');
+      const shown = scoutingBriefProblems(f.replace(/\.md$/, '').replace(/-/g, ' '), cfg.station).length ? '(a draft whose file name names a scouted game)' : f;   // job notes reach the office page
+      out.push(shown + ': BLOCKED -> ' + SCOUT_DIR + '/blocked/' + day + '/ (' + sp.length + ' hit' + (sp.length > 1 ? 's' : '') + ')');
+      log.warn('genre brief blocked by the scouting screen', { jobId: job.id, file: f, reasons: sp });
+    }
+    store.updateJob(job.id, { data: { scouting: { games: v.entries.length, added: added.length, drafts: out } } });
+    return { next: def.next, note: 'scouting notes valid (' + v.entries.length + ' games, ' + added.length + ' new blocklist names); ' + (out.join(' | ') || 'no genre drafts') };
+  }
+
+  // ---- research jobs (the research line and the genre-scout line)
+  function createResearchJob({ input = 'Run your standing orders for this batch.', by = 'owner', line = 'research' } = {}) {
+    const L = lineOf(line); if (L.kind !== 'research') throw new Error('not a research line: ' + line);
+    const day = dublinDay(), n = store.listJobs().filter((j) => j.kind === 'research' && (j.line || 'research') === line && j.id.startsWith(day)).length + 1, id = day + '--' + line + '-' + n;
+    store.insertJob({ id, line, kind: 'research', title: (L.label || 'Research') + ' batch ' + n, state: 'queued', step: L.start, data: { day, input, createdBy: by } });
+    bus.emit('job.created', { jobId: id, data: { line, by } });
     return { ok: true, id };
   }
 
