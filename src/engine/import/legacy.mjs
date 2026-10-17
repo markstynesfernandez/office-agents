@@ -103,7 +103,7 @@ const jsonl = (buf) => {
 
 // ---------------------------------------------------------------- read everything the import needs from the source
 export function readSource(src, cfg) {
-  const out = { files: [], rows: {}, counts: {}, notes: [] };
+  const out = { files: [], rows: {}, counts: {}, notes: [], digitalProducts: (cfg.products || []).filter((p) => p.digital).map((p) => p.key) };
   const fileRec = (rel, to) => { const r = src.read(rel); out.files.push({ from: rel, to, buf: r.buf, sha256: r.sha, bytes: r.buf.length, mtimeMs: r.mtimeMs }); return r; };
 
   // agents: legacy agentId -> roster name -> engine agent key (letters and digits compared, DECISIONS.md 10/D4)
@@ -250,10 +250,13 @@ export function legacyJobs(S) {
     const stage = lane || (['approved', 'published', 'retired'].includes(state) ? 'done' : state === 'packaged' ? 'approval-queue' : dirs.outbox ? 'qa-listing' : filesOf(id, 'work').some((f) => /design-v\d+\.(png|svg|md)$|set-v\d+\//.test(f.to)) ? 'design' : 'brief');
     const finite = all.filter(Number.isFinite), lastChange = endedAt || (finite.length ? Math.max(...finite) : null) || (Number.isFinite(first) ? first : 0);
     const usdNano = S.rows.ledger.filter((r) => r.jobId === id).reduce((s, r) => s + nano(r.usd), 0);
+    // the legacy room: the tracker's own when it names one of the two (etsy-digital, etsy-pod); with no tracker row, a
+    // digital product (config/products.json) is etsy-digital and anything else the archived POD line
+    const room = tr && /^etsy-(digital|pod)$/.test(tr.room || '') ? tr.room : (S.digitalProducts || []).includes(product) ? 'etsy-digital' : 'etsy-pod';
     return {
       id, line: 'legacy:room1-etsy', title: titleFromId(id), product_key: product, state, reason,
       created_at: Number.isFinite(first) ? first : lastChange, updated_at: lastChange, started_at: Number.isFinite(first) ? first : null, ended_at: endedAt,
-      data: { legacy: { system: 'legacy station', room: 'etsy-pod', folder: 'legacy/jobs/' + id + '/', sources: Object.fromEntries(Object.entries(dirs).map(([k, v]) => [k, 'station-workspace/' + v.from + '/'])), tracker: tr ? { status: tr.status, status_reason: tr.status_reason || null, updated_at: tr.updated_at || null, cost_usd: tr.cost_usd || null, qa_design: tr.qa_design || null, qa_listing: tr.qa_listing || null } : null, rejected: rej ? { firstLine: rej.line, at: rej.at } : null, stage, lane, warnings, runs: runs.map((r) => r.runId), ledgerUsd: usdOf(usdNano), niche: (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || (tr && tr.niche) || null } }
+      data: { legacy: { system: 'legacy station', room, folder: 'legacy/jobs/' + id + '/', sources: Object.fromEntries(Object.entries(dirs).map(([k, v]) => [k, 'station-workspace/' + v.from + '/'])), tracker: tr ? { status: tr.status, status_reason: tr.status_reason || null, updated_at: tr.updated_at || null, cost_usd: tr.cost_usd || null, qa_design: tr.qa_design || null, qa_listing: tr.qa_listing || null } : null, rejected: rej ? { firstLine: rej.line, at: rej.at } : null, stage, lane, warnings, runs: runs.map((r) => r.runId), ledgerUsd: usdOf(usdNano), niche: (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || (tr && tr.niche) || null } }
     };
   });
 }

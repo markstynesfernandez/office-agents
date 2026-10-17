@@ -152,6 +152,27 @@ test('import twice: the second run adds 0 rows and changes nothing; a later delt
   const store2 = openStore({ J }); assert.equal(store2.getTracker(A).status_reason, 'gate failed again'); store2.close();
 });
 
+test('import: a digital legacy job is labelled with the digital room, not etsy-pod; a re-run changes nothing', async (t) => {
+  const { L, J, log } = setup(t);
+  // E: a tracker row in the digital room; F: no tracker row, a brief for a digital product (config/products.json)
+  const E = '2026-10-16--echo-props', F = '2026-10-16--foxtrot-props';
+  const w = (rel, text) => { const f = path.join(L.SW, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
+  const csv = fs.readFileSync(path.join(L.SW, 'tracker', 'listings.csv'), 'utf8').replace(/\n?$/, '\n');
+  w('tracker/listings.csv', csv + [E, 'etsy-digital', '"Echo props"', 'pngtuber-prop-pack', '2026-10-16', '', '', 'approved', 'approved', 'published', '"live"', '', '', '', '', '', '', '', '', '', '2026-10-17T10:00:00.000Z'].join(',') + '\n');
+  w('room1-etsy/work/' + E + '/brief.md', '# Niche\nEcho\nproduct_type: pngtuber-prop-pack\n');
+  w('room1-etsy/work/' + F + '/brief.md', '# Niche\nFoxtrot\nproduct_type: pngtuber-prop-pack\n');
+  await runImport({ from: L.root, J, log, now: Date.parse('2026-10-17T12:00:00Z') });
+  const store = openStore({ J });
+  const room = (id) => store.getJob(id).data.legacy.room;
+  assert.equal(room(E), 'etsy-digital', 'the tracker row says etsy-digital');
+  assert.equal(room(F), 'etsy-digital', 'no tracker row: a digital product key');
+  assert.equal(room(A), 'etsy-pod', 'a tee (the tracker room is neither of the two): the archived POD line');
+  assert.equal(room(D), 'etsy-pod', 'a product that is not a digital product type');
+  store.close();
+  const r2 = await runImport({ from: L.root, J, log, now: Date.parse('2026-10-17T12:05:00Z') });
+  assert.equal(r2.changed, false); assert.deepEqual(r2.store.planned.jobs, { same: 6 });
+});
+
 test('import refuses while an engine holds the data root, and refuses a source that overlaps the data root', async (t) => {
   const { L, J, log, base } = setup(t);
   // an engine in another live process (the parent of this test process) holds the lock

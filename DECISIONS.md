@@ -572,5 +572,6 @@ the port (17/10/2026), as applied:
   reference image in `image_generate` are not, so a NEW style-reference job still fails closed at the package gate.
 - **Firewall rule** for the upscaler exe (item 5 above), if wanted.
 - **Buttons on the page** for the owner actions (the routes exist; the terminal command works today).
-- **Importer label:** a digital legacy job is labelled `room: etsy-pod` in its imported data (cosmetic; the tracker says
-  etsy-digital).
+- **Importer label:** fixed 17/10/2026. A legacy job now takes its room from its tracker row (`etsy-digital` or
+  `etsy-pod`); with no tracker row, a digital product type (`config/products.json`) is `etsy-digital` and anything else
+  `etsy-pod`. The re-import updated one store row (the PNGTuber job); a second run changed nothing.
