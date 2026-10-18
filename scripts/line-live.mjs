@@ -6,6 +6,9 @@
 //   PowerShell: $env:STATION_PROVIDER='live'; npm run line:live -- --resume <job id>; Remove-Item Env:STATION_PROVIDER
 //   after npm run owner -- prepare-redraw <job id> '<plan>' (owner, 18/10/2026: a redraw-only set, $0):
 //   PowerShell: $env:STATION_PROVIDER='live'; npm run line:live -- --redraw <job id>; Remove-Item Env:STATION_PROVIDER
+//   the owner's run modes on a job (owner, 18/10/2026), each within the owner's cap:
+//   PowerShell: $env:STATION_PROVIDER='live'; npm run line:live -- --listing-only <job id> --max-usd <USD>; Remove-Item Env:STATION_PROVIDER
+//   PowerShell: $env:STATION_PROVIDER='live'; npm run line:live -- --qa-only <job id> --set <N> --max-usd <USD>; Remove-Item Env:STATION_PROVIDER
 //   npm run line:live -- --plan          the pre-run line only: no engine, no key, no call (any provider setting)
 // - Refuses unless this process's own environment says live (except --plan); refuses on the e-stop; needs the server stopped
 //   (the engine lock); refuses without OPENROUTER_API_KEY (names only, never values). No scheduler, no resumed jobs, no routine.
@@ -33,7 +36,8 @@ import { evidenceLevelOf } from '../src/engine/lib/scout-brief.mjs';
 
 const JOB_CAP_USD = 5, LINE = 'room1-digital';
 const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? String(process.argv[i + 1] || '') : null; };
-const BRIEF = arg('--brief'), RESUME = arg('--resume'), REDRAW = arg('--redraw'), PLAN = process.argv.includes('--plan');
+const BRIEF = arg('--brief'), RESUME = arg('--resume'), REDRAW = arg('--redraw'), LISTING = arg('--listing-only'), QAONLY = arg('--qa-only'), PLAN = process.argv.includes('--plan');
+const SET = arg('--set'), MAX_USD = arg('--max-usd');
 const r6 = (n) => Math.round(n * 1e6) / 1e6;
 const rj = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return null; } };
 
@@ -60,7 +64,9 @@ if (process.env.STATION_PROVIDER !== 'live') {
   console.error('line-live refused: this process\'s STATION_PROVIDER is "' + (process.env.STATION_PROVIDER || 'unset') + '". Run it as: $env:STATION_PROVIDER=\'live\'; npm run line:live -- --brief <id>; Remove-Item Env:STATION_PROVIDER');
   process.exit(2);
 }
-if ([BRIEF, RESUME, REDRAW].filter(Boolean).length !== 1) { console.error('line-live: give exactly one of --brief <brief id>, --resume <job id> or --redraw <job id>'); process.exit(2); }
+if ([BRIEF, RESUME, REDRAW, LISTING, QAONLY].filter(Boolean).length !== 1) { console.error('line-live: give exactly one of --brief <brief id>, --resume <job id>, --redraw <job id>, --listing-only <job id> --max-usd <cap> or --qa-only <job id> --set <N> --max-usd <cap>'); process.exit(2); }
+if ((LISTING || QAONLY) && !(Number(MAX_USD) > 0)) { console.error('line-live: --listing-only and --qa-only need the owner\'s cap for the run: --max-usd <USD>'); process.exit(2); }
+if (QAONLY && !(Number.isInteger(Number(SET)) && Number(SET) > 0)) { console.error('line-live: --qa-only needs --set <N>'); process.exit(2); }
 loadEnv(path.join(APP_ROOT, '.env'));   // fills only what the shell has not set; no value is printed
 const J = createJail(), log = makeLogger({ dir: path.join(APP_ROOT, 'logs'), name: 'line-live', jail: J });
 const out = (s) => console.log(log.redact(s));
@@ -90,6 +96,14 @@ try {
     if (!c.ok) throw new Error('intake refused the brief (no job, nothing spent): ' + c.reasons.join('; '));
     id = c.id;
     await orchestrator.startJob(id);
+  } else if (LISTING || QAONLY) {
+    // the owner's run modes, live (owner, 18/10/2026): listing-only = LISTER, the price fill and QA LISTING on the design sign-off (QA
+    // DESIGN's approval or the owner's set approval), never the package step; qa-only = one QA DESIGN pass on set N. Each within --max-usd
+    id = LISTING || QAONLY; const j = store.getJob(id); if (!j) throw new Error('no such job: ' + id);
+    const r = LISTING ? orchestrator.listingOnly(id, { maxUsd: Number(MAX_USD), expectedVersion: j.version, by: 'owner (scripts/line-live.mjs --listing-only)' })
+      : orchestrator.qaOnly(id, { set: Number(SET), maxUsd: Number(MAX_USD), expectedVersion: j.version, by: 'owner (scripts/line-live.mjs --qa-only)' });
+    out('line-live: ' + (LISTING ? 'listing-only' : 'qa-only on set-v' + SET) + ', owner cap USD ' + Number(MAX_USD).toFixed(2));
+    if (r.run) await r.run;
   } else if (REDRAW) {
     // the redraw-only run of a prepared set (npm run owner -- prepare-redraw ...): the named files, then prep, QA DESIGN and the line on
     id = REDRAW; const j = store.getJob(id); if (!j) throw new Error('no such job: ' + id);
@@ -104,7 +118,8 @@ try {
   }
   out(JSON.stringify(report(engine, id, t0), null, 1));
   const job = store.getJob(id);
-  if (!['approval'].includes(job.state) && !(job.state === 'queued' && job.data.waitingFor === 'owner-style-ref')) process.exitCode = 1;
+  const modeFinished = job.state === 'stopped' && /^(listing-only|QA-only) run finished: .*approved/.test(job.reason || '');
+  if (!['approval'].includes(job.state) && !(job.state === 'queued' && job.data.waitingFor === 'owner-style-ref') && !modeFinished) process.exitCode = 1;
 } catch (e) {
   console.error(log.redact('line-live failed (no rerun): ' + (e.message || e) + (e.status ? ' [status ' + e.status + ']' : '') + (e.requestId ? ' [request ' + e.requestId + ']' : '')));
   process.exitCode = 1;

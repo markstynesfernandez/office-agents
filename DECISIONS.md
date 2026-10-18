@@ -1666,3 +1666,47 @@ verbatim; DESIGNER kept the line when it rewrote the file. QA DESIGN read the no
 
 Not changed: set-v4/design.md of the rejected job still holds the old note (job data, not rewritten); a later prep of that set
 writes the station plan into it, and the stale note line stays in DESIGNER's text unless the owner removes it.
+
+## E6 step c: owner fix tools, post-fix approval rule (owner decisions, 18/10/2026)
+
+For the rejected job `2026-10-17--cozy-autumn-desk-props` (QA DESIGN pass 2 revise on set-v4):
+
+1. **File 10, region A** (546 px; the build's "enclosed background-like region", also near-white fill D; it is a painted
+   highlight on the lid, not the handle opening): fill with the surrounding lid cream, sampled from the lid next to it, not
+   transparent. **Amended the same day (before any fix was applied):** recolour A to the *lightest* lid cream that passes the
+   near-white rule (sample the lid around it, then lighten to just under the rule's threshold) so a soft highlight stays; not
+   flat lid cream, not transparent. The region edit gets an optional lighten/darken of the sampled colour for this.
+2. **File 10, steam B and C** (11,876 and 6,292 px near-white fills): recolour to the steam colour of this set's cider mug file
+   (sampled from that file), so it passes the palette rule and stays visible on white and dark; shape and alpha unchanged.
+3. **New rule (post-fix):** after a $0 deterministic owner fix that only addresses build-check findings, the owner may approve
+   the set without another QA DESIGN pass, if (a) originality passed on the previous QA pass, (b) the rebuilt set has no build
+   warnings and no limit problems, (c) all 12 files still match the brief, and (d) the owner has reviewed the after previews.
+   Originality and build warnings can still never be overridden. Tests for each condition.
+4. **File 12: keep** (owner reviewed it on white and dark at 100%; no glow outside the shade).
+5. **The owner script takes its JSON from a file** (`--from <path>`) as well as inline; files from now on.
+
+### As built
+- **Region edit** (`lib/region-edit.mjs`; `prop-edit.mjs` op `region`, through `npm run owner -- edit-set`): a region is
+  selected exactly as the build check finds it (`enclosed` or `near-white`, by its box, on the Designer's original); actions
+  `fill` (the sampled colour, with a feather of lighter neighbours), `recolour` (each pixel = sample + its own luminance offset
+  from the region's mean: shading, shape and alpha kept; `spread` adds the connected light, low-colour soft edge, on by
+  default, off for a region inside a light fill) and `clear`. Samples: `{ around: true, ringPx }` (median of the opaque ring
+  around the region) or `{ file, box }` (median of opaque pixels in a box of another raw file, its sha256 recorded); `adjust`:
+  `{ lighten: f }`, `{ darken: f }` or `{ lighten: "max-under-near-white" }` (the lightest blend towards white whose channel
+  spread stays above the rule's maxChroma 24; e.g. lid 214,150,96 -> 246,233,221, blend 0.789). Every region must quote a
+  build warning of its file (`addresses`); edit-set refuses one that is not in the set's manifest and records the full warning
+  (`addressesWarning`). The Designer's original stays in `raw-original/`.
+- **Rebuild and check** (`npm run owner -- rebuild <job> --from <file>`, orchestrator `rebuildSet`): $0, no model, no job
+  state change: the build (pinned upscaler), the station plan into design.md, the measurement and originality screen, the
+  brief match, and the owner's after previews of every fixed file in `set-vN/review-after/` (on white and dark, a crop per
+  region on each, `<file>.preview.json` tied to the built bytes).
+- **Post-fix rule** (`owner-approval.mjs` `postFixProblems`; set approval with `"rule": "post-fix"` and `reviewedPreviews`):
+  passes on disk may be under the limit; edits.json must hold region fixes of build-check findings only; (a) the last QA DESIGN
+  record's `checks.originality` is "pass"; (b) every fixed file was rebuilt from its edited bytes (build.json input sha256),
+  and the usual checks (no build warnings, no limit problems, originality clear) still apply; (c) the brief-match check applies
+  and passes; (d) every fixed file's preview record is listed as reviewed, is for the current built bytes, and its images are
+  unchanged. The package gate re-composes the approval from disk, so the rule holds there too.
+- **Live run modes** (`scripts/line-live.mjs`): `--listing-only <job> --max-usd <USD>` and `--qa-only <job> --set <N> --max-usd
+  <USD>`, live only, within the owner's cap.
+- Tests: `tests/e6-c-fixtools.test.mjs` (6: the region ops, the lighten/darken, rebuild and edit-set, the rule passing and the
+  gate accepting it, each condition refusing on its own, --from and the live-mode arguments).

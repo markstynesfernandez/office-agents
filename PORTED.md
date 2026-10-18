@@ -71,8 +71,8 @@ Every ported module starts with a header that names its source, its moment, its 
 | tests/ported/etsy-fees.test.mjs | tests/etsy-fees.test.mjs | 1st | imports to src/engine/lib; the POD-only test is not ported |
 | tests/ported/vat-fees.test.mjs | tests/vat-fees.test.mjs | 1st | imports to src/engine/lib |
 | tests/ported/style-ref.test.mjs | tests/style-ref.test.mjs | 5th | imports to src/engine/lib; job folders; a jail per temp root; the StarNet patch, image_generate and run-line --first-file tests are not ported; replaces listing-notice.test.mjs (its test moved here) |
-| src/engine/lib/owner-approval.mjs | scripts/lib/owner-approval.mjs | 5th | job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/) |
-| src/engine/lib/prop-edit.mjs | scripts/lib/prop-edit.mjs | 5th | file writes go through the engine's data jail (dataJail); the edits.json note names the engine module |
+| src/engine/lib/owner-approval.mjs | scripts/lib/owner-approval.mjs | 5th | job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/); E6 c (owner, 18/10/2026): the post-fix rule (postFixProblems) for a set approval before the pass limit |
+| src/engine/lib/prop-edit.mjs | scripts/lib/prop-edit.mjs | 5th | file writes go through the engine's data jail (dataJail); the edits.json note names the engine module; E6 c (owner, 18/10/2026): op `region` (lib/region-edit.mjs: fill, recolour, clear a build-check region; sample adjust) |
 | src/engine/lib/listing-fix.mjs | scripts/lib/listing-fix.mjs | 5th | none |
 | src/engine/lib/listing-photos.mjs | scripts/lib/listing-photos.mjs | 5th | none |
 | src/engine/lib/package-digital.mjs | scripts/lib/package-digital.mjs | 5th | adapted: the package is jobs/<id>/package/ (was approval-queue/<id>/), an earlier one moved to package-replaced-<sha12>/; cost.json is passed in (the engine's ledger rows by jobId, not the time window); the owner-decided check reads the approvals row; every override also carries the file's sha256, the stage, the date and who decided; file writes go through the engine's data jail (dataJail) |

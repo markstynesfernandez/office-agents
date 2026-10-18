@@ -63,6 +63,30 @@ export async function strictCleanFile({ input, output, opts = {} }) {
   return { input: { sha256: sha256(inBuf), widthPx: info.width, heightPx: info.height }, output: { sha256: sha256(out) }, flooredPx: r.flooredPx, removedPx: r.removedPx, regionsRemoved: r.removed.length, removed: r.removed.slice(0, 20), partsKept: r.partsKept, mainSolidPx: r.mainSolidPx, params: r.opts, action };
 }
 
+// the owner's after previews of one fixed file (owner, 18/10/2026; the post-fix rule's condition d): the built file flattened on each review
+// background, and a crop around each fixed region on each background, plus <base>.preview.json tying them to the built file's sha256.
+// regions: [{ label, box }] in raw-file pixels; rec: the file's build.json record (trim box, scale, padding map raw to built pixels)
+export async function writeAfterPreviews({ dir, rel, name, builtBuf, rawSha256, rec, regions = [], backgrounds, listingId, set }) {
+  const base = name.replace(/\.png$/i, ''), images = [], tb = rec.cleanup.trimBox, sc = rec.upscale.scale, pl = rec.padding.leftPx, pt = rec.padding.topPx;
+  fs.mkdirSync(dataJail(dir), { recursive: true });
+  const put = (fname, png) => { const file = dir + '/' + fname; if (!(fs.existsSync(file) && fs.readFileSync(file).equals(png))) fs.writeFileSync(dataJail(file), png); images.push({ file: rel + '/' + fname, sha256: sha256(png) }); };
+  const meta = await sharp(builtBuf).metadata(), boxes = [];
+  for (const [label, hex] of Object.entries(backgrounds)) {
+    const flat = await sharp(builtBuf).flatten({ background: hexRgb(hex) }).png({ compressionLevel: 9 }).toBuffer();
+    put(base + '-on-' + label + '.png', flat);
+    for (const g of regions) {
+      const [x, y, w, h] = g.box, X = Math.round((x - tb.left) * sc + pl), Y = Math.round((y - tb.top) * sc + pt), W2 = Math.round(w * sc), H2 = Math.round(h * sc), m = 60;
+      const left = Math.max(0, X - m), top = Math.max(0, Y - m), cw = Math.min(meta.width - left, W2 + 2 * m), ch = Math.min(meta.height - top, H2 + 2 * m);
+      if (label === Object.keys(backgrounds)[0]) boxes.push({ label: g.label, rawBox: g.box, builtBox: [X, Y, W2, H2] });
+      put(base + '-' + g.label + '-on-' + label + '.png', await sharp(flat).extract({ left, top, width: cw, height: ch }).png({ compressionLevel: 9 }).toBuffer());
+    }
+  }
+  const record = { listingId, set, name, note: 'the owner\'s after previews of a fixed file (built as delivered, flattened; crops around each fixed region): not deliverables', builtSha256: sha256(builtBuf), rawSha256, regions: boxes, images };
+  const rf = dir + '/' + base + '.preview.json', text = JSON.stringify(record, null, 1) + '\n';
+  if (!(fs.existsSync(rf) && fs.readFileSync(rf, 'utf8') === text)) fs.writeFileSync(dataJail(rf), text);
+  return { record: rel + '/' + base + '.preview.json', ...record };
+}
+
 // a built (delivered-size) PNG flattened onto each review background, for the owner: <dir>/<base>-on-<label>.png -> { label: { file, action } }
 const hexRgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '')); if (!m) throw new Error('not a #rrggbb colour: ' + h); return { r: parseInt(m[1].slice(0, 2), 16), g: parseInt(m[1].slice(2, 4), 16), b: parseInt(m[1].slice(4, 6), 16) }; };
 export async function writeFlattened({ buf, dir, base, backgrounds, rel }) {

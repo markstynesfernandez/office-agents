@@ -90,7 +90,7 @@ export function createOwnerActions(engine) {
     const passes = fileDs.filter((d) => d.overridesQa && d.qaPass).map((d) => d.qaPass), first = passes.length ? Math.min(...passes) : null;
     return { listingId: id, set: n, decidedBy: 'owner', date: fileDs[fileDs.length - 1].date, ...(first ? { reviewOf: { qaRecord: 'qa/design-pass' + first + '.json' } } : {}),
       note: 'DERIVED by the engine from jobs/' + id + '/' + DECISIONS_FILE + ' (append-only, the owner\'s decisions): do not edit; record a new decision instead.',
-      ...(sa ? { setApproval: { decidedBy: 'owner', date: sa.date, afterQaPass: sa.afterQaPass, words: sa.words, worthThePrice: sa.worthThePrice || null } } : {}),
+      ...(sa ? { setApproval: { decidedBy: 'owner', date: sa.date, afterQaPass: sa.afterQaPass, words: sa.words, worthThePrice: sa.worthThePrice || null, ...(sa.rule ? { rule: sa.rule, reviewedPreviews: sa.reviewedPreviews || [] } : {}) } } : {}),
       files: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)) };
   }
   const writeReview = (id, n) => { const r = reviewFrom(id, n); if (r) J.putIfChanged(path.join(jobDir(id), 'owner-review.json'), JSON.stringify(r, null, 1) + '\n'); return r; };
@@ -121,16 +121,20 @@ export function createOwnerActions(engine) {
   }
 
   // ---- the owner's approval of the whole set after QA DESIGN's pass limit (legacy approve-set.mjs)
-  function approveSet(id, { set, words: w, worthThePrice = null, date, expectedVersion } = {}) {
+  // rule "post-fix" (owner, 18/10/2026): before the pass limit, after a $0 deterministic fix of build-check findings only, with the after
+  // previews the owner reviewed (reviewedPreviews: set-vN/review-after/<file>.preview.json); lib/owner-approval.mjs postFixProblems
+  function approveSet(id, { set, words: w, worthThePrice = null, rule = null, reviewedPreviews = null, date, expectedVersion } = {}) {
     ownJob(id, expectedVersion);
     const n = Number(set), passes = designPasses(jobDir(id)), last = passes[passes.length - 1];
     if (!last) throw refuse('no QA DESIGN pass on disk');
     const d = dateOf(date);
     // checked before anything is written: the composition below must pass with this approval in the review
     const prev = reviewFrom(id, n); if (!prev) throw refuse('record the owner\'s decision on every file of set-v' + n + ' first');
-    const probe = { kind: 'set-approval', set: n, date: d, afterQaPass: 'qa/design-pass' + last.n + '.json', words: words(w, 'the owner\'s words'), worthThePrice };
+    if (rule != null && rule !== 'post-fix') throw refuse('rule must be "post-fix" or left out');
+    const extra = rule ? { rule, reviewedPreviews: Array.isArray(reviewedPreviews) ? reviewedPreviews.map(String) : [] } : {};
+    const probe = { kind: 'set-approval', set: n, date: d, afterQaPass: 'qa/design-pass' + last.n + '.json', words: words(w, 'the owner\'s words'), worthThePrice, ...extra };
     const reviewFile = path.join(jobDir(id), 'owner-review.json'), before = fs.existsSync(reviewFile) ? fs.readFileSync(reviewFile) : null;
-    J.put(reviewFile, JSON.stringify({ ...prev, setApproval: { decidedBy: 'owner', date: d, afterQaPass: probe.afterQaPass, words: probe.words, worthThePrice } }, null, 1) + '\n');
+    J.put(reviewFile, JSON.stringify({ ...prev, setApproval: { decidedBy: 'owner', date: d, afterQaPass: probe.afterQaPass, words: probe.words, worthThePrice, ...extra } }, null, 1) + '\n');
     const c = composeSetApproval({ roomDir: dataRoot, id, n, maxDesignPasses: 3, cfg: cfg.station });
     if (!c.ok) { if (before) J.put(reviewFile, before); else J.remove(reviewFile); throw refuse('owner set approval refused: ' + c.reasons.join('; ')); }
     append(id, probe); writeReview(id, n);
@@ -165,15 +169,28 @@ export function createOwnerActions(engine) {
     const n = Number(set), sd = path.join(jobDir(id), 'set-v' + n); if (!fs.existsSync(path.join(sd, 'raw'))) throw refuse('set-v' + set + '/raw does not exist');
     if (!plan || typeof plan !== 'object') throw refuse('give the owner-authorised edit plan');
     const p = { listingId: id, set: n, ...plan }; if (p.listingId !== id || p.set !== n) throw refuse('the plan is for another job or set');
-    const pf = path.join(sd, 'edit-plan.json'), text = JSON.stringify(p, null, 1) + '\n', before = fs.existsSync(pf) ? fs.readFileSync(pf, 'utf8') : null;
+    const pf = path.join(sd, 'edit-plan.json'), before = fs.existsSync(pf) ? fs.readFileSync(pf, 'utf8') : null;
     const ok = approvedSources(id, n), bad = [];
+    // a region edit (owner, 18/10/2026) fixes build-check findings only: each region quotes a build warning of that file, from the set's
+    // current manifest (or, on a re-run, the warning its earlier record quoted); the full warning is kept in the plan and edits.json
+    const mf = readJsonSafe(path.join(sd, 'deliverables.json')), prevEd = readJsonSafe(path.join(sd, 'edits.json'));
+    const warningsOf = (file) => [...((mf.ok && mf.v.buildWarnings) || []), ...((prevEd.ok && (prevEd.v.edits || []).flatMap((x) => (x.regions || []).map((g) => g.addressesWarning).filter(Boolean))) || [])].filter((w) => String(w).startsWith(file + ':'));
     for (const e of p.edits || []) {
+      if (e.op !== 'region') continue;
+      for (const g of e.regions || []) {
+        const w = warningsOf(e.file).find((x) => String(g.addresses || '').trim() && x.includes(String(g.addresses).trim()));
+        if (!w) bad.push(e.file + ' region ' + (g.label || '?') + ': "' + g.addresses + '" is not a build-check finding of ' + e.file + ' (set-v' + n + '/deliverables.json buildWarnings)');
+        else g.addressesWarning = w;
+      }
+    }
+    for (const e of p.edits || []) {
+      if (e.op === 'region') continue;   // its sample is a colour, not pixels copied from another file: no approved-source rule
       const src = e.op === 'recolour' ? e.source : e.like, f = path.join(sd, 'raw', String(src || ''));
       if (!SAFE_PNG.test(String(src || '')) || !fs.existsSync(f)) { bad.push(e.file + ': its ' + (e.op === 'recolour' ? 'source' : 'outline reference') + ' ' + src + ' is missing'); continue; }
       if (ok.get(src) !== sha256File(f)) bad.push(e.file + ': ' + src + ' is not an approved file (owner-approved in the review, or the approved style reference, with these exact bytes)');
     }
     if (bad.length) throw refuse('edit plan refused: ' + bad.join('; '));
-    J.put(pf, text);
+    J.put(pf, JSON.stringify(p, null, 1) + '\n');   // with each region's full build warning (addressesWarning)
     const r0 = readPlan(sd); if (!r0.ok) { if (before != null) J.put(pf, before); else J.remove(pf); throw refuse('edit plan refused: ' + r0.reason); }
     const r = await applyEditPlan({ sd, log });
     if (!r.ok) throw refuse('edit failed (nothing kept half-done is used: the build re-checks every raw file): ' + r.reason);

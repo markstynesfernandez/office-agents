@@ -3,10 +3,10 @@
 // (the engine lock refuses while the server is running: use the page then, or stop the server), checks the job's version, runs the action,
 // waits for any run it started and closes. Every write goes through the engine's data jail. No model is called except by a run mode,
 // which runs on the engine's configured provider within the owner's cap (mock in this phase).
-//   node scripts/owner.mjs <action> <job-id> '<json args>'      e.g.
+//   node scripts/owner.mjs <action> <job-id> '<json args>'      or  --from <path.json>   e.g.
 //   node scripts/owner.mjs file-decision 2026-..--x '{"set":4,"name":"03-x.png","decision":"keep","qaPass":2,"qaSaid":"...","reason":"..."}'
 //   actions: file-decision, set-approval, listing-approval, edit-set, fix-listing-text, listing-photos, style-ref, qa-only, listing-only,
-//            package, resume, prepare-redraw, show
+//            package, resume, prepare-redraw, rebuild, show
 // The job's current version is used (expectedVersion), so a decision made in a page tab at the same moment still wins or is refused.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,13 +14,22 @@ import { createEngine } from '../src/engine/engine.mjs';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 
-const [action, id, json = '{}'] = process.argv.slice(2);
+// the JSON args inline, or from a file (owner, 18/10/2026: --from <path.json>; PowerShell 5.1 splits inline JSON that holds spaces)
+const argv = process.argv.slice(2), [action, id] = argv, fromAt = argv.indexOf('--from');
+let json = fromAt >= 0 ? null : (argv[2] || '{}');
+if (fromAt >= 0) {
+  const fp = argv[fromAt + 1];
+  if (!fp || !/\.json$/i.test(fp)) { console.error('--from needs a .json file: node scripts/owner.mjs <action> <job-id> --from <path.json>'); process.exit(2); }
+  try { json = fs.readFileSync(path.resolve(fp), 'utf8').replace(/^\uFEFF/, ''); } catch (e) { console.error('cannot read ' + fp + ': ' + e.message); process.exit(2); }
+}
 const ACTIONS = { 'file-decision': 'recordFileDecision', 'set-approval': 'approveSet', 'listing-approval': 'approveListing', 'edit-set': 'editSet', 'fix-listing-text': 'fixListingText', 'listing-photos': 'makeListingPhotos', 'style-ref': 'styleRefDecision' };
 // resume (E6 c0): a job the owner released (e.g. after the file 1 decision) runs on from its step, as the page's Restart
 // prepare-redraw (owner, 18/10/2026): the redraw-only set at $0 (station code, no model; allowed under the e-stop). Its run (redraw-only)
 // is live only: npm run line:live -- --redraw <job>; on the mock it is refused, as every mode that runs an agent on a job with live spend
-const MODES = { 'qa-only': 'qaOnly', 'listing-only': 'listingOnly', package: 'packageJob', resume: 'restartJob', 'prepare-redraw': 'prepareRedraw' };
-if (!action || !id || !(ACTIONS[action] || MODES[action] || action === 'show')) { console.error('usage: node scripts/owner.mjs <' + [...Object.keys(ACTIONS), ...Object.keys(MODES), 'show'].join('|') + '> <job-id> [json args]'); process.exit(2); }
+// rebuild (owner, 18/10/2026): rebuild and check a set at $0 (the build, the measurement, originality, the brief match, the after previews of
+// every file an owner fix edited); no job state changes
+const MODES = { 'qa-only': 'qaOnly', 'listing-only': 'listingOnly', package: 'packageJob', resume: 'restartJob', 'prepare-redraw': 'prepareRedraw', rebuild: 'rebuildSet' };
+if (!action || !id || !(ACTIONS[action] || MODES[action] || action === 'show')) { console.error('usage: node scripts/owner.mjs <' + [...Object.keys(ACTIONS), ...Object.keys(MODES), 'show'].join('|') + '> <job-id> [json args | --from <path.json>]'); process.exit(2); }
 let args; try { args = JSON.parse(json); } catch (e) { console.error('the args are not valid JSON: ' + e.message); process.exit(2); }
 // the photo plan of a product may be named instead of pasted: {"planFile":"config/listing-photos/pngtuber-prop-pack.json"}
 if (args.planFile) { const f = path.resolve(APP_ROOT, args.planFile); if (path.relative(path.join(APP_ROOT, 'config'), f).startsWith('..')) { console.error('planFile must be under config/'); process.exit(2); } args.plan = JSON.parse(fs.readFileSync(f, 'utf8')); delete args.planFile; }

@@ -2,6 +2,10 @@
 //   change: file writes go through the engine's data jail (dataJail from ../store/active.mjs)
 //   change: the edits.json note names the engine module
 //   the engine's step (src/engine/owner.mjs editSet) refuses a plan whose recolour source is not an approved file
+//   change (owner, 18/10/2026, DECISIONS.md "E6 step c: owner fix tools, post-fix approval rule"): a third op, "region" (lib/region-edit.mjs):
+//           a region the build check finds (an enclosed background-like region or a near-white fill, by its box) is filled with a sampled
+//           colour, recoloured to one (shape and alpha kept) or cleared; every region quotes the build-check finding it fixes ("addresses");
+//           a sampled colour may be lightened or darkened first (sample.adjust; owner amendment, 18/10/2026)
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // prop-edit.mjs (lib) — owner-authorised DETERMINISTIC edits of a digital set's raw files, no model (OWNER exception to the station freeze,
 // 2026-10-17: set-v4 of the PNGTuber desk props). Two edits, pure on an RGBA buffer (alpha is never changed), applied by
@@ -25,6 +29,9 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { sha256 } from './common.mjs';
 import { dataJail } from '../store/active.mjs';
+import { config as defaultConfig } from './common.mjs';
+import { selectRegion, sampleAround, sampleBox, applyRegionEdits, adjustColour } from './region-edit.mjs';
+const regionOpts = () => { const c = ((defaultConfig.digital || {}).build || {}).cleanup || {}; return { enclosed: c.enclosed || {}, palette: c.palette || {} }; };
 
 const lum = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -206,6 +213,21 @@ export function readPlan(sd) {
         if (!Array.isArray(e.then) || !e.then.length) out.push(e.file + ': "then" must be a non-empty list of recolour steps');
         else for (const t of e.then) if (!t || t.op !== 'recolour' || !t.spec || !Array.isArray(t.spec.roles) || !t.spec.roles.length) out.push(e.file + ': a "then" step must be a recolour with spec.roles');
       }
+    } else if (e.op === 'region') {
+      if (!Array.isArray(e.regions) || !e.regions.length) out.push(e.file + ': a region edit needs regions');
+      else for (const g of e.regions) {
+        const lab = e.file + ' region ' + ((g && g.label) || '?');
+        if (!g || !String(g.label || '').trim()) out.push(e.file + ': every region needs a label');
+        if (!g || !['fill', 'recolour', 'clear'].includes(g.action)) out.push(lab + ': action must be fill, recolour or clear');
+        if (!g || !g.select || !['enclosed', 'near-white'].includes(g.select.kind) || !Array.isArray(g.select.box) || g.select.box.length !== 4) out.push(lab + ': select must be { kind: "enclosed" | "near-white", box: [x, y, w, h] }');
+        if (g && g.action !== 'clear') {
+          const sm = g.sample;
+          if (!sm || !(sm.around === true || (SAFE_PNG.test(String(sm.file || '')) && Array.isArray(sm.box) && sm.box.length === 4))) out.push(lab + ': ' + (g.action || '') + ' needs sample { around: true } or { file, box }');
+          else if (sm.file && targets.has(sm.file)) out.push(lab + ': its sample file ' + sm.file + ' is itself edited by the plan');
+          if (sm && sm.adjust !== undefined && (typeof sm.adjust !== 'object' || sm.adjust === null || (sm.adjust.lighten === undefined && sm.adjust.darken === undefined))) out.push(lab + ': sample.adjust must be { lighten } or { darken }');
+        }
+        if (!g || !String(g.addresses || '').trim()) out.push(lab + ': addresses must quote the build-check finding it fixes');
+      }
     } else out.push('unknown edit op "' + e.op + '" for ' + e.file);
     if (e.op === 'recolour' && e.then !== undefined) out.push(e.file + ': "then" steps follow an outline edit only');
   }
@@ -225,6 +247,30 @@ export async function applyEditPlan({ sd, dry = false, log = { info() {}, warn()
       const sf = path.join(raw, e.source); if (!fs.existsSync(sf)) return { ok: false, reason: 'raw/' + e.source + ' (the recolour source) is missing' };
       const sb = fs.readFileSync(sf); img = await rgbaOf(sb); extra = { source: { file: 'raw/' + e.source, sha256: sha256(sb) } };
       facts = recolourByRoles(img.data, img.W, img.H, e.spec);
+    } else if (e.op === 'region') {
+      // owner, 18/10/2026: selections and samples are taken on the Designer's original, then every region's action runs
+      img = await rgbaOf(original); const samples = {}, o = regionOpts();
+      for (const g of e.regions) {
+        if (g.action === 'clear') continue;
+        if (g.sample.around) {
+          const sel = selectRegion(img.data, img.W, img.H, g.select, o); if (sel.problem) return { ok: false, reason: e.file + ' region ' + g.label + ': ' + sel.problem };
+          const sm = sampleAround(img.data, img.W, img.H, sel.members, { ringPx: g.sample.ringPx || 6 }); if (!sm) return { ok: false, reason: e.file + ' region ' + g.label + ': no opaque pixels around it to sample' };
+          samples[g.label] = { ...sm, from: 'around region ' + g.label + ' in raw-original/' + e.file + ' (ringPx ' + (g.sample.ringPx || 6) + ')' };
+        } else {
+          const sf = path.join(raw, g.sample.file); if (!fs.existsSync(sf)) return { ok: false, reason: 'raw/' + g.sample.file + ' (the sample of region ' + g.label + ') is missing' };
+          const sb = fs.readFileSync(sf), S = await rgbaOf(sb), sm = sampleBox(S.data, S.W, S.H, g.sample.box); if (!sm) return { ok: false, reason: e.file + ' region ' + g.label + ': no opaque pixels in the sample box' };
+          samples[g.label] = { ...sm, from: 'raw/' + g.sample.file + ' box ' + g.sample.box.join(','), sha256: sha256(sb) };
+        }
+      }
+      // owner amendment, 18/10/2026: a sampled colour may be lightened or darkened first (e.g. a highlight: as light as the palette rule allows)
+      for (const g of e.regions) {
+        if (!samples[g.label] || !g.sample.adjust) continue;
+        const a = adjustColour(samples[g.label].rgb, g.sample.adjust, o.palette); if (a.problem) return { ok: false, reason: e.file + ' region ' + g.label + ': ' + a.problem };
+        samples[g.label] = { ...samples[g.label], sampledRgb: samples[g.label].rgb, rgb: a.rgb, adjust: g.sample.adjust, blend: a.blend };
+      }
+      const rr = applyRegionEdits(img.data, img.W, img.H, e.regions, samples, o); if (!rr.ok) return { ok: false, reason: e.file + ': ' + rr.reason };
+      facts = { regions: rr.facts };
+      extra = { regions: e.regions.map((g) => ({ label: g.label, action: g.action, select: g.select, sample: g.sample || null, addresses: g.addresses, ...(g.addressesWarning ? { addressesWarning: g.addressesWarning } : {}) })) };
     } else {
       const lf = path.join(raw, e.like); if (!fs.existsSync(lf)) return { ok: false, reason: 'raw/' + e.like + ' (the outline reference) is missing' };
       const lb = fs.readFileSync(lf), L = await rgbaOf(lb); img = await rgbaOf(original);
@@ -242,7 +288,7 @@ export async function applyEditPlan({ sd, dry = false, log = { info() {}, warn()
       if (changed) writeAtomic(target, out);
     }
     const action = dry ? (changed ? 'would-write' : 'unchanged') : (changed ? 'written' : 'unchanged');
-    log.info(e.op + ' ' + e.file + ': ' + action, e.op === 'outline' ? { from: extra.measured.outlineRgb, to: extra.like.outlineRgb, corePx: facts.corePx, edgePx: facts.edgePx, edgeUnfit: facts.edgeUnfit } : { counts: facts.counts });
+    log.info(e.op + ' ' + e.file + ': ' + action, e.op === 'outline' ? { from: extra.measured.outlineRgb, to: extra.like.outlineRgb, corePx: facts.corePx, edgePx: facts.edgePx, edgeUnfit: facts.edgeUnfit } : e.op === 'region' ? { regions: facts.regions.map((x) => x.label + ' ' + x.action + ' ' + x.changedPx + ' px') } : { counts: facts.counts });
     results.push({ action, rec: { op: e.op, file: 'raw/' + e.file, why: e.why || '', original: { file: 'raw-original/' + e.file, sha256: sha256(original) }, ...extra, output: { sha256: sha256(out), widthPx: img.W, heightPx: img.H }, facts } });
   }
   const pf = path.join(sd, 'edit-plan.json'), record = { listingId: plan.listingId, set: plan.set, authorisedBy: plan.authorisedBy, date: plan.date, plan: 'edit-plan.json', planSha256: sha256(fs.readFileSync(pf)),

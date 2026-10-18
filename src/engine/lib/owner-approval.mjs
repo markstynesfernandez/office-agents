@@ -1,6 +1,11 @@
 // PORTED from Virtual-workers/station/scripts/lib/owner-approval.mjs (the owner's own code) at 17/10/2026 12:34 Irish time (5th moment, new in the source on 17/10/2026), source sha256 41466fa009f3fcba53b650f03e847a1a7deff0159902496b31830e15b2bc536a.
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 //   pure reads; the engine writes the records through its owner actions (src/engine/owner.mjs), never an agent
+//   change (owner, 18/10/2026, DECISIONS.md "E6 step c: owner fix tools, post-fix approval rule"): a set approval with rule "post-fix" may
+//           stand in for a further QA DESIGN pass BEFORE the pass limit, after a $0 deterministic owner fix of build-check findings only, if
+//           (a) originality passed on the previous QA pass, (b) the rebuilt set has no build warnings and no limit problems, (c) every file
+//           still matches the brief, and (d) the owner reviewed the after previews of every fixed file (postFixProblems). Originality and
+//           build warnings are never overridden, under either rule
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // owner-approval.mjs (lib) — the OWNER's approval of a whole digital deliverable set after QA DESIGN's pass limit (OWNER exception to the
 // station freeze, 2026-10-17: PNGTuber desk props set-v4, after QA DESIGN pass 3 of 3). The record work/<id>/owner-set-approval.json is the
@@ -19,6 +24,49 @@ import path from 'node:path';
 import { sha256, sha256File } from './common.mjs';
 import { designPasses, readJsonSafe } from './gates.mjs';
 import { manifestRel, MANIFEST_RE } from './digital-prep.mjs';
+import { productFor } from './digital-build.mjs';
+import { briefFileProblems } from './brief-files.mjs';
+
+// the owner's post-fix rule (owner, 18/10/2026): -> problems[] (empty when the set approval may stand in for a further QA DESIGN pass)
+export const POST_FIX = 'post-fix';
+export function postFixProblems({ roomDir, id, n, last, sa, maxDesignPasses = 3 }) {
+  const out = [], workDir = path.join(roomDir, 'jobs', id), sd = path.join(workDir, 'set-v' + n), passes = designPasses(workDir);
+  if (passes.length > maxDesignPasses) out.push('post-fix rule: ' + passes.length + ' design passes are past the limit ' + maxDesignPasses);
+  // the fix: a $0 deterministic owner fix of build-check findings only (region edits, each quoting a build warning of its file)
+  const ed = readJsonSafe(path.join(sd, 'edits.json')), edits = ed.ok && Array.isArray(ed.v.edits) ? ed.v.edits : [];
+  if (!edits.length) out.push('post-fix rule: no deterministic owner fix in set-v' + n + '/edits.json');
+  for (const e of edits) {
+    const rs = e.regions || [];
+    if (e.op !== 'region' || !rs.length || rs.some((g) => !String(g.addresses || '').trim() || !String(g.addressesWarning || '').trim())) out.push('post-fix rule: ' + String(e.file || '').replace(/^raw\//, '') + ' is not a region fix of build-check findings only (every region must quote the build warning it fixes)');
+  }
+  // (a) originality passed on the previous QA pass
+  const lv = last && last.rec && last.rec.ok ? last.rec.v : null;
+  if (!lv || !lv.checks || lv.checks.originality !== 'pass') out.push('post-fix rule (a): originality did not pass on the previous QA DESIGN pass (' + (last ? 'qa/design-pass' + last.n + '.json: ' + ((lv && lv.checks && lv.checks.originality) || 'no originality check') : 'none on disk') + ')');
+  // (b) the REBUILT set: every fixed file was built from its edited raw bytes (warnings and limits are checked for every set approval)
+  const bj = readJsonSafe(path.join(sd, 'build.json'));
+  for (const e of edits) {
+    const name = String(e.file || '').replace(/^raw\//, ''), br = bj.ok ? (bj.v.files || []).find((x) => x.name === name) : null;
+    if (!br || !e.output || br.input.sha256 !== e.output.sha256) out.push('post-fix rule (b): set-v' + n + ' was not rebuilt after the fix of ' + name + ' (npm run owner -- rebuild)');
+  }
+  // (c) every file still matches the brief (the station's brief-match check, which must apply: the brief numbers the spec's files)
+  let product = null; try { product = productFor(roomDir, id).product; } catch (_) { product = null; }
+  const briefText = fs.existsSync(path.join(workDir, 'brief.md')) ? fs.readFileSync(path.join(workDir, 'brief.md'), 'utf8') : '';
+  const names = fs.existsSync(path.join(sd, 'raw')) ? fs.readdirSync(path.join(sd, 'raw')).filter((x) => /\.png$/i.test(x)) : [];
+  const bf = briefFileProblems(briefText, product, names);
+  if (!bf.checked) out.push('post-fix rule (c): the brief-match check does not apply (' + bf.note + ')');
+  else if (bf.problems.length) out.push('post-fix rule (c): ' + bf.problems.join('; '));
+  // (d) the owner reviewed the after previews of every fixed file, for the files as built now
+  const reviewed = new Set(Array.isArray(sa && sa.reviewedPreviews) ? sa.reviewedPreviews.map(String) : []);
+  for (const e of edits) {
+    const name = String(e.file || '').replace(/^raw\//, ''), base = name.replace(/\.png$/i, ''), rel = 'set-v' + n + '/review-after/' + base + '.preview.json', pr = readJsonSafe(path.join(workDir, rel));
+    if (!reviewed.has(rel)) { out.push('post-fix rule (d): the owner has not listed the after previews of ' + name + ' (' + rel + ') as reviewed'); continue; }
+    if (!pr.ok) { out.push('post-fix rule (d): ' + rel + ' is ' + pr.err); continue; }
+    const built = path.join(sd, 'build', name);
+    if (!fs.existsSync(built) || pr.v.builtSha256 !== sha256File(built)) out.push('post-fix rule (d): the after previews of ' + name + ' are for another build (rebuild and review them again)');
+    for (const im of pr.v.images || []) { const fp = path.join(roomDir, im.file); if (!fs.existsSync(fp) || sha256File(fp) !== im.sha256) out.push('post-fix rule (d): preview ' + im.file + ' is missing or changed'); }
+  }
+  return out;
+}
 
 export const APPROVAL_FILE = 'owner-set-approval.json';
 export const FILE_STATUSES = ['qa-pass', 'owner-override', 'deterministic-fix'];
@@ -45,7 +93,9 @@ export function composeSetApproval({ roomDir, id, n, maxDesignPasses = 3, cfg })
   if (!sa || sa.decidedBy !== 'owner' || !DATE_RE.test(String(sa.date || '')) || !String(sa.words || '').trim()) reasons.push('owner-review.json has no setApproval by the owner (decidedBy, date and the owner\'s words)');
   // the pass limit, and the last pass is the one the owner approved after
   const passes = designPasses(workDir), last = passes[passes.length - 1];
-  if (passes.length !== maxDesignPasses) reasons.push('an owner set approval stands in for a QA pass only at the pass limit: ' + passes.length + ' of ' + maxDesignPasses + ' design passes on disk');
+  const postFix = !!(sa && sa.rule === POST_FIX);
+  if (passes.length !== maxDesignPasses && !postFix) reasons.push('an owner set approval stands in for a QA pass only at the pass limit: ' + passes.length + ' of ' + maxDesignPasses + ' design passes on disk');
+  if (postFix) reasons.push(...postFixProblems({ roomDir, id, n, last, sa, maxDesignPasses }));
   if (!last || !last.rec.ok) reasons.push('no readable QA DESIGN pass record in jobs/' + id + '/qa/');
   else {
     if (last.rec.v.verdict === 'approved') reasons.push('the last QA DESIGN pass approved the set: no owner set approval is needed');
@@ -97,7 +147,8 @@ export function composeSetApproval({ roomDir, id, n, maxDesignPasses = 3, cfg })
   if (reasons.length) return { ok: false, reasons };
   const record = {
     kind: 'owner-set-approval', listingId: id, set: n, decidedBy: 'owner', date: sa.date,
-    inPlaceOf: 'QA DESIGN pass ' + (maxDesignPasses + 1) + ' (the package gate allows ' + maxDesignPasses + ' design passes)',
+    inPlaceOf: postFix ? 'a further QA DESIGN pass (owner post-fix rule, 18/10/2026: a $0 deterministic fix of build-check findings only)' : 'QA DESIGN pass ' + (maxDesignPasses + 1) + ' (the package gate allows ' + maxDesignPasses + ' design passes)',
+    ...(postFix ? { rule: POST_FIX, reviewedPreviews: [...sa.reviewedPreviews].map(String).sort() } : {}),
     ownerWords: sa.words,
     afterQaPass: { file: rel(last.file), pass: last.n, sha256: sha256File(last.file), verdict: last.rec.v.verdict },
     designFile: manifestRel(id, n), manifestSha256: sha256File(mf),

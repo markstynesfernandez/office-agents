@@ -45,7 +45,7 @@ import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProb
 import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-sources.mjs';
 import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.mjs';
 import { briefFileProblems, briefFileList } from './lib/brief-files.mjs';
-import { strictCleanFile, writeFlattened } from './lib/strict-cleanup.mjs';
+import { strictCleanFile, writeFlattened, writeAfterPreviews } from './lib/strict-cleanup.mjs';
 import { stationPlan, withStationPlan, keptSections } from './lib/design-plan.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
@@ -1031,6 +1031,34 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       + '. Cleaned by the station (strict clean-up of disconnected faint regions, $0; set-v' + n + '/cleanup.json): ' + names(p.plan.clean) + '. Redrawn by DESIGNER for your earlier findings: ' + names(p.plan.redraw.map((r) => pad2(r.n) + (r.was ? ' (was ' + r.was + ')' : ''))) + '. Review EVERY file of the set as usual.';
   }
 
+  // REBUILD AND CHECK (owner, 18/10/2026): station code, $0, no model. Rebuilds set N from its raw files (the pinned upscaler, as at
+  // prep), writes the current station plan into design.md, re-measures and re-screens the set, runs the brief-match check, and writes the
+  // owner's after previews of every file an owner fix edited (set-vN/review-after/: on each background, a crop per fixed region, and a
+  // <file>.preview.json tied to the built bytes). It changes no job state; the result says what the package gate and the set approval will see.
+  async function rebuildSet(id, { set, expectedVersion, by = 'owner' } = {}) {
+    const j = ownJob(id); checkVersion(j, expectedVersion); notHalted('a rebuild');
+    if (isActive(id) || !MODE_STATES.includes(j.state)) throw new Error('job ' + id + ' is ' + effState(j) + ': a rebuild needs a blocked, stopped or rejected job');
+    const n = Number(set), sd = path.join(jobDir(id), 'set-v' + n), { product } = productFor(dataRoot, id, cfg.products);
+    if (!Number.isInteger(n) || !fs.existsSync(path.join(sd, 'raw'))) throw new Error('jobs/' + id + '/set-v' + set + '/raw does not exist');
+    if (!product || !isPackaged(product)) throw new Error('rebuild is for a packaged product');
+    const b = await buildStep(j, n, product, null);
+    if (b.stopped || b.blocked || !b.ok) throw new Error('rebuild failed: ' + (b.stopped || b.blocked || b.reason));
+    const dm = path.join(sd, 'design.md');
+    if (fs.existsSync(dm)) { const was = fs.readFileSync(dm, 'utf8'), now = withStationPlan(was, stationPlan({ briefText: readBrief(id), product })); if (now !== was) J.put(dm, now); }
+    const pd = prepareDigitalSet({ roomDir: dataRoot, id, n, cfg: cfg.station, products: cfg.products, log });
+    if (!pd.ok) throw new Error('rebuild: the set could not be measured: ' + pd.reason);
+    const bf = briefFilesCheck(id, n, product), ed = readJson(path.join(sd, 'edits.json')), bj = readJson(path.join(sd, 'build.json')) || {}, previews = [];
+    for (const e of (ed && ed.edits) || []) {
+      const name = String(e.file).replace(/^raw\//, ''), rec = (bj.files || []).find((x) => x.name === name), built = path.join(sd, 'build', name);
+      if (!rec || !fs.existsSync(built)) continue;
+      const p = await writeAfterPreviews({ dir: path.join(sd, 'review-after'), rel: 'jobs/' + id + '/set-v' + n + '/review-after', name, builtBuf: fs.readFileSync(built), rawSha256: sha256File(path.join(sd, 'raw', name)), rec, regions: (e.regions || []).map((g) => ({ label: g.label, box: g.select.box })), backgrounds: cfg.station.digital.styleReference.review.backgrounds, listingId: id, set: n });
+      previews.push({ file: name, record: 'set-v' + n + '/review-after/' + name.replace(/\.png$/i, '') + '.preview.json', images: p.images.map((x) => x.file), regions: p.regions });
+    }
+    const out = { jobId: id, set: n, build: { action: b.action || null, warnings: (b.record && b.record.warnings) || [] }, manifest: { count: pd.manifest.count, buildWarnings: pd.manifest.buildWarnings, limitProblems: pd.manifest.limitProblems }, originality: pd.originality.result, briefMatch: { checked: bf.checked, problems: bf.problems, note: bf.note }, previews, by };
+    log.info('rebuild and check', { jobId: id, set: n, buildWarnings: out.manifest.buildWarnings.length, limitProblems: out.manifest.limitProblems.length, originality: out.originality, briefMatch: bf.note, previews: previews.length, by });
+    return out;
+  }
+
   // LISTING ONLY: LISTER -> price fill -> QA LISTING (one rework if its estimate fits) on the design sign-off; refused when listing files
   // already exist (nothing is overwritten); the cap is checked before every hop; it never packages
   function listingOnly(id, { maxUsd, expectedVersion, by = 'owner' } = {}) {
@@ -1152,5 +1180,5 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  return { createJob, saveOwnerBrief, startJob, runJob, createResearchJob, decide, qaOnly, prepareRedraw, redrawOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
+  return { createJob, saveOwnerBrief, startJob, runJob, createResearchJob, decide, qaOnly, prepareRedraw, redrawOnly, rebuildSet, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
 }
