@@ -1710,3 +1710,12 @@ For the rejected job `2026-10-17--cozy-autumn-desk-props` (QA DESIGN pass 2 revi
   <USD>`, live only, within the owner's cap.
 - Tests: `tests/e6-c-fixtools.test.mjs` (6: the region ops, the lighten/darken, rebuild and edit-set, the rule passing and the
   gate accepting it, each condition refusing on its own, --from and the live-mode arguments).
+
+## E6 step c: correction to the owner's set-approval wording (owner, 18/10/2026)
+
+The owner's internal worthThePrice line on the set approval of `2026-10-17--cozy-autumn-desk-props` said "12 cohesive cozy
+autumn props in one hand-painted style"; the owner corrected it to "**painted-look style**" ("hand-painted" is on the listing
+blocklist, and the listing never claims hand-painted work; the line is internal and was never in the listing). Applied as a new
+set-approval entry in the append-only decision log (`owner-decisions.jsonl` keeps both), from which `owner-review.json` and
+`owner-set-approval.json` are re-derived; the design sign-off still checks valid. The package's MANIFEST.json, written before the
+correction, keeps the earlier wording until the next package step (internal, not a buyer file).
