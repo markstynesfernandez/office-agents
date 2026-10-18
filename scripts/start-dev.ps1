@@ -1,4 +1,4 @@
-# start-dev.ps1 (L1): starts the DEV Station from this checkout (office-agents): port 8791, instance dev, the mock
+# start-dev.ps1 (L1): starts the DEV Station from this checkout (office-agents): port 8792, instance dev, the mock
 # provider, its own scratch data in this checkout's data\ (a fresh store on first start; never a copy of live data).
 #   powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1          the engine on the dev scratch data
 #   powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1 -Demo    demo mode instead (scripted day, data-demo\)
@@ -18,7 +18,7 @@ try {
   try {
     if ($Demo) { & node scripts/demo.mjs; $code = $LASTEXITCODE }
     else {
-      $env:STATION_PORT = '8791'
+      $env:STATION_PORT = '8792'
       $env:STATION_DATA_ROOT = Join-Path $root 'data'
       & node scripts/start.mjs; $code = $LASTEXITCODE
     }

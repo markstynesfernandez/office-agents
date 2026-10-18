@@ -40,9 +40,9 @@ test('instance name: unset is dev; only live and dev are accepted', () => {
   assert.equal(codeOf(() => instanceName({ STATION_INSTANCE: 'prod' })), 'INSTANCE_UNKNOWN');
 });
 
-test('ports and data roots: live 8790, dev 8791 by default; ./data is the checkout\'s own', () => {
-  assert.deepEqual(PORTS, { live: 8790, dev: 8791 });
-  assert.equal(resolvePort({}, 'live'), 8790); assert.equal(resolvePort({}, 'dev'), 8791); assert.equal(resolvePort({ STATION_PORT: '9000' }, 'dev'), 9000);
+test('ports and data roots: live 8790, dev 8792 by default; ./data is the checkout\'s own', () => {
+  assert.deepEqual(PORTS, { live: 8790, dev: 8792 });
+  assert.equal(resolvePort({}, 'live'), 8790); assert.equal(resolvePort({}, 'dev'), 8792); assert.equal(resolvePort({ STATION_PORT: '9000' }, 'dev'), 9000);
   assert.equal(resolveDataRoot({}, ROOT), path.join(ROOT, 'data'));
   assert.equal(resolveDataRoot({ STATION_DATA_ROOT: 'data' }, '/x/live'), path.resolve('/x/live', 'data'));
   // the jail resolves a relative data root against the checkout, not the working directory
@@ -53,7 +53,7 @@ test('ports and data roots: live 8790, dev 8791 by default; ./data is the checko
 test('dev refuses STATION_PROVIDER=live, the live checkout\'s data, a data backup and port 8790', () => {
   const L = layout();
   try {
-    const dev = (o) => () => checkInstance({ name: 'dev', env: {}, port: 8791, dataRoot: path.join(L.dev, 'data'), appRoot: L.dev, liveRoot: L.live, ...o });
+    const dev = (o) => () => checkInstance({ name: 'dev', env: {}, port: 8792, dataRoot: path.join(L.dev, 'data'), appRoot: L.dev, liveRoot: L.live, ...o });
     assert.equal(codeOf(dev({})), 'ok');
     assert.equal(codeOf(dev({ env: { STATION_PROVIDER: 'live' } })), 'DEV_LIVE_PROVIDER');
     assert.equal(codeOf(dev({ env: { STATION_PROVIDER: 'mock' } })), 'ok');
@@ -79,7 +79,7 @@ test('live refuses no git state, the wrong checkout or branch, a dirty tree, ano
     assert.equal(codeOf(live({ git: GIT({ branch: null }) })), 'LIVE_WRONG_BRANCH', 'a detached HEAD');
     assert.equal(codeOf(live({ git: GIT({ dirty: ['src/engine/guard.mjs'] }) })), 'LIVE_DIRTY');
     assert.equal(codeOf(live({ git: GIT({ commit: '' }) })), 'LIVE_NO_COMMIT');
-    assert.equal(codeOf(live({ port: 8791 })), 'PORT');
+    assert.equal(codeOf(live({ port: 8792 })), 'PORT');
     assert.equal(codeOf(live({ dataRoot: path.join(L.dev, 'data') })), 'LIVE_DATA_OUTSIDE');
   } finally { L.cleanup(); }
 });
@@ -92,7 +92,7 @@ test('a data root is stamped with its instance on the first start; the other ins
     assert.equal(stampDataRoot(J, { name: 'live', appRoot: L.live, commit: 'a'.repeat(40) }), true);
     assert.equal(stampDataRoot(J, { name: 'dev', appRoot: L.dev, commit: null }), false, 'written once, never replaced');
     assert.equal(readStamp(shared).instance, 'live');
-    assert.equal(codeOf(() => checkInstance({ name: 'dev', env: {}, port: 8791, dataRoot: shared, appRoot: L.dev, liveRoot: L.live })), 'SHARED_DATA');
+    assert.equal(codeOf(() => checkInstance({ name: 'dev', env: {}, port: 8792, dataRoot: shared, appRoot: L.dev, liveRoot: L.live })), 'SHARED_DATA');
     // a dev-stamped root inside the live checkout: refused by live
     const JL = createJail({ dataRoot: path.join(L.live, 'data'), extraRoots: [] });
     stampDataRoot(JL, { name: 'dev', appRoot: L.dev, commit: null });
@@ -140,7 +140,7 @@ test('npm start refuses: the dev checkout as live, live without the launcher, an
     assert.equal(a.status, 2, a.stderr); assert.match(a.stderr, /runs only from the live checkout/);
     const b = run('src/server/index.mjs', { STATION_INSTANCE: 'live' });
     assert.equal(b.status, 2, b.stderr); assert.match(b.stderr, /starts only through npm start/);
-    const c = run('scripts/start.mjs', { STATION_INSTANCE: 'dev', STATION_PORT: '8791', STATION_PROVIDER: 'live' });
+    const c = run('scripts/start.mjs', { STATION_INSTANCE: 'dev', STATION_PORT: '8792', STATION_PROVIDER: 'live' });
     assert.equal(c.status, 2, c.stderr); assert.match(c.stderr, /mock provider only/);
     const d = run('scripts/start.mjs', { STATION_INSTANCE: 'dev' });
     assert.equal(d.status, 2, d.stderr); assert.match(d.stderr, /port 8790 is the live instance's/);

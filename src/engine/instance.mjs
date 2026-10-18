@@ -1,7 +1,7 @@
 // instance.mjs — L1: which Station this process is, and the guards that keep the two apart (DECISIONS.md "L1").
 //   live  the always-on Station in its own git worktree (..\office-agents-live, branch `live`): owns the real data/, port
 //         8790, the live provider; starts only from a clean working tree and logs the commit it runs.
-//   dev   the checkout Claude Code builds in (office-agents/): mock provider only, its own scratch data/, port 8791.
+//   dev   the checkout Claude Code builds in (office-agents/): mock provider only, its own scratch data/, port 8792.
 // STATION_INSTANCE picks one (unset = dev, so a forgotten setting never goes live). STATION_DATA_ROOT (default ./data,
 // relative to the checkout) is the data root. Every data root is stamped with its instance (INSTANCE.json) on the first
 // start; the other instance refuses a stamped root, so the two can never share one. Pure: no shell, no git here. The git
@@ -11,7 +11,7 @@ import path from 'node:path';
 import { APP_ROOT, realResolve } from './store/jail.mjs';
 
 export const INSTANCES = ['live', 'dev'];
-export const PORTS = { live: 8790, dev: 8791 };
+export const PORTS = { live: 8790, dev: 8792 };
 export const LIVE_BRANCH = 'live';
 export const STAMP_FILE = 'INSTANCE.json';
 // the L1 data backups (..\office-agents-data-backup-<tag>): copies of live data, never a dev data root

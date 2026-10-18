@@ -16,7 +16,7 @@ Station is the station's own agent engine, with a live 3D isometric office that 
 ```
 npm install                       # exact versions: three, sharp, croner; playwright (dev)
 npx playwright install chromium   # once, for screenshots and the dry run's pictures
-npm start                         # this checkout's Station (dev here: http://127.0.0.1:8791, scratch data in data/); see "Running live"
+npm start                         # this checkout's Station (dev here: http://127.0.0.1:8792, scratch data in data/); see "Running live"
 npm test                          # every suite (node --test)
 npm run dry-run                   # the E3 dry run on its own data root (dry-run/e3/), screenshots to screenshots/e3/
 npm run demo                      # demo mode: a scripted ~3-minute day on the mock provider, http://127.0.0.1:8791 (data-demo/)
@@ -36,7 +36,7 @@ Since L1 there are two Stations, each in its own checkout of this repository, an
 | | **live** | **dev** |
 |---|---|---|
 | Checkout | `C:\Users\marks\projects\office-agents-live` (a git worktree on branch `live`) | `C:\Users\marks\projects\office-agents` (branch `main`; Claude Code builds here) |
-| Port | 8790 | 8791 |
+| Port | 8790 | 8792 |
 | Data | `office-agents-live\data\` (the station's real data: jobs, ledger, approval queue) | `office-agents\data\` (scratch: a fresh store on first start, never a copy of live data) |
 | Provider | live (from its own `.env`) | mock only |
 | Top bar | **LIVE · real data** | **DEV · scratch data** (the ledger panel says "Dev ledger") |
@@ -52,8 +52,8 @@ cd C:\Users\marks\projects\office-agents-live
 powershell -ExecutionPolicy Bypass -File scripts\start-live.ps1     # live, http://127.0.0.1:8790
 
 cd C:\Users\marks\projects\office-agents
-powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1      # dev, http://127.0.0.1:8791
-powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1 -Demo   # or demo mode (data-demo\, also port 8791)
+powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1      # dev, http://127.0.0.1:8792
+powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1 -Demo   # or demo mode (data-demo\, port 8791: the demo's own default, STATION_DEMO_PORT)
 ```
 The scripts set the instance, port and data root themselves and pass on no `STATION_*` or key variable from your shell, so the live provider and keys come only from the live checkout's `.env`.
 
@@ -66,7 +66,7 @@ Every deploy and rollback appends a row (from, to, time, who, result) to `office
 
 **Owner's `.env` steps** (by hand; nothing in this repository writes a `.env`):
 - Live: copy `.env.live.example` to `C:\Users\marks\projects\office-agents-live\.env` and fill in `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY`.
-- Dev (`C:\Users\marks\projects\office-agents\.env`): set `STATION_INSTANCE=dev`, `STATION_PORT=8791`, keep `STATION_PROVIDER=mock`; the two API keys can be removed (dev never reads them). Compare with `.env.example`.
+- Dev (`C:\Users\marks\projects\office-agents\.env`): set `STATION_INSTANCE=dev`, `STATION_PORT=8792`, keep `STATION_PROVIDER=mock`; the two API keys can be removed (dev never reads them). Compare with `.env.example`.
 
 **Notes**
 - The e-stop works on live exactly as on dev: the page's E-STOP, or `npm run estop` run in the live checkout (it writes that checkout's `data\HALT`).

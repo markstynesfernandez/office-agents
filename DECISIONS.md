@@ -1851,20 +1851,21 @@ written to Virtual-workers). The owner makes the first live start. Tests: `tests
      stopped, started, health, ok, and the error if any); `by` is `--by` or the Windows user name;
    - `--rollback` goes to the `from` of the last successful deploy to the current live commit (so repeated rollbacks step back
      through the deploys) and needs no test record (its target already ran live). `--plan` shows the steps and changes nothing.
-7. **Start scripts.** `scripts/start-live.ps1` (live, 8790, `<live>\data`) and `scripts/start-dev.ps1` (dev, 8791, `<dev>\data`,
+7. **Start scripts.** `scripts/start-live.ps1` (live, 8790, `<live>\data`) and `scripts/start-dev.ps1` (dev, 8792, `<dev>\data`,
    mock; `-Demo` for demo mode). Both clear the shell's `STATION_*`, `ANTHROPIC_*`, `OPENROUTER_*`, `OPENAI_*` variables for the
    server, run in the foreground, and restore the shell's environment on exit. Templates: `.env.live.example` (key names only;
    `STATION_INSTANCE=live`, `STATION_PROVIDER=live`, `STATION_PORT=8790`) and `.env.example` for dev (`STATION_INSTANCE=dev`,
-   `STATION_PROVIDER=mock`, `STATION_PORT=8791`).
+   `STATION_PROVIDER=mock`, `STATION_PORT=8792`).
 8. **Routines** stay disabled on live (all 3 verified disabled after the move); the owner enables them in the page. The e-stop is
    unchanged and per data root: the page's button, or `npm run estop` in the live checkout (tested on a live-stamped root).
 
 **Points for the owner:**
-- **Port 8791 is in use right now** by a non-Station program (`pythonw.exe ...\jarvis-wake\wake_listener.py`). The dev Station
-  and the demo (its default port is also 8791) cannot start while it holds the port. Options: move that listener, or choose
-  another dev port (and demo port); not changed here.
+- **Port 8791 is in use** by a non-Station program (`pythonw.exe ...\jarvis-wake\wake_listener.py`). **Owner decision
+  (18/10/2026): the dev default port is 8792** (`PORTS.dev` in `src/engine/instance.mjs`, `start-dev.ps1`, `.env.example`, the
+  tests). The demo's own default (`DEMO_PORT` 8791, `STATION_DEMO_PORT` overrides) is unchanged, so demo mode still cannot start
+  while the listener holds 8791.
 - The live line scripts (`line:live`, `scout:live`, `smoke:live`) now run only in the live checkout, still with the
   per-process `$env:STATION_PROVIDER='live'`, and only while the live server is stopped (one engine per data root). Running
   lines on the always-on server from the page is the natural next step; not built.
 - The dev `.env` probably still says `STATION_PORT=8790` (the old template's default): the dev instance now refuses that port
-  until the owner sets 8791 (the start script sets it anyway).
+  until the owner sets 8792 (the start script sets it anyway).
