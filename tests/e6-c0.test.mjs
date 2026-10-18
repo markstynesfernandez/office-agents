@@ -148,7 +148,7 @@ function liveEngine(t, { reply, script, text = null, hooks = {}, tag = 'c0' } = 
   engine = createEngine({ J: r.J, log: r.log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
   engine.sleep = async () => {};
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
-  const addJob = (id = ID, brief = BRIEF, step = 'designer') => { engine.store.insertJob({ id, line: 'room1-digital', kind: 'line', title: 'C0 desk props', product_key: 'pngtuber-prop-pack', state: 'queued', step, data: { createdBy: 'test' } }); r.J.put(path.join(r.dataRoot, 'jobs', id, 'brief.md'), brief); return engine.store.getJob(id); };
+  const addJob = (id = ID, brief = BRIEF, step = 'designer', data = {}) => { engine.store.insertJob({ id, line: 'room1-digital', kind: 'line', title: 'C0 desk props', product_key: 'pngtuber-prop-pack', state: 'queued', step, data: { createdBy: 'test', ...data } }); r.J.put(path.join(r.dataRoot, 'jobs', id, 'brief.md'), brief); return engine.store.getJob(id); };
   const keyFree = () => { for (const f of [...walk(r.logs), ...walk(r.dataRoot)].filter((x) => /\.(jsonl?|log|md|txt)$/.test(x))) assert.ok(!fs.readFileSync(f, 'utf8').includes(FAKE_KEY), 'the key is in ' + path.relative(r.base, f)); };
   return { engine, r, fetchImpl, addJob, keyFree, jobDir: (id = ID) => path.join(r.dataRoot, 'jobs', id) };
 }
@@ -234,7 +234,7 @@ test('style reference: file 1 is redrawn after a QA revise before any other file
   await png();
   let stopAtPrep = null;
   const { engine, fetchImpl, addJob, jobDir, keyFree } = liveEngine(t, { script: lineScript({ file1: ['revise', 'approved'] }), hooks: { onStep: ({ job, step, phase, result }) => { if (stopAtPrep && step === 'designer' && phase === 'end' && result && result.next === 'prep') stopAtPrep(job.id); } } });
-  addJob();
+  addJob(ID, BRIEF, 'designer', { ownerFile1: true });   // the owner's pause on file 1 (owner, 18/10/2026: ownerFile1)
   // phase 1: first file, QA revise, first file again, QA approved -> waiting for the owner
   let job = await engine.orchestrator.startJob(ID);
   assert.equal(job.state, 'queued', job.reason); assert.equal(job.data.waitingFor, 'owner-style-ref');
@@ -293,7 +293,7 @@ test('the key\'s daily limit stops the job at the first image (no retry, nothing
 test('a content refusal of file 1 counts as a failed QA attempt; file 1 is drawn again within the loop limit', async (t) => {
   await png();
   const { engine, fetchImpl, addJob } = liveEngine(t, { reply: (n) => (n === 1 ? { status: 403, json: { error: { code: 403, message: 'flagged', metadata: { reasons: ['violence'], flagged_input: 'a steaming mug' } } } } : okImage({ n })), script: lineScript() });
-  addJob();
+  addJob(ID, BRIEF, 'designer', { ownerFile1: true });
   const job = await engine.orchestrator.startJob(ID);
   assert.equal(job.data.waitingFor, 'owner-style-ref', job.reason);
   assert.equal(job.loops.file1, 1, 'the refused attempt counted');

@@ -18,6 +18,8 @@
 //   fixListingText   the owner's US-English word list on the public listing fields (lib/listing-fix.mjs), before/after record
 //   makeListingPhotos   Etsy listing-page photos from the packaged ZIP (lib/listing-photos.mjs), outside the package
 //   styleRefDecision the owner's decision on file 1 (lib/style-ref.mjs recordDecision)
+//   amendJob         an owner amendment to a job's frozen brief or spec (owner, 18/10/2026; lib/job-inputs.mjs addAmendment): a new dated
+//                    record jobs/<id>/amendments/NNN-<date>.md, never an edit of the snapshot; agents read it with the snapshot
 // Every action checks the job's version (E5 write path), refuses legacy history, a running job and the e-stop, is logged and emitted.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,6 +31,7 @@ import { fixListing, chainFixRecord, US_SPELLING } from './lib/listing-fix.mjs';
 import { gridLayout, sceneLayout, closeLayout, trimProp, renderPhoto, HERO, CLOSE, WARM_BG, DARK_BG } from './lib/listing-photos.mjs';
 import { recordListingOriginality } from './lib/originality.mjs';
 import { recordDecision, approvedRef } from './lib/style-ref.mjs';
+import { addAmendment } from './lib/job-inputs.mjs';
 import { readZip } from './lib/zip.mjs';
 import { VersionConflict } from './store/db.mjs';
 import { APP_ROOT } from './store/jail.mjs';
@@ -246,6 +249,16 @@ export function createOwnerActions(engine) {
     return done(id, 'style-ref', { set: Number(set), status, action: r.action, version: r.decision.version, resumable: !!freed });
   }
 
+  // an owner amendment (owner, 18/10/2026): the snapshot taken at job start stays as it is; the amendment is read alongside it by every
+  // agent from the next run on and listed in the QA records
+  function amendJob(id, { text, date, expectedVersion } = {}) {
+    ownJob(id, expectedVersion);
+    const r = addAmendment({ roomDir: dataRoot, id, text, date: dateOf(date), by: 'owner', log });
+    if (!r.ok) throw refuse('amendment refused: ' + r.reason);
+    append(id, { kind: 'amendment', file: r.file, sha256: r.sha256, date: r.date });
+    return done(id, 'amend', { file: r.file, sha256: r.sha256 });
+  }
+
   // what the job panel and MANIFEST show: every override with its file, sha256, stage, pass, date, reason and owner
   function summary(id) {
     const ds = decisions(id), dir = jobDir(id);
@@ -256,7 +269,7 @@ export function createOwnerActions(engine) {
       setApproval: sa.ok ? { set: sa.v.set, date: sa.v.date, counts: sa.v.counts } : null, listingApproval: la.ok ? { date: la.v.date, reason: la.v.ownerReason } : null };
   }
 
-  return { recordFileDecision, approveSet, approveListing, editSet, fixListingText, makeListingPhotos, styleRefDecision, decisions, reviewFrom, summary };
+  return { recordFileDecision, approveSet, approveListing, editSet, fixListingText, makeListingPhotos, styleRefDecision, amendJob, decisions, reviewFrom, summary };
 }
 
 // the listing photos of a packaged ZIP (legacy make-listing-photos.mjs, freeze exception o): reads the package only, checks every PNG against

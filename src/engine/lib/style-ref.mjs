@@ -4,6 +4,10 @@
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 //   change: the review build's temp folder is inside the set folder (set-vN/.tmp-styleref-<pid>/), not the OS temp
 //   change: the record notes name the engine modules
+//   change (owner, 18/10/2026, DECISIONS.md "E6 wrap-up", the file-1 gate): a QA DESIGN pass on file 1 is an approval of its own
+//           (decidedBy "qa-design", with the qaPass of jobs/<id>/qa/file1-pass<k>.json); approvedRef, and so the package gate, accept it
+//           only while that QA record on disk says approved for the same set and the same sha256. The owner may still decide on top of it
+//           (the latest decision counts). A job whose brief or routine sets ownerFile1: true keeps the owner's pause (orchestrator).
 //   NOT ported: the first-file run mode itself (run-line --first-file) and the reference image sent to the image model; the engine builds its own
 //   (E6 c0, 17/10/2026: orchestrator.mjs styleRefDesigner, tools/index.mjs image_generate) on this library's records
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
@@ -40,11 +44,23 @@ export function readStyleRef(roomDir, id) {
   return { ok: true, record: rec, current: ds.length ? ds[ds.length - 1] : null };
 }
 
+export const DECIDERS = ['owner', 'qa-design'];
+// a "qa-design" decision stands only on its QA record: qa/file1-pass<k>.json approved, for that set and those exact bytes
+export function qaFileOneProblem(roomDir, id, d) {
+  const k = Number(d && d.qaPass), f = path.join(roomDir, 'jobs', id, 'qa', 'file1-pass' + k + '.json');
+  if (!Number.isInteger(k) || k < 1) return 'a QA DESIGN approval of file 1 must name its qaPass';
+  let q; try { q = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return 'qa/file1-pass' + k + '.json is missing or not valid JSON'; }
+  if (q.verdict !== 'approved') return 'qa/file1-pass' + k + '.json is not an approval (' + q.verdict + ')';
+  if (q.set !== d.set || !q.decides || q.decides.sha256 !== d.sha256) return 'qa/file1-pass' + k + '.json approved another file 1 (set or sha256 differs)';
+  return null;
+}
+
 // the approved reference, checked against the bytes on disk: { ok, ref } or { ok: false, reason }
 export function approvedRef(roomDir, id) {
   const r = readStyleRef(roomDir, id); if (!r.ok) return r;
+  if (r.current && r.current.status === 'approved' && r.current.decidedBy === 'qa-design') { const qp = qaFileOneProblem(roomDir, id, r.current); if (qp) return { ok: false, reason: 'the QA DESIGN approval of file 1 does not stand: ' + qp }; }
   if (!r.current) return { ok: false, reason: 'no style reference decision for ' + id + ': run node scripts/run-line.mjs ' + id + ' --first-file, then the owner decides (node scripts/style-ref.mjs ' + id + ' --approve | --reject "reason")' };
-  if (r.current.status !== 'approved' || r.current.decidedBy !== 'owner') return { ok: false, reason: 'the latest style reference decision is "' + r.current.status + '"' + (r.current.reason ? ' (' + r.current.reason + ')' : '') + ': run --first-file again for a new file 1' };
+  if (r.current.status !== 'approved' || !DECIDERS.includes(r.current.decidedBy)) return { ok: false, reason: 'the latest style reference decision is "' + r.current.status + '"' + (r.current.reason ? ' (' + r.current.reason + ')' : '') + ': run --first-file again for a new file 1' };
   const f = path.join(roomDir, r.current.file);
   if (!fs.existsSync(f) || sha256(fs.readFileSync(f)) !== r.current.sha256) return { ok: false, reason: r.current.file + ' is missing or differs from the file the owner approved (style-ref.json sha256)' };
   if ((r.current.version || 'raw') === 'raw' && fs.existsSync(cleanedPaths(roomDir, id, r.current.set, r.current.name).file)) return { ok: false, reason: 'file 1 of set-v' + r.current.set + ' has a cleaned version (jobs/' + id + '/set-v' + r.current.set + '/cleaned/' + r.current.name + '): the raw file is never the style reference; the owner decides on the cleaned version (node scripts/style-ref.mjs ' + id + ' --approve | --reject "reason")' };
@@ -131,18 +147,23 @@ export async function makeReviewImages({ roomDir, id, n, name, product, cfg = de
 // the owner's decision on file 1 of the newest first-file set (its cleaned version when there is one), appended to style-ref.json (history
 // kept). One decision per version: a set's cleaned version may be decided after a decision on its raw file (that one stays on the raw file);
 // anything else already decided needs a new --first-file run.
-export function recordDecision({ roomDir, id, status, reason = '', date, decidedBy = 'owner', n }) {
+export function recordDecision({ roomDir, id, status, reason = '', date, decidedBy = 'owner', n, qaPass = null }) {
   if (!['approved', 'rejected'].includes(status)) return { ok: false, reason: 'status must be approved or rejected' };
+  if (!DECIDERS.includes(decidedBy)) return { ok: false, reason: 'decidedBy must be ' + DECIDERS.join(' or ') };
+  if (decidedBy === 'qa-design' && status !== 'approved') return { ok: false, reason: 'a QA DESIGN decision on file 1 is recorded only as an approval (a revise draws file 1 again)' };
   if (status === 'rejected' && !String(reason).trim()) return { ok: false, reason: 'a rejection needs a reason (it goes into the next --first-file run)' };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return { ok: false, reason: 'date must be YYYY-MM-DD' };
   const v = fileOneVersion(roomDir, id, n); if (!v.ok) return v;
   const r = readStyleRef(roomDir, id); if (!r.ok) return r;
   const decisions = r.record && Array.isArray(r.record.decisions) ? r.record.decisions : [];
-  const same = decisions.find((d) => d.set === n && d.sha256 === v.sha256), other = decisions.find((d) => d.set === n && d.sha256 !== v.sha256);
+  if (decidedBy === 'qa-design') { const qp = qaFileOneProblem(roomDir, id, { set: n, sha256: v.sha256, qaPass }); if (qp) return { ok: false, reason: qp }; }
+  // the owner may decide on a file 1 that QA DESIGN approved (approve it as the owner, or reject it): the latest decision counts
+  const ownerOnQa = decidedBy === 'owner' && decisions.length && decisions[decisions.length - 1].set === n && decisions[decisions.length - 1].sha256 === v.sha256 && decisions[decisions.length - 1].decidedBy === 'qa-design';
+  const same = ownerOnQa ? null : decisions.find((d) => d.set === n && d.sha256 === v.sha256 && (d.decidedBy || 'owner') === decidedBy), other = ownerOnQa ? null : decisions.find((d) => d.set === n && d.sha256 !== v.sha256);
   if (same) return same.status === status ? { ok: true, action: 'unchanged', decision: same } : { ok: false, reason: 'set-v' + n + ' file 1 (' + (same.version || 'raw') + ' version) already has a decision (' + same.status + ' ' + same.date + '): a new file 1 needs a new --first-file run' };
   if (other && !(v.version === 'cleaned' && (other.version || 'raw') === 'raw' && other.sha256 === v.raw.sha256)) return { ok: false, reason: 'set-v' + n + ' already has a decision (' + other.status + ' ' + other.date + ') on another file 1: a new file 1 needs a new --first-file run' };
-  const decision = { set: n, version: v.version, name: v.name, file: v.file, sha256: v.sha256, ...(v.raw ? { rawFile: v.raw.file, rawSha256: v.raw.sha256 } : {}), status, decidedBy, date, ...(status === 'rejected' ? { reason: String(reason).trim() } : {}) };
-  const rec = { listingId: id, note: 'owner decisions on file 1 of this listing (the style reference); the latest decision counts. Written by src/engine/owner.mjs (styleRefDecision)', decisions: [...decisions, decision] };
+  const decision = { set: n, version: v.version, name: v.name, file: v.file, sha256: v.sha256, ...(v.raw ? { rawFile: v.raw.file, rawSha256: v.raw.sha256 } : {}), status, decidedBy, ...(decidedBy === 'qa-design' ? { qaPass: Number(qaPass) } : {}), date, ...(status === 'rejected' ? { reason: String(reason).trim() } : {}) };
+  const rec = { listingId: id, note: 'decisions on file 1 of this listing (the style reference): the owner\'s, or a QA DESIGN file-1 approval (decidedBy qa-design, owner 18/10/2026); the latest decision counts. Written by src/engine/owner.mjs (styleRefDecision) and the orchestrator (the file-1 gate)', decisions: [...decisions, decision] };
   fs.writeFileSync(dataJail(recordFile(roomDir, id)), JSON.stringify(rec, null, 1) + '\n');
   return { ok: true, action: 'recorded', decision };
 }

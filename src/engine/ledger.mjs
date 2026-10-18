@@ -3,6 +3,10 @@
 // a new row with `correctionOf`. On start the running totals the spend guard needs are rebuilt from the file; SQLite
 // holds a mirror for queries, and the JSONL wins if they disagree. An unreadable ledger is reported as not ok, and
 // the guard then refuses every call (fail closed).
+// Corrections (E6 wrap-up, 18/10/2026; lib/settle-images.mjs): a row with `correctionOf` (an earlier row's entryId, never itself a
+// correction) carries the DIFFERENCE in usd, which may be negative (an estimate settled lower), so long as the corrected row's net
+// (its usd plus all its corrections) stays at or above 0. It counts on the corrected row's Dublin day (`correctsTs`), adds no image or
+// web count, and is the only way a figure changes: no row is ever edited.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -15,14 +19,14 @@ const r6 = (n) => Math.round(n * 1e6) / 1e6;
 export function emptyTotals() { return { byDay: {}, byJob: {}, byRun: {}, byAgentDay: {}, byLineDay: {}, imagesByDay: {}, webByDay: {}, rows: 0, usd: 0 }; }
 
 export function addToTotals(t, r) {
-  const day = dublinDay(r.ts), add = (o, k, v) => { o[k] = r6((o[k] || 0) + v); };
+  const day = dublinDay(r.correctionOf ? (r.correctsTs || r.ts) : r.ts), add = (o, k, v) => { o[k] = r6((o[k] || 0) + v); };
   add(t.byDay, day, r.usd);
   if (r.jobId) add(t.byJob, r.jobId, r.usd);
   if (r.runId) add(t.byRun, r.runId, r.usd);
   if (r.agentKey) add(t.byAgentDay, r.agentKey + '|' + day, r.usd);
   if (r.line) add(t.byLineDay, r.line + '|' + day, r.usd);
-  if (r.kind === 'image') add(t.imagesByDay, day, r.count || 1);
-  if (r.kind === 'web') add(t.webByDay, day, r.count || 1);
+  if (r.kind === 'image' && !r.correctionOf) add(t.imagesByDay, day, r.count || 1);
+  if (r.kind === 'web' && !r.correctionOf) add(t.webByDay, day, r.count || 1);
   t.rows++; t.usd = r6(t.usd + r.usd);
   return t;
 }
@@ -30,7 +34,7 @@ export function addToTotals(t, r) {
 // validate one row before it is written: refuse anything that could poison the totals
 export function checkRow(r) {
   const bad = [];
-  if (typeof r.usd !== 'number' || !Number.isFinite(r.usd) || r.usd < 0) bad.push('usd must be a finite number >= 0');
+  if (typeof r.usd !== 'number' || !Number.isFinite(r.usd) || (r.usd < 0 && r.correctionOf == null)) bad.push('usd must be a finite number >= 0 (only a correction row may be negative)');
   if (!KINDS.includes(r.kind)) bad.push('kind must be one of ' + KINDS.join(', '));
   if (!r.provider) bad.push('provider is required');
   if (!r.model) bad.push('model is required');
@@ -43,6 +47,15 @@ export function createLedger({ J, store = null, log, file = path.join(J.dataRoot
   const f = J.dataJail(file);
   let totals = emptyTotals(), state = { ok: true, error: null }, rows = [];
   const ids = new Set();
+  // a correction against the rows so far: -> [problems]
+  function correctionProblems(r) {
+    if (r.correctionOf == null) return [];
+    const orig = rows.find((x) => x.entryId === r.correctionOf);
+    if (!orig) return ['correctionOf ' + r.correctionOf + ' is not an earlier row'];
+    if (orig.correctionOf != null) return ['a correction corrects an original row, never another correction'];
+    const net = r6(rows.filter((x) => x.correctionOf === orig.entryId).reduce((s, x) => s + x.usd, orig.usd) + r.usd);
+    return net < 0 ? ['the correction would take row ' + orig.entryId + ' below 0 (net ' + net + ')'] : [];
+  }
 
   function load() {
     totals = emptyTotals(); rows = []; ids.clear();
@@ -51,7 +64,7 @@ export function createLedger({ J, store = null, log, file = path.join(J.dataRoot
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]; if (!line.trim()) continue;
       let r; try { r = JSON.parse(line); } catch (e) { state = { ok: false, error: 'ledger line ' + (i + 1) + ' is unreadable (' + e.message + '); nothing can be charged until it is fixed by hand' }; log && log.error('ledger unreadable', { file: f, line: i + 1 }); return state; }
-      const bad = checkRow(r); if (bad.length) { state = { ok: false, error: 'ledger line ' + (i + 1) + ': ' + bad.join('; ') }; log && log.error('ledger row invalid', { line: i + 1, bad }); return state; }
+      const bad = [...checkRow(r), ...correctionProblems(r)]; if (bad.length) { state = { ok: false, error: 'ledger line ' + (i + 1) + ': ' + bad.join('; ') }; log && log.error('ledger row invalid', { line: i + 1, bad }); return state; }
       rows.push(r); ids.add(r.entryId); addToTotals(totals, r);
       if (store) store.mirrorLedger(r);
     }
@@ -65,8 +78,8 @@ export function createLedger({ J, store = null, log, file = path.join(J.dataRoot
     if (!state.ok) throw new Error('ledger is not ok: ' + state.error);
     const r = { entryId: row.entryId || crypto.randomUUID(), ts: row.ts || Date.now(), ...row };
     r.usd = r6(r.usd);
-    const bad = checkRow(r); if (bad.length) throw new Error('refusing a ledger row: ' + bad.join('; '));
     if (ids.has(r.entryId)) return rows.find((x) => x.entryId === r.entryId);   // idempotent on entryId
+    const bad = [...checkRow(r), ...correctionProblems(r)]; if (bad.length) throw new Error('refusing a ledger row: ' + bad.join('; '));
     J.add(f, JSON.stringify(r) + '\n', { fsync: true });
     rows.push(r); ids.add(r.entryId); addToTotals(totals, r);
     if (store) store.mirrorLedger(r);

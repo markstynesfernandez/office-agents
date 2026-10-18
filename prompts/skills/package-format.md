@@ -3,7 +3,7 @@
 Listing ID (`<id>`) = the brief's `id:` field. Every file for one listing lives under that ID. Never invent a new ID.
 
 work/<id>/                          — scratch for this listing
-  brief.md                          — exact copy of the incoming brief (Designer writes it on pass 1)
+  brief.md                          — the brief, frozen by the station at job start (read only; owner amendments in amendments/)
   set-v1/, set-v2/ …                — one deliverable SET per Designer pass; never change an earlier set
     files/<name>.png|.jpg           — the buyer's files, exactly as the product spec in products.json lists them (Designer)
     design.md                       — every image prompt used, what each file is for, an originality self-check (Designer)

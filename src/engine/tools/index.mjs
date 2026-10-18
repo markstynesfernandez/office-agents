@@ -1,7 +1,8 @@
 // tools/index.mjs — the agents' tools (ENGINE-PLAN.md §2.4). All of them are the engine's own code, and an agent gets
 // only the tools its config lists: the runtime sends only those definitions and refuses any other name.
 //   fs_read, fs_list   read inside the run's folder (the job folder; researchers: data/research). products.json at the top
-//                      of a job folder is a read-only view of config/products.json.
+//                      of a job folder is a read-only view of config/products.json; once the job's inputs are frozen (owner,
+//                      18/10/2026; lib/job-inputs.mjs) products.json and brief.md are served from the snapshot in inputs/ only
 //   fs_write           write inside the folder: .md/.json/.txt only, and only paths matching the agent's `writes` patterns
 //   image_generate     the prompt is screened by the originality lists BEFORE the call (a hit refuses it); the allowed
 //                      image model only; counted against maxImages and every spend cap; the file is written by the engine
@@ -35,6 +36,7 @@ import { blockedDomains, fetchRefusedDomains, blockedBy, canonicalUrl, urlsIn, r
 import { GuardRefusal } from '../guard.mjs';
 import { imageSize, visionTokens, visionSettings } from '../lib/vision.mjs';
 import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT } from '../lib/scout-brief.mjs';
+import { readInputs } from '../lib/job-inputs.mjs';
 
 export const TOOL_NAMES = ['fs_read', 'fs_list', 'fs_write', 'image_generate', 'image_analyze', 'web_search', 'web_fetch', 'submit_verdict', 'report_blocked'];
 export const FORBIDDEN_TOOL_RE = /send|notify|notification|channel|email|mail|sms|message|post|shell|exec|browser|click|mcp|plugin/i;
@@ -113,6 +115,8 @@ export function createToolbox(ctx) {
   const fetchable = (u) => searched.has(u) || (transcriptFile ? returnedUrls(transcriptFile, { searchOnly: true }).has(u) : false);
   const writeRes = (agent.writes || []).map(globRe);
   const products = cfg.productsFile ? JSON.stringify(cfg.productsFile, null, 2) : '{"products":[]}';
+  // the job's frozen inputs: read at each call, so a snapshot that fails its check is refused, never served
+  const frozen = () => { if (!job || job.kind === 'research') return null; const r = readInputs(J.dataRoot, job.id); if (!r.ok) throw new ToolError('the job\'s frozen inputs failed their check: ' + r.reason); return r.frozen ? r : null; };
 
   // resolve inside the folder (links and junctions expanded), refusing everything else
   function inFolder(p, { forWrite = false } = {}) {
@@ -128,7 +132,9 @@ export function createToolbox(ctx) {
 
   const impl = {
     fs_read({ path: p }) {
-      if (job && normalisePath(p, job.id) === 'products.json') return products;
+      const want = job ? normalisePath(p, job.id) : null, sn = job ? frozen() : null;
+      if (want === 'products.json') return sn ? JSON.stringify(sn.productsFile, null, 2) : products;
+      if (want === 'brief.md' && sn) return sn.brief;
       const { abs, rel } = inFolder(p);
       if (!fs.existsSync(abs)) throw new ToolError('no such file: ' + rel);
       const st = fs.statSync(abs); if (st.isDirectory()) throw new ToolError(rel + ' is a folder: use fs_list');
@@ -221,7 +227,7 @@ export function createToolbox(ctx) {
           // otherwise (network, timeout) the request may have run: charged at its reservation, marked estimated
           if (e && e.usd != null) guard.settle(res, { usd: e.usd, priceSource: 'provider (OpenRouter usage.cost)', generationId: e.generationId || undefined, note: 'no image saved: ' + (e.code || 'error') });
           else if ((e && e.status) || (e && PRE_NETWORK.includes(e.code)) || (e && e.refusal) || !live) guard.release(res, 'image call not billed: ' + ((e && (e.status || e.code)) || 'error'));
-          else guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'image call failed without a cost report; charged at the reserved maximum' });
+          else guard.settle(res, { usd: res.maxUsd, estimated: true, generationId: (e && e.generationId) || undefined, note: 'image call failed without a cost report; charged at the reserved maximum' });
           if (e && e.hardStop) { emitTool('image_generate', { path: rel, stopped: e.code }); throw new ImageStop('image provider: ' + e.message); }
           if (e && e.refusal) {
             const k = att ? att.add(name, e.code || 'refused') : null;

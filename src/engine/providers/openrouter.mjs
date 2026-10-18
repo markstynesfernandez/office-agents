@@ -43,6 +43,21 @@ const clip = (s, n) => { const t = String(s ?? ''); return t.length > n ? t.slic
 const CONTENT_400 = /safety|moderat|content[\s_-]?polic|violat|not allowed|disallowed|inappropriate/i;
 
 // the models the image provider may call: allowed by config AND priced
+// OpenRouter's record of one generation (E6 wrap-up, 18/10/2026; docs read 18/10/2026: api-reference/get-a-generation):
+// GET <config/engine.json image.generationEndpoint>?id=<gen-...> with the key as a bearer token -> { data: { id, model, total_cost (USD), ... } }.
+// A read of a record: no image and no model call. Used only by lib/settle-images.mjs. -> { ok, status, data } (never throws on an HTTP
+// error; the key is never in the result).
+export function generationUrl(engineCfg) {
+  const u = engineCfg && engineCfg.image && engineCfg.image.generationEndpoint;
+  if (!/^https:\/\/openrouter\.ai\//.test(String(u || ''))) throw new ImageProviderError('config/engine.json image.generationEndpoint must be an https://openrouter.ai/ URL', { code: 'CONFIG', hardStop: true });
+  return u;
+}
+export async function lookupGeneration({ engineCfg, id, key, fetchImpl = globalThis.fetch, timeoutMs = 15000 }) {
+  const res = await fetchImpl(generationUrl(engineCfg) + '?id=' + encodeURIComponent(id), { method: 'GET', headers: { Authorization: 'Bearer ' + key }, signal: AbortSignal.timeout(timeoutMs) });
+  let json = null; try { json = await res.json(); } catch (_) { json = null; }
+  return { ok: !!res.ok, status: res.status, data: (json && json.data) || null };
+}
+
 export function allowedImageModels(engineCfg) {
   const img = (engineCfg && engineCfg.image) || {}, priced = (engineCfg && engineCfg.pricing && engineCfg.pricing[img.provider] && engineCfg.pricing[img.provider].models) || {};
   return (img.allowedModels || []).filter((m) => priced[m] && priced[m].perImage != null);

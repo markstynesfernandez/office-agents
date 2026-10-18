@@ -353,10 +353,10 @@
     "lister": 13000,
     "qa-listing": 13000,
     "targets": {
-      "_comment": "OWNER TARGET (2026-10-15), tighter than the cap and enforced by tests/prompt-size.test.mjs.",
+      "_comment": "OWNER TARGET (2026-10-15), tighter than the cap and enforced by tests/engine-line.test.mjs. qa-design 10500 (owner, 2026-10-18, E6 wrap-up; was 12000).",
       "lister": 12000,
       "qa-listing": 12000,
-      "qa-design": 12000
+      "qa-design": 10500
     }
   },
   "typeset": {
@@ -423,6 +423,10 @@
       "chucky": ["chunky"],
       "chanel": ["channel", "channels"],
       "bowser": ["browser", "browsers"]
+    },
+    "phraseAllow": {
+      "$comment": "OWNER-APPROVED exact phrases (owner, 2026-10-18, DECISIONS.md \"E6 wrap-up\"): a listed phrase does not hit where it is part of one of these phrases, word for word. Exact phrase only, after case and punctuation: no plural or possessive forms, no compound or misspelling; the listed phrase alone, or in any other phrase, still hits (\"apple\" stays blocked). Add only with the owner.",
+      "apple": ["apple cider"]
     },
     "lists": {
       "brands": [

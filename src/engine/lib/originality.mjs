@@ -5,6 +5,8 @@
 //   change: file writes go through the engine's data jail (dataJail from ../store/active.mjs)
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 //   change: FUZZY_CATEGORIES includes 'scouted-games' (owner 17/10/2026: scouted names match exact plus one-letter misspellings)
+//   new: the owner's exact-phrase allow-list (config.sloganScreen.phraseAllow; owner, 18/10/2026: "apple cider", "apple" alone stays
+//        blocked): a listed phrase found word for word inside an allowed phrase, word for word, is not a hit there
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // originality.mjs (lib) — the DETERMINISTIC originality screen. Pure functions over text + config (no model, no network).
 // It hard-fails what a word list can know: trademarks and brand names, characters and franchises, real people, lyrics / film-TV-book quotes /
@@ -78,11 +80,25 @@ function compile(cfg, extra) {
     // known false positives of the near-miss match (owner, 2026-10-17: "chunky" is not "Chucky"): listed phrase -> ordinary words it must not catch
     const allowCfg = (cfg.sloganScreen && cfg.sloganScreen.nearMissAllow) || {}, allowOf = {};
     for (const [phrase, words] of Object.entries(allowCfg)) if (Array.isArray(words)) allowOf[letters(strip(phrase)).join('')] = new Set(words.map((w) => letters(strip(w)).join(' ')));
-    for (const [category, phrases] of Object.entries(lists)) for (const phrase of phrases) { const a = allowOf[letters(strip(phrase)).join('')]; entries.push(a ? { phrase, category, nearMissAllow: a } : { phrase, category }); }
+    // owner-approved exact phrases (owner, 18/10/2026): listed phrase -> phrases it may stand inside, word for word
+    const phraseCfg = (cfg.sloganScreen && cfg.sloganScreen.phraseAllow) || {}, phrasesOf = {};
+    for (const [phrase, within] of Object.entries(phraseCfg)) if (Array.isArray(within)) phrasesOf[letters(strip(phrase)).join('')] = within.map((w) => letters(strip(w))).filter((w) => w.length);
+    for (const [category, phrases] of Object.entries(lists)) for (const phrase of phrases) { const sq = letters(strip(phrase)).join(''), a = allowOf[sq], w = phrasesOf[sq]; entries.push({ phrase, category, ...(a ? { nearMissAllow: a } : {}), ...(w ? { phraseAllow: w } : {}) }); }
     base = entries; cache.set(key, base);
   }
   const all = [...base, ...(extra || []).map((t) => ({ phrase: t, category: 'blocklist.txt' }))];
   return all.map((e) => { const q = letters(strip(e.phrase)); return q.length ? { ...e, q, squashed: q.join('') } : null; }).filter(Boolean);
+}
+
+// is tokens[i..i+m) inside one of the entry's owner-approved phrases, every word exact (no plural, no compound)?
+function inAllowedPhrase(e, tokens, i, m) {
+  if (!e.phraseAllow) return false;
+  const span = tokens.slice(i, i + m).join(' ');
+  for (const ap of e.phraseAllow) for (let o = 0; o + m <= ap.length; o++) {
+    if (ap.slice(o, o + m).join(' ') !== span || i - o < 0 || i - o + ap.length > tokens.length) continue;
+    if (tokens.slice(i - o, i - o + ap.length).join(' ') === ap.join(' ')) return true;
+  }
+  return false;
 }
 
 // every hit of one phrase entry in one token list, or null
@@ -91,6 +107,7 @@ function matchEntry(e, tokens, via) {
   for (let i = 0; i + k <= n; i++) {   // the phrase word for word (text words may be plural / possessive)
     let ok = true, plural = false;
     for (let j = 0; j < k && ok; j++) { const t = tokens[i + j]; if (t === e.q[j]) continue; if (forms(t).has(e.q[j])) plural = true; else ok = false; }
+    if (ok && !plural && inAllowedPhrase(e, tokens, i, k)) continue;
     if (ok) return { via: via === 'exact' ? (plural ? 'plural-or-possessive' : 'exact') : via, matched: tokens.slice(i, i + k).join(' ') };
   }
   if (e.squashed.length >= 6) {   // compounds: "spiderman" for "spider man" and "spider man" for "spiderman"

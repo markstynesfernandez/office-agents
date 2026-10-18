@@ -6,7 +6,9 @@
 //   node scripts/owner.mjs <action> <job-id> '<json args>'      or  --from <path.json>   e.g.
 //   node scripts/owner.mjs file-decision 2026-..--x '{"set":4,"name":"03-x.png","decision":"keep","qaPass":2,"qaSaid":"...","reason":"..."}'
 //   actions: file-decision, set-approval, listing-approval, edit-set, fix-listing-text, listing-photos, style-ref, qa-only, listing-only,
-//            package, resume, prepare-redraw, rebuild, show
+//            package, resume, prepare-redraw, rebuild, amend, show
+//   amend (owner, 18/10/2026): {"text":"<the owner's words>","date":"YYYY-MM-DD"} -> jobs/<id>/amendments/NNN-<date>.md (the frozen snapshot is
+//   never edited); best passed with --from <path.json>
 // The job's current version is used (expectedVersion), so a decision made in a page tab at the same moment still wins or is refused.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,7 +24,7 @@ if (fromAt >= 0) {
   if (!fp || !/\.json$/i.test(fp)) { console.error('--from needs a .json file: node scripts/owner.mjs <action> <job-id> --from <path.json>'); process.exit(2); }
   try { json = fs.readFileSync(path.resolve(fp), 'utf8').replace(/^\uFEFF/, ''); } catch (e) { console.error('cannot read ' + fp + ': ' + e.message); process.exit(2); }
 }
-const ACTIONS = { 'file-decision': 'recordFileDecision', 'set-approval': 'approveSet', 'listing-approval': 'approveListing', 'edit-set': 'editSet', 'fix-listing-text': 'fixListingText', 'listing-photos': 'makeListingPhotos', 'style-ref': 'styleRefDecision' };
+const ACTIONS = { 'file-decision': 'recordFileDecision', 'set-approval': 'approveSet', 'listing-approval': 'approveListing', 'edit-set': 'editSet', 'fix-listing-text': 'fixListingText', 'listing-photos': 'makeListingPhotos', 'style-ref': 'styleRefDecision', amend: 'amendJob' };
 // resume (E6 c0): a job the owner released (e.g. after the file 1 decision) runs on from its step, as the page's Restart
 // prepare-redraw (owner, 18/10/2026): the redraw-only set at $0 (station code, no model; allowed under the e-stop). Its run (redraw-only)
 // is live only: npm run line:live -- --redraw <job>; on the mock it is refused, as every mode that runs an agent on a job with live spend

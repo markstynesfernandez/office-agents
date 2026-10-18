@@ -15,8 +15,10 @@
 //               Real-ESRGAN, padding) and flattens it on light and dark (lib/style-ref.mjs makeReviewImages); QA-DESIGN checks file 1
 //               (verdict kind "file1"). A revise, a file 1 that was not made (e.g. a content refusal) or one that cannot be built is a
 //               failed attempt: file 1 is drawn again, in a new set, before any other file, within the design loop limit (then
-//               REJECTS-DESK). Approved: the job waits (queued, waitingFor owner-style-ref) for the owner's decision on file 1
-//               (npm run owner style-ref; then resume). An owner rejection sends its reason to the next first-file run.
+//               REJECTS-DESK). Approved (the file-1 gate, owner 18/10/2026): the QA pass is file 1's approval (style-ref.json, decidedBy
+//               qa-design) and the rest of the set follows in the same step, without a pause. A job whose brief or routine sets
+//               "ownerFile1": true (job.data.ownerFile1) keeps the manual pause: it waits (queued, waitingFor owner-style-ref) for the
+//               owner's decision (npm run owner style-ref; then resume). An owner rejection sends its reason to the next first-file run.
 //   rest of set after the owner's approval: DESIGNER draws files 2..N in batches that fit its maxImages (2 spare per batch for
 //               regenerations), each image sent with the approved file 1 as the style reference (tools/index.mjs); prep then copies
 //               the approved file 1 into raw/ and builds the set as before.
@@ -27,7 +29,7 @@ import { VersionConflict } from './store/db.mjs';
 import { checkBrief, briefField } from './lib/brief-check.mjs';
 import { prepareDigitalSet, latestSet, manifestRel } from './lib/digital-prep.mjs';
 import { buildDigitalSet, isPackaged, productFor, processFile } from './lib/digital-build.mjs';
-import { usesStyleRef, approvedRef, ensureStyleRefInSet, readStyleRef, firstFileOf, fileOneVersion, makeReviewImages } from './lib/style-ref.mjs';
+import { usesStyleRef, approvedRef, ensureStyleRefInSet, readStyleRef, firstFileOf, fileOneVersion, makeReviewImages, recordDecision } from './lib/style-ref.mjs';
 import { esrganUpscaler } from './lib/esrgan.mjs';
 import { packageDigital } from './lib/package-digital.mjs';
 import { designSignOff } from './lib/owner-approval.mjs';
@@ -47,6 +49,7 @@ import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.m
 import { briefFileProblems, briefFileList } from './lib/brief-files.mjs';
 import { strictCleanFile, writeFlattened, writeAfterPreviews } from './lib/strict-cleanup.mjs';
 import { stationPlan, withStationPlan, keptSections } from './lib/design-plan.mjs';
+import { freezeInputs, readInputs, amendmentsNote, amendmentRefs } from './lib/job-inputs.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -110,7 +113,23 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     delete row.legacy;
     store.upsertTracker(job.id, row);
   }
-  const readBrief = (id) => { try { return fs.readFileSync(path.join(jobDir(id), 'brief.md'), 'utf8'); } catch (_) { return ''; } };
+  // frozen job inputs (owner, 18/10/2026; lib/job-inputs.mjs): a job's brief and product spec come from its snapshot once it has one
+  const snapshotOf = (id) => { const r = readInputs(dataRoot, id); return r.ok && r.frozen ? r : null; };
+  const topBrief = (id) => { try { return fs.readFileSync(path.join(jobDir(id), 'brief.md'), 'utf8'); } catch (_) { return null; } };
+  const readBrief = (id) => { const sn = snapshotOf(id); return sn ? sn.brief : (topBrief(id) || ''); };
+  const productsOf = (id) => { const sn = snapshotOf(id); return sn ? sn.products : cfg.products; };
+  // before every step of a line job: the snapshot intact, and brief.md (read by the ported gates) the same text as the frozen brief
+  function inputsProblem(id) {
+    const r = readInputs(dataRoot, id); if (!r.ok) return r.reason; if (!r.frozen) return null;
+    return topBrief(id) === r.brief ? null : 'jobs/' + id + '/brief.md differs from the frozen brief (inputs/brief.md): a running job\'s brief is never edited; restore brief.md and record the change as an owner amendment (npm run owner -- amend ' + id + ' --from <file.json>)';
+  }
+  // what a QA record says it was judged against: the snapshot and every owner amendment (owner, 18/10/2026)
+  function inputsRef(id) { const sn = snapshotOf(id); return { snapshot: sn ? { brief: sn.record.brief.sha256, products: sn.record.products.sha256, frozenAt: sn.record.frozenAt } : null, amendments: amendmentRefs(dataRoot, id) }; }
+  function freezeJob(job, note = null) {
+    const r = freezeInputs({ J, roomDir: dataRoot, id: job.id, briefText: topBrief(job.id) || '', products: cfg.products, productKey: job.product_key, by: 'station', note, log });
+    if (!r.ok) log.warn('job inputs not frozen', { jobId: job.id, reason: r.reason });
+    return r;
+  }
 
   // ---- state changes: written first, event after
   function setJob(id, patch, event, data = {}) {
@@ -136,7 +155,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   }
 
   // ---- intake: a verified brief becomes a job (or is refused with its reasons; no job is created then)
-  function createJob({ briefText, line = 'room1-digital', by = 'owner', idempotencyKey = null }) {
+  // ownerFile1 (owner, 18/10/2026): true keeps the owner's pause after QA DESIGN passes file 1; set by the brief ("ownerFile1: true" in its
+  // front matter) or by the routine that starts the job
+  function createJob({ briefText, line = 'room1-digital', by = 'owner', idempotencyKey = null, ownerFile1 = false }) {
     if (idempotencyKey) { const prev = store.idem.get('createJob:' + idempotencyKey); if (prev) return prev; }
     const L = lineOf(line), t = String(briefText || '').replace(/\r\n/g, '\n'), id = briefField(t, 'id'), reasons = [];
     if (!isListingId(id)) reasons.push('the brief has no valid id (YYYY-MM-DD--slug)');
@@ -147,11 +168,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (id && store.getJob(id)) reasons.push('a job with id ' + id + ' already exists (a re-run needs a new -rN id)');
     if (reasons.length) { log.warn('intake refused a brief', { id, reasons, by }); return { ok: false, id, reasons }; }
     const job = store.tx(() => {
-      const j = store.insertJob({ id, line, kind: 'line', title: titleOf(id), product_key: chk.key, state: 'queued', step: L.start, data: { createdBy: by, brief: 'jobs/' + id + '/brief.md' } });
+      const j = store.insertJob({ id, line, kind: 'line', title: titleOf(id), product_key: chk.key, state: 'queued', step: L.start, data: { createdBy: by, brief: 'jobs/' + id + '/brief.md', ownerFile1: ownerFile1 === true || briefField(t, 'ownerFile1') === 'true' } });
       const sid = store.openStage(id, 'intake', 1); store.closeStage(sid, 'done', isOwnerBrief(t) ? 'owner brief checked (evidence level owner: no market evidence): format, product, originality of the whole brief, scouting blocklist, image policy, owner bounds against the floor' : 'brief checked: demand evidence, keyword sources, product, originality, image policy, price');
       return j;
     });
     J.put(path.join(jobDir(id), 'brief.md'), t);
+    freezeJob(job);
     bus.emit('job.created', { jobId: id, data: { line, title: job.title, product: chk.key, by } });
     log.info('job created', { id, line, product: chk.key, by });
     const out = { ok: true, id, job };
@@ -184,9 +206,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       block(job, 'unknown product key: ' + (job.product_key || '(none)'), { state: 'incomplete' });
       return store.getJob(id);
     }
+    // a line job created before frozen inputs existed is frozen at its first run from then on, from its brief.md as it stands
+    if (job.kind === 'line' && !snapshotOf(id) && readInputs(dataRoot, id).ok) freezeJob(job, 'frozen at the first run after frozen inputs were built (18/10/2026), from brief.md as it stood');
     let step = job.step === 'intake' ? L.steps.intake.next : job.step;
     while (step) {
       job = store.getJob(id);
+      if (job.kind === 'line') { const ip = inputsProblem(id); if (ip) { block(job, 'frozen inputs: ' + ip); return store.getJob(id); } }
       if (halt.isHalted()) { setJob(id, { state: 'stopped', reason: 'stopped by the e-stop at ' + step, ended_at: Date.now() }, 'job.stopped'); return store.getJob(id); }
       if (stopSignal.aborted) { setJob(id, { state: 'stopped', step, reason: 'stopped by the owner at ' + step, ended_at: Date.now() }, 'job.stopped'); return store.getJob(id); }
       const def = L.steps[step]; if (!def) { block(job, 'line ' + L.id + ' has no step "' + step + '"'); return store.getJob(id); }
@@ -325,8 +350,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else if (step === 'qa-listing') input = 'Review the listing.' + (pass > 1 ? ' [LOOP — pass ' + pass + ']' : '') + '\n\n' + handoff(job) + qaListingWordNote(job);
     else if (step === 'rejects-desk') { input = '[LOOP — escalated] ' + (job.data.escalation || 'the work was not approved') + '\nRecord why in REJECTED.md.\n\n' + handoff(job); loopNote = 'This job is being stopped: write REJECTED.md only.'; }
     else input = handoff(job);
+    if (!research) input += amendmentsNote(dataRoot, job.id);
     if (step === 'designer' && !research) {
-      const { product } = productFor(dataRoot, job.id, cfg.products);
+      const { product } = productFor(dataRoot, job.id, productsOf(job.id));
       if (product) input += designPlanNote(job, product);
       if (product && usesStyleRef(product) && job.data.runMode && job.data.runMode.kind === 'redraw-only') return redrawFiles(job, def, pass, stopSignal, product);
       if (product && usesStyleRef(product)) return styleRefDesigner(job, def, pass, input, stopSignal, product);
@@ -371,7 +397,15 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       if (job.data.styleRef && job.data.styleRef.awaiting) store.updateJob(job.id, { data: { styleRef: { ...job.data.styleRef, awaiting: null, approved: { set: a.ref.set, name: a.ref.name, sha256: a.ref.sha256, version: a.ref.version || 'raw' } } } });
       return restOfSet(store.getJob(job.id), def, pass, baseInput, product, a.ref, maxImages, run0);
     }
-    return firstFile(job, def, baseInput, product, attemptLimit, run0);
+    const ff = await firstFile(job, def, baseInput, product, attemptLimit, run0);
+    if (!ff.qaApproved) return ff;
+    // the file-1 gate: QA DESIGN's pass is file 1's approval, the rest of the set follows in this step
+    const b = approvedRef(dataRoot, job.id);
+    if (!b.ok) return { blocked: 'file 1 passed QA DESIGN but its approval does not stand: ' + b.reason };
+    const sr = (store.getJob(job.id).data || {}).styleRef || {};
+    store.updateJob(job.id, { data: { styleRef: { ...sr, awaiting: null, lastReasons: null, approved: { set: b.ref.set, name: b.ref.name, sha256: b.ref.sha256, version: b.ref.version || 'raw', decidedBy: b.ref.decidedBy, qaPass: b.ref.qaPass } } } });
+    trackerRow(store.getJob(job.id), { status: 'running', status_reason: 'file 1 approved by QA DESIGN (file-1 gate, pass ' + b.ref.qaPass + '): the rest of the set follows' });
+    return restOfSet(store.getJob(job.id), def, pass, baseInput, product, b.ref, maxImages, run0);
   }
 
   async function firstFile(job, def, baseInput, product, attemptLimit, run0) {
@@ -412,12 +446,18 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
               'REVIEW IMAGES (file 1 built as it will be delivered, flattened on each background): ' + reviews.join(', '),
               'PLAN: work/' + id + '/set-v' + n + '/design.md; BRIEF: work/' + id + '/brief.md',
               'Open file 1 and every review image with image analysis. Checks, each "pass" or "fail": originality, trademarks, etsyPolicy, briefFit, usable (clean edges, nothing cut off, no stray text or lettering, a real transparent background), styleReference (one clear, finished style the other ' + (total - 1) + ' files can follow). Any fail = revise, with specific reasons the Designer can act on.',
-              'Call submit_verdict ONCE with record = { "stage": "file1", "listingId": "' + id + '", "file": "' + raw + '", "verdict": "approved" or "revise", "checks": { ... }, "reasons": [ ... ] }, then end your reply. Write no file.'].join('\n');
+              'Call submit_verdict ONCE with record = { "stage": "file1", "listingId": "' + id + '", "file": "' + raw + '", "verdict": "approved" or "revise", "checks": { ... }, "reasons": [ ... ] }, then end your reply. Write no file.'].join('\n') + amendmentsNote(dataRoot, id);
             const qa = await runAgent(engine, { ...run0, agentKey: 'qa-design', step: 'qa-design', pass: k, input: qaInput, verdictKind: 'file1', file1: { rel: raw, sha256: ff.sha256 } });
             const qs = stopFrom(qa, 'QA DESIGN'); if (qs) return qs;
-            const rec = { ...(qa.verdict || { stage: 'file1', listingId: id, file: raw, verdict: 'revise', checks: {}, reasons: ['the QA run ended without a valid verdict (counts as revise)'], recordedBy: 'engine' }), pass: k, set: n, reviewer: 'QA DESIGN', decides: { version: v.version, file: v.file, sha256: v.sha256 } };
+            const rec = { ...(qa.verdict || { stage: 'file1', listingId: id, file: raw, verdict: 'revise', checks: {}, reasons: ['the QA run ended without a valid verdict (counts as revise)'], recordedBy: 'engine' }), pass: k, set: n, reviewer: 'QA DESIGN', decides: { version: v.version, file: v.file, sha256: v.sha256 }, inputs: inputsRef(id) };
             J.put(path.join(jobDir(id), 'qa', 'file1-pass' + k + '.json'), JSON.stringify(rec, null, 1) + '\n');
             log.info('file 1 verdict', { jobId: id, set: n, pass: k, verdict: rec.verdict, reasons: rec.reasons });
+            if (rec.verdict === 'approved' && !store.getJob(id).data.ownerFile1) {
+              const d = recordDecision({ roomDir: dataRoot, id, status: 'approved', date: dublinDay(), decidedBy: 'qa-design', n, qaPass: k });
+              if (!d.ok) return { blocked: 'file 1 passed QA DESIGN, but its approval could not be recorded: ' + d.reason };
+              log.info('file 1 approved by QA DESIGN (the file-1 gate): no owner pause', { jobId: id, set: n, qaPass: k, sha256: v.sha256 });
+              return { qaApproved: true };
+            }
             if (rec.verdict === 'approved') {
               const aw = { set: n, name: ff.name, qaPass: k, version: v.version, file: v.file, sha256: v.sha256, at: Date.now() };
               store.updateJob(id, { data: { styleRef: { ...((store.getJob(id).data || {}).styleRef || {}), awaiting: aw, lastReasons: null } } });
@@ -440,6 +480,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       carry = reasons;
     }
   }
+  const refWho = (ref) => (ref.decidedBy === 'qa-design' ? 'file 1, approved by QA DESIGN\'s file-1 check (pass ' + ref.qaPass + ')' : 'the owner-approved file 1');
   const L_escalate = (job) => (lineOf(job.line).steps['qa-design'].onRevise || {}).escalate || 'rejects-desk';
 
   // file 1 built as delivered and flattened for the owner (no model, $0): the pinned upscaler, killed by the e-stop or the Stop
@@ -461,9 +502,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (!batches.length) return { next: def.next, note: 'the set is file 1 alone (the owner-approved style reference)' };
     for (let b = 0; b < batches.length; b++) {
       const [from, to] = batches[b];
-      const input = '[RUN MODE: REST OF SET — batch ' + (b + 1) + ' of ' + batches.length + ': files ' + pad2(from) + '–' + pad2(to) + ' of ' + total + '] STYLE REFERENCE: work/' + id + '/' + refRel + ' (the owner-approved file 1, ' + ref.name + '; the station sends it with every image and copies it into raw/ as file 1). '
+      const input = '[RUN MODE: REST OF SET — batch ' + (b + 1) + ' of ' + batches.length + ': files ' + pad2(from) + '–' + pad2(to) + ' of ' + total + '] STYLE REFERENCE: work/' + id + '/' + refRel + ' (' + refWho(ref) + ', ' + ref.name + '; the station sends it with every image and copies it into raw/ as file 1). '
         + 'Write set-v' + n + ': generate ONLY files ' + pad2(from) + '–' + pad2(to) + ', to work/' + id + '/set-v' + n + '/raw/NN-<subject>.png (NN = the file number), each checked with image analysis. Never draw file 1. '
-        + (b === 0 ? 'Write work/' + id + '/set-v' + n + '/design.md with the plan for every file (file 1 = "owner-approved style reference", its prompt copied from set-v' + ref.set + '/design.md) and these files\' prompts and analysis.' : 'Read work/' + id + '/set-v' + n + '/design.md and write it back whole, with these files\' prompts and analysis added.')
+        + (b === 0 ? 'Write work/' + id + '/set-v' + n + '/design.md with the plan for every file (file 1 = "approved style reference", its prompt copied from set-v' + ref.set + '/design.md) and these files\' prompts and analysis.' : 'Read work/' + id + '/set-v' + n + '/design.md and write it back whole, with these files\' prompts and analysis added.')
         + '\n\n' + baseInput;
       const run = await runAgent(engine, { ...run0, job: store.getJob(id), agentKey: def.agent, step: 'designer', pass, input, image: { mode: 'rest', set: n, from, to, reference: { abs: refAbs, rel: refRel, name: ref.name, sha256: ref.sha256 } } });
       const stop = stopFrom(run, 'DESIGNER'); if (stop) return stop;
@@ -484,7 +525,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     store.updateJob(job.id, { data: { qaPasses: { ...qp, [kind]: n } } });
     let rec = run.verdict;
     if (!rec) rec = { stage: kind, listingId: job.id, pass: n, verdict: 'revise', checks: {}, reasons: ['the QA run ended without a valid verdict (counts as revise)'], reviewer: def.agent.toUpperCase(), recordedBy: 'engine' };
-    rec = { ...rec, pass: n };
+    rec = { ...rec, pass: n, inputs: inputsRef(job.id) };
     J.put(path.join(folder, dir, prefix + n + '.json'), JSON.stringify(rec, null, 1) + '\n');
     if (rec.verdict === 'approved') J.put(path.join(folder, 'outbox', kind === 'design' ? 'qa-design.json' : 'qa-listing.json'), JSON.stringify(rec, null, 1) + '\n');
     log.info('verdict', { jobId: job.id, step, pass: n, verdict: rec.verdict, reasons: rec.reasons });
@@ -513,7 +554,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const signal = stopSignal ? AbortSignal.any([halt.signal, stopSignal]) : halt.signal;
     const upscaler = engine.upscaler || esrganUpscaler({ pin: cfg.engine.upscale, workDir: path.join(jobDir(job.id), 'set-v' + n), signal });
     let r;
-    try { r = await buildDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: cfg.products, upscaler, log }); }
+    try { r = await buildDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: productsOf(job.id), upscaler, log }); }
     catch (e) {
       if (e.code === 'STOPPED' || signal.aborted) return { stopped: 'stopped during the set build: ' + e.message };
       return { blocked: 'the set build failed (no retry through the Designer): ' + e.message };
@@ -543,7 +584,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       else {
         // a packaged product (zip + preview): the station builds files/ from raw/ first (clean-up, Real-ESRGAN, zip), no model (owner,
         // 17/10/2026: the build runs in the engine; the upscaler is the pinned local binary, killed by the e-stop or the owner's Stop)
-        const { product } = productFor(dataRoot, job.id, cfg.products);
+        const { product } = productFor(dataRoot, job.id, productsOf(job.id));
         if (product && isPackaged(product)) {
           const b = await buildStep(job, n, product, stopSignal);
           if (b.stopped || b.blocked) return b;
@@ -556,7 +597,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
           // the plan in design.md is the station's, from the current spec and brief (owner, 18/10/2026), before the set is measured and screened
           const dm = path.join(jobDir(job.id), 'set-v' + n, 'design.md');
           if (product && fs.existsSync(dm)) { const was = fs.readFileSync(dm, 'utf8'), now = withStationPlan(was, stationPlan({ briefText: readBrief(job.id), product })); if (now !== was) J.put(dm, now); }
-          const r = prepareDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: cfg.products, log });
+          const r = prepareDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: productsOf(job.id), log });
           if (!r.ok) reason = r.reason;
           else if (r.originality.result === 'hit') reason = 'ORIGINALITY HARD FAIL in set-v' + n + '/design.md: ' + r.originality.hits.map((h) => hitLine(h)).join('; ');
           else { const bf = briefFilesCheck(job.id, n, product); filesNote = bf.note; if (bf.problems.length) reason = 'the set does not match the brief\'s file list: ' + bf.problems.join('; '); }
@@ -575,7 +616,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       // the prompt files name the legacy path; the gate wants the engine's (jobs/<id>/set-vN/deliverables.json)
       const df = canonicalDesignFile(L.designFile, job.id);
       if (df && df !== L.designFile) { J.put(lf, JSON.stringify({ ...L, designFile: df }, null, 2) + '\n'); log.info('listing designFile normalised', { jobId: job.id, from: L.designFile, to: df }); }
-      const r = fillDigitalPrices({ id: job.id, roomDir: dataRoot, cfg: cfg.station, products: cfg.products, extra: cfg.blocklist, log });
+      const r = fillDigitalPrices({ id: job.id, roomDir: dataRoot, cfg: cfg.station, products: productsOf(job.id), extra: cfg.blocklist, log });
       if (!r.ok) return { blocked: 'price fill: ' + r.reason };
       if (r.originality && r.originality.error) return { blocked: 'listing originality record failed: ' + r.originality.error };
       const og = readJson(path.join(jobDir(job.id), 'derived', 'listing.originality.json'));
@@ -586,7 +627,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       return { next: def.next, note: 'prices and facts filled: ' + r.prices.map((p) => p.variant + ' EUR ' + p.priceEur).join(', ') + (w.length ? '; common-word warning for QA-LISTING: ' + w.join('; ') : '') };
     },
     packageGate(job, def) {
-      const r = checkPackage({ id: job.id, roomDir: dataRoot, blocklist: cfg.blocklist, cfg: cfg.station, products: cfg.products });
+      const r = checkPackage({ id: job.id, roomDir: dataRoot, blocklist: cfg.blocklist, cfg: cfg.station, products: productsOf(job.id) });
       store.updateJob(job.id, { data: { gate: { ok: r.ok, reasons: r.reasons, at: Date.now() } } });
       if (!r.ok) return { blocked: 'QA passed, package gate failed: ' + r.reasons.join('; ') };
       return { next: def.next, note: 'package gate passed' };
@@ -601,10 +642,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // (lib/package-digital.mjs: the ZIP byte for byte, every file and ZIP entry with sha256, the owner's approvals and overrides, no
   // timestamps); other products keep the E3 package below (idempotent on the inputs' hash)
   function buildPackage(job) {
-    const { product } = productFor(dataRoot, job.id, cfg.products);
+    const { product } = productFor(dataRoot, job.id, productsOf(job.id));
     if (product && isPackaged(product)) {
       const ap = store.getApproval(job.id);
-      const r = packageDigital({ id: job.id, roomDir: dataRoot, blocklist: cfg.blocklist, cost: costRecord(job.id), approvalStatus: ap && ap.status, apply: true, cfg: cfg.station, products: cfg.products, log });
+      const r = packageDigital({ id: job.id, roomDir: dataRoot, blocklist: cfg.blocklist, cost: costRecord(job.id), approvalStatus: ap && ap.status, apply: true, cfg: cfg.station, products: productsOf(job.id), log });
       if (!r.ok) return { blocked: 'package step: ' + r.reasons.join('; ') };
       store.queueApproval(job.id);
       const so = designSignOff({ id: job.id, roomDir: dataRoot, cfg: cfg.station });
@@ -908,9 +949,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       else if (sha256(fs.readFileSync(f)) !== o.rawSha256) reasons.push(o.name + ' changed since the owner decided on it (raw sha256 differs): the override does not apply to these bytes');
     }
     if (reasons.length) throw new Error('QA-only run refused: ' + reasons.join('; '));
-    const pd = prepareDigitalSet({ roomDir: dataRoot, id, n, cfg: cfg.station, products: cfg.products, log });
+    const pd = prepareDigitalSet({ roomDir: dataRoot, id, n, cfg: cfg.station, products: productsOf(id), log });
     if (!pd.ok) throw new Error('QA-only run refused: set preparation failed: ' + pd.reason);
-    const bf = briefFilesCheck(id, n, productFor(dataRoot, id, cfg.products).product);
+    const bf = briefFilesCheck(id, n, productFor(dataRoot, id, productsOf(id)).product);
     if (bf.problems.length) throw new Error('QA-only run refused: the set does not match the brief\'s file list: ' + bf.problems.join('; '));
     const lines = ['[RUN MODE: QA ONLY — the owner asked for one QA DESIGN pass on this set as it stands. The Designer is not run.]'];
     if (overrides.length) {
@@ -938,7 +979,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   async function prepareRedraw(id, { from, clean = [], redraw = [], expectedVersion, by = 'owner', signal = null } = {}) {
     const j = ownJob(id); checkVersion(j, expectedVersion);
     if (isActive(id) || !MODE_STATES.includes(j.state)) throw new Error('job ' + id + ' is ' + effState(j) + ': a redraw needs a blocked, stopped or rejected job');
-    const { product } = productFor(dataRoot, id, cfg.products);
+    const { product } = productFor(dataRoot, id, productsOf(id));
     if (!product || !usesStyleRef(product) || !isPackaged(product)) throw new Error('redraw-only is for a packaged style-reference product');
     const a = approvedRef(dataRoot, id); if (!a.ok) throw new Error('redraw refused: no owner-approved file 1 (' + a.reason + ')');
     const total = product.deliverables.files.length, src = Number(from), srcRaw = path.join(jobDir(id), 'set-v' + src, 'raw');
@@ -1012,7 +1053,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       + 'work/' + id + '/set-v' + n + '/raw/ already holds every other file of the set (file 1, the files reused from set-v' + p.plan.from + ' and the files the station cleaned): never draw, rename or touch them. '
       + 'Draw ONLY these files, each to work/' + id + '/set-v' + n + '/raw/NN-<subject>.png (NN = the file number; the subject is the brief\'s item N), each checked with image analysis:\n'
       + files.map((f) => '- ' + pad2(f.n) + (f.was ? ' (was ' + f.was + ')' : '') + (f.item ? ': the brief\'s item: "' + f.item + '"' : '') + '. QA DESIGN\'s finding to fix: ' + f.finding).join('\n')
-      + '\nThen read work/' + id + '/set-v' + n + '/design.md (written by the station: its plan from the current spec and brief, and the kept files\' prompts) and write it back whole, with these files\' new prompts and analysis.\n\n' + readBrief(id) + '\n\n' + handoff(job) + designPlanNote(job, product);
+      + '\nThen read work/' + id + '/set-v' + n + '/design.md (written by the station: its plan from the current spec and brief, and the kept files\' prompts) and write it back whole, with these files\' new prompts and analysis.\n\n' + readBrief(id) + '\n\n' + handoff(job) + designPlanNote(job, product) + amendmentsNote(dataRoot, id);
     const run = await runAgent(engine, { ...run0, job: store.getJob(id), agentKey: def.agent, step: 'designer', pass, input, image: { mode: 'rest', set: n, from: Math.min(...nums), to: Math.max(...nums), only: nums, reference: { abs: refAbs, rel: refRel, name: a.ref.name, sha256: a.ref.sha256 } } });
     const stop = stopFrom(run, 'DESIGNER'); if (stop) return stop;
     const names = fs.readdirSync(path.join(sd, 'raw')), missing = nums.filter((k) => !names.some((f) => numOf(f) === k));
@@ -1038,14 +1079,14 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   async function rebuildSet(id, { set, expectedVersion, by = 'owner' } = {}) {
     const j = ownJob(id); checkVersion(j, expectedVersion); notHalted('a rebuild');
     if (isActive(id) || !MODE_STATES.includes(j.state)) throw new Error('job ' + id + ' is ' + effState(j) + ': a rebuild needs a blocked, stopped or rejected job');
-    const n = Number(set), sd = path.join(jobDir(id), 'set-v' + n), { product } = productFor(dataRoot, id, cfg.products);
+    const n = Number(set), sd = path.join(jobDir(id), 'set-v' + n), { product } = productFor(dataRoot, id, productsOf(id));
     if (!Number.isInteger(n) || !fs.existsSync(path.join(sd, 'raw'))) throw new Error('jobs/' + id + '/set-v' + set + '/raw does not exist');
     if (!product || !isPackaged(product)) throw new Error('rebuild is for a packaged product');
     const b = await buildStep(j, n, product, null);
     if (b.stopped || b.blocked || !b.ok) throw new Error('rebuild failed: ' + (b.stopped || b.blocked || b.reason));
     const dm = path.join(sd, 'design.md');
     if (fs.existsSync(dm)) { const was = fs.readFileSync(dm, 'utf8'), now = withStationPlan(was, stationPlan({ briefText: readBrief(id), product })); if (now !== was) J.put(dm, now); }
-    const pd = prepareDigitalSet({ roomDir: dataRoot, id, n, cfg: cfg.station, products: cfg.products, log });
+    const pd = prepareDigitalSet({ roomDir: dataRoot, id, n, cfg: cfg.station, products: productsOf(id), log });
     if (!pd.ok) throw new Error('rebuild: the set could not be measured: ' + pd.reason);
     const bf = briefFilesCheck(id, n, product), ed = readJson(path.join(sd, 'edits.json')), bj = readJson(path.join(sd, 'build.json')) || {}, previews = [];
     for (const e of (ed && ed.edits) || []) {

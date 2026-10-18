@@ -99,7 +99,8 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
         // the oldest verified brief that has no job yet (owner Q13: once the owner enables a line routine)
         const b = engine.orchestrator.verifiedBriefs().find((x) => x.status === 'verified' && x.id && !x.jobId);
         if (!b) return { skipped: 'no verified brief is waiting' };
-        const c = engine.orchestrator.createJob({ briefText: fs.readFileSync(path.join(J.dataRoot, 'research', 'briefs', b.file), 'utf8'), by: 'routine ' + routine.id });
+        // ownerFile1 (owner, 18/10/2026): a shipped routine may keep the owner's pause after QA DESIGN passes file 1
+        const c = engine.orchestrator.createJob({ briefText: fs.readFileSync(path.join(J.dataRoot, 'research', 'briefs', b.file), 'utf8'), by: 'routine ' + routine.id, ownerFile1: !!(seed && seed.ownerFile1 === true) });
         if (!c.ok) return { skipped: 'brief ' + b.file + ' refused at intake: ' + c.reasons.join('; ') };
         store.updateJob(c.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } });
         return engine.orchestrator.startJob(c.id);
