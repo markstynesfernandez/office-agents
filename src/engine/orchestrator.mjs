@@ -46,6 +46,7 @@ import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-so
 import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.mjs';
 import { briefFileProblems, briefFileList } from './lib/brief-files.mjs';
 import { strictCleanFile, writeFlattened } from './lib/strict-cleanup.mjs';
+import { stationPlan, withStationPlan, keptSections } from './lib/design-plan.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -326,6 +327,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else input = handoff(job);
     if (step === 'designer' && !research) {
       const { product } = productFor(dataRoot, job.id, cfg.products);
+      if (product) input += designPlanNote(job, product);
       if (product && usesStyleRef(product) && job.data.runMode && job.data.runMode.kind === 'redraw-only') return redrawFiles(job, def, pass, stopSignal, product);
       if (product && usesStyleRef(product)) return styleRefDesigner(job, def, pass, input, stopSignal, product);
     }
@@ -551,6 +553,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
         if (reason) { /* the build refused the Designer's raw files */ }
         else if (!fs.existsSync(files) || !fs.readdirSync(files).length) reason = 'set-v' + n + '/files/ is empty: no deliverables';
         else {
+          // the plan in design.md is the station's, from the current spec and brief (owner, 18/10/2026), before the set is measured and screened
+          const dm = path.join(jobDir(job.id), 'set-v' + n, 'design.md');
+          if (product && fs.existsSync(dm)) { const was = fs.readFileSync(dm, 'utf8'), now = withStationPlan(was, stationPlan({ briefText: readBrief(job.id), product })); if (now !== was) J.put(dm, now); }
           const r = prepareDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: cfg.products, log });
           if (!r.ok) reason = r.reason;
           else if (r.originality.result === 'hit') reason = 'ORIGINALITY HARD FAIL in set-v' + n + '/design.md: ' + r.originality.hits.map((h) => hitLine(h)).join('; ');
@@ -955,7 +960,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     J.makeDir(raw);
     const e1 = ensureStyleRefInSet({ roomDir: dataRoot, id, n, log }); if (!e1.ok) throw new Error('redraw refused: file 1: ' + e1.reason);
     const kept = want.keep.map((f) => { J.copy(path.join(srcRaw, f), path.join(raw, f)); return { name: f, sha256: sha256File(path.join(raw, f)) }; });
-    if (fs.existsSync(path.join(sd, '..', 'set-v' + src, 'design.md'))) J.copy(path.join(jobDir(id), 'set-v' + src, 'design.md'), path.join(sd, 'design.md'));
+    // design.md from the CURRENT spec and brief (owner, 18/10/2026): the station plan, then only the kept files' own sections (prompt and
+    // analysis) from set-v<from>/design.md; the earlier set's notes are never carried over (lib/design-plan.mjs)
+    const srcMd = path.join(jobDir(id), 'set-v' + src, 'design.md'), oldMd = fs.existsSync(srcMd) ? fs.readFileSync(srcMd, 'utf8') : '';
+    const carried = keptSections(oldMd, [...keep, ...cleanN]);
+    J.put(path.join(sd, 'design.md'), withStationPlan('# Design plan, set-v' + n + ' (redraw-only set from set-v' + src + ': files ' + (list.map((r) => pad2(r.n)).join(', ') || 'none') + ' to draw)\n\n'
+      + '01 is the owner-approved style reference (' + a.ref.name + ', from set-v' + a.ref.set + ').\n\n## Prompts of the files kept from set-v' + src + ' (copied: prompt and analysis only)\n\n' + (carried.length ? carried.join('\n\n') : '(none found in set-v' + src + '/design.md)') + '\n', stationPlan({ briefText: readBrief(id), product })));
     const upscaler = engine.upscaler || esrganUpscaler({ pin: cfg.engine.upscale, workDir: sd, signal });
     const bgs = cfg.station.digital.styleReference.review.backgrounds, cleaned = [];
     for (const f of want.clean) {
@@ -1002,7 +1012,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       + 'work/' + id + '/set-v' + n + '/raw/ already holds every other file of the set (file 1, the files reused from set-v' + p.plan.from + ' and the files the station cleaned): never draw, rename or touch them. '
       + 'Draw ONLY these files, each to work/' + id + '/set-v' + n + '/raw/NN-<subject>.png (NN = the file number; the subject is the brief\'s item N), each checked with image analysis:\n'
       + files.map((f) => '- ' + pad2(f.n) + (f.was ? ' (was ' + f.was + ')' : '') + (f.item ? ': the brief\'s item: "' + f.item + '"' : '') + '. QA DESIGN\'s finding to fix: ' + f.finding).join('\n')
-      + '\nThen read work/' + id + '/set-v' + n + '/design.md (set-v' + p.plan.from + '\'s plan, copied by the station) and write it back whole, with these files\' new prompts and analysis.\n\n' + readBrief(id) + '\n\n' + handoff(job);
+      + '\nThen read work/' + id + '/set-v' + n + '/design.md (written by the station: its plan from the current spec and brief, and the kept files\' prompts) and write it back whole, with these files\' new prompts and analysis.\n\n' + readBrief(id) + '\n\n' + handoff(job) + designPlanNote(job, product);
     const run = await runAgent(engine, { ...run0, job: store.getJob(id), agentKey: def.agent, step: 'designer', pass, input, image: { mode: 'rest', set: n, from: Math.min(...nums), to: Math.max(...nums), only: nums, reference: { abs: refAbs, rel: refRel, name: a.ref.name, sha256: a.ref.sha256 } } });
     const stop = stopFrom(run, 'DESIGNER'); if (stop) return stop;
     const names = fs.readdirSync(path.join(sd, 'raw')), missing = nums.filter((k) => !names.some((f) => numOf(f) === k));
@@ -1011,6 +1021,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (missing.length) return { blocked: 'redraw-only: DESIGNER did not draw file(s) ' + missing.map(pad2).join(', ') + ' (no loop is added)' };
     return { next: def.next, note: 'redraw-only set-v' + n + ': files ' + nums.map(pad2).join(', ') + ' drawn with the style reference ' + a.ref.name + '; the rest kept or cleaned by the station' };
   }
+  // the station plan for design.md, given to DESIGNER at the start of every run (owner, 18/10/2026; lib/design-plan.mjs)
+  const designPlanNote = (job, product) => '\n\nSTATION PLAN for design.md (from the CURRENT products.json and brief.md): start design.md with this section word for word. Carry no notes from an earlier set\'s design.md, only each file\'s own prompt and analysis; the station rewrites this section at prep.\n' + stationPlan({ briefText: readBrief(job.id), product });
   // what QA DESIGN is told about a redraw-only set (the whole set is reviewed as usual)
   function redrawNote(job) {
     const n = latestSet(dataRoot, job.id), p = redrawPlanOf(job.id, n); if (!p || !p.plan) return '';

@@ -24,7 +24,7 @@ The 12 props:
 1. A small pumpkin.
 2. A stack of three books.
 3. A mug of hot cider with steam.
-4. A beeswax candle with a soft glow.
+4. A beeswax candle with a lit flame; the warmth is painted into the flame and wax, with no glow, halo or light around it.
 5. A maple leaf scatter.
 6. A knitted throw, folded.
 7. A brass lantern.
@@ -35,6 +35,8 @@ The 12 props:
 12. A cozy desk lamp.
 
 No text, letters, logos, brands, characters or real people in any image.
+
+Owner amendment (18/10/2026): item 4 now reads "a beeswax candle with a lit flame; the warmth is painted into the flame and wax, with no glow, halo or light around it". It supersedes "with a soft glow".
 
 Station notes (existing station rules, restated for this brief):
 - "Hand-painted" describes the look only. The words hand-painted, hand painted, hand-drawn and hand drawn are on the listing blocklist and are refused in image prompts: describe the look in other words. The listing never says the props are hand-painted or hand-drawn.

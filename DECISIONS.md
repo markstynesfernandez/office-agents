@@ -1622,3 +1622,47 @@ text: a reason with spaces does not survive PowerShell 5.1's argument passing; s
   redraw list. The cleaned set is kept in `redraw-replaced-20261018T144502Z/set-v4/` with its review images.
 - **Prepared set-v4**: 01 (approved file 1), 03, 05, 06, 11, 12 from set-v2 byte for byte; to draw: 02, 04, 07, 08, 09, 10.
   Not run: it waits for the owner's "go redraw" (e-stop off, then the live redraw).
+
+## E6 step c: owner amendment to brief item 4 (18/10/2026)
+
+Owner brief `2026-10-17--cozy-autumn-desk-props`, item 4, amended by the owner during the redraw-only run (design loop 2):
+"beeswax candle with a lit flame; the warmth is painted into the flame and wax, with no glow, halo or light around it". It
+supersedes "with a soft glow" (which conflicted with the owner's direction for every redrawn file: no glow, halo, bloom,
+sparkle or light rays around flames or lamps).
+
+### How it was applied
+- **The brief itself.** QA DESIGN reads `work/<id>/brief.md` from disk at the start of its own run (its orders, step 2); the
+  station's QA input does not carry the brief. The amendment was written while DESIGNER's redraw run was still drawing,
+  before QA DESIGN started, into the job's `jobs/<id>/brief.md` (through the data jail), so QA DESIGN grades file 04 against
+  the amended wording. The same text went into the owner brief record `research/briefs/<id>.md` and its repo copy
+  `fixtures/engine/owner-brief.md`; all three are identical. Item 4 is replaced in the numbered list and an "Owner
+  amendment (18/10/2026)" line follows the list.
+- The running process was not interrupted or restarted. DESIGNER's run had started with the original wording in its input,
+  alongside the owner's direction for every redrawn file (no glow around flames), which already says the same.
+- Checked after the change: the owner brief check passes (format, originality of the whole brief, scouting screen, bounds),
+  and the station's brief-match check still matches all 12 file subjects.
+
+## E6 step c: design.md from the current spec and brief (bug fix, 18/10/2026)
+
+**The bug.** QA DESIGN's pass 2 on set-v4 of `2026-10-17--cozy-autumn-desk-props` said "products.json lists files 11-12 as colour
+variants". products.json had not said so since `7509770`; the engine gave QA DESIGN the current file. The text came from
+set-v4/design.md line 6, a note DESIGNER wrote in set-v1 while products.json still described DESK-PROPS-01. DESIGNER carried it
+into set-v2's design.md (it read set-v1's to copy file 1's prompt), and `prepareRedraw` copied set-v2's design.md into set-v4
+verbatim; DESIGNER kept the line when it rewrote the file. QA DESIGN read the note as the spec.
+
+**The fix** (owner: "make design.md come from the current spec and brief at job start"), `lib/design-plan.mjs`:
+- `stationPlan`: a "## Station plan" section written by the station from the CURRENT products.json (the format: count, format,
+  size, transparency, packaging) and brief.md (each file's subject: its numbered list when it numbers the spec's files).
+- At the start of every DESIGNER run (first file, rest of set, redraw, any designer pass) the plan is in DESIGNER's input, with
+  the rule to start design.md with it word for word and carry no notes from an earlier set's design.md, only each file's own
+  prompt and analysis.
+- At prep, before the set is measured and screened, the station writes the current plan into design.md (`withStationPlan`:
+  replaced, or inserted under the title; idempotent), so the plan in design.md is never older than the spec and brief the set
+  is measured against.
+- `prepareRedraw` no longer copies the earlier design.md: the new one is the station plan plus only the kept and cleaned files'
+  own "### NN-..." sections (`keptSections`); the earlier set's notes are never carried.
+- Tests: `tests/e6-c-designmd.test.mjs` (3), and `e6-c-redraw` now starts from a set-v2 design.md carrying the stale note and
+  checks it never reaches the new set, and that prep restores the plan after DESIGNER rewrites the file.
+
+Not changed: set-v4/design.md of the rejected job still holds the old note (job data, not rewritten); a later prep of that set
+writes the station plan into it, and the stale note line stays in DESIGNER's text unless the owner removes it.

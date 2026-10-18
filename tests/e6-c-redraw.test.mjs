@@ -139,7 +139,8 @@ async function redrawEngine(t, script) {
     const buf = i === 0 ? p1 : [1, 3, 8].includes(i) ? await propWithFragment(n) : await mockPng({ prompt: n, width: 96, height: 96, transparent: true });
     put('set-v2/raw/' + n, buf); put('set-v2/build/' + n, buf);
   }
-  put('set-v2/design.md', '# Plan\n' + NAMES.map((n) => n.replace('.png', '')).join('\n') + '\nSelf-check: original; no trademarks; no named style; no real person.\n');
+  // DESIGNER's set-v2 notes carry the stale spec note of set-v1 (the bug of 18/10/2026): the redraw must not carry it into the new set
+  put('set-v2/design.md', '# Design plan, set-v2\n\nNotes:\n- Spec mismatch (flagged in set-v1): products.json files 11-12 are "colour variant of props 1-10".\n\n## Prompts\n' + NAMES.map((n) => '### ' + n.replace('.png', '') + '\nPrompt for ' + n.replace('.png', '') + ', soft outline.').join('\n\n') + '\n\n## Originality self-check\n- original; no trademarks; no named style; no real person.\n');
   put('qa/design-pass1.json', JSON.stringify({ stage: 'design', listingId: ID, pass: 1, verdict: 'revise', checks: {}, reasons: ['usable 08-cinnamon-jar: opaque grey-white body'] }) + '\n');
   engine.ledger.append({ jobId: ID, kind: 'text', provider: 'anthropic', model: 'claude-sonnet-5-5', usd: 2.0, agentKey: 'designer' });
   return { engine, r, d, fetchImpl, png };
@@ -170,7 +171,12 @@ test('decision 3: prepare-redraw at $0: file 1, set-v2\'s passing files byte for
   const plan = JSON.parse(fs.readFileSync(path.join(d, 'set-v3', 'redraw.json'), 'utf8'));
   assert.equal(plan.status, 'prepared'); assert.deepEqual(plan.plan.redraw.map((r) => [r.n, r.was]), [[7, '07-brass-lantern.png'], [8, '08-cinnamon-jar.png'], [10, '10-teapot.png']]);
   assert.equal(plan.plan.redraw[1].item, 'A jar of cinnamon sticks.');
-  assert.ok(fs.existsSync(path.join(d, 'set-v3', 'design.md')));
+  // design.md from the current spec and brief: the station plan and the kept files' prompts, never set-v2's notes
+  const md = fs.readFileSync(path.join(d, 'set-v3', 'design.md'), 'utf8');
+  assert.doesNotMatch(md, /colour variant|Spec mismatch/);
+  assert.match(md, /^## Station plan \(written by the station from the current products\.json and brief\.md/m); assert.match(md, /^- 08: A jar of cinnamon sticks\. \(png 2000x2000\)$/m);
+  assert.match(md, /### 03-cider-mug\nPrompt for 03-cider-mug, soft outline\./); assert.match(md, /### 02-book-stack\nPrompt for 02-book-stack/, 'a cleaned file keeps its prompt');
+  assert.doesNotMatch(md, /### 07-brass-lantern/, 'a file to redraw has no carried prompt');
   assert.equal(fetchImpl.calls.length, 0); assert.equal(engine.ledger.rowsForJob(ID).length, 1, 'no paid call');
   // the same plan again: unchanged; another plan (09 moved to the redraw list): the prepared set moves aside, set-v3 again
   assert.equal((await O.prepareRedraw(ID, { ...PLAN, expectedVersion: v() })).action, 'unchanged');
@@ -206,6 +212,9 @@ test('decisions 3-4: redraw-only draws the named files only (file 1 as reference
   // DESIGNER: told the files, their brief items and QA's findings; 3 images, each with file 1; file 09 (cleaned, in the range, not named) refused, no call
   assert.match(seen.designer, /files 07, 08, 10 of 12\] STYLE REFERENCE: work\/2026-10-17--cozy-autumn-desk-props\/set-v1\/raw\/01-small-pumpkin\.png/);
   assert.match(seen.designer, /- 08 \(was 08-cinnamon-jar\.png\): the brief's item: "A jar of cinnamon sticks\."\. QA DESIGN's finding to fix: usable 08-cinnamon-jar: opaque grey-white body/);
+  assert.match(seen.designer, /STATION PLAN for design\.md \(from the CURRENT products\.json and brief\.md\)/);
+  // DESIGNER wrote design.md without the plan: prep put the station plan back before the set was screened
+  assert.match(fs.readFileSync(path.join(d, 'set-v3', 'design.md'), 'utf8'), /^## Station plan \(written by the station/m);
   assert.equal(fetchImpl.calls.length, 3);
   for (const c of fetchImpl.calls) assert.equal(c.body.messages[0].content[1].type, 'image_url', 'file 1 sent as the reference');
   assert.equal(JSON.parse(fs.readFileSync(path.join(d, 'set-v3', 'redraw.json'), 'utf8')).status, 'drawn');
