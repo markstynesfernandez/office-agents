@@ -40,14 +40,14 @@ Every ported module starts with a header that names its source, its moment, its 
 | src/engine/lib/esrgan.mjs | scripts/lib/esrgan.mjs | 5th | in part: esrganCfg, bleedColour and the upscale's three parts kept; the binary is the engine's own pinned copy (config/engine.json upscale, sha256 of the binary, DLL and model checked before every run), run with execFile (no shell), cwd and files inside the job's set folder, a minimal environment, killed by the E-STOP or the owner's Stop; the GPU probe writes in the jail (owner decision 17/10/2026) |
 | config/lines/room1-digital.json | rooms/etsy-digital/room.json | 1st | written from the room's routing (loop limits design 2, listing 1); exhausted listing loop to REJECTS-DESK (Q4) |
 | config/station.config.json | config/station.config.json | 5th | copied unchanged |
-| config/products.json | rooms/etsy-digital/products.json | 2nd | copied unchanged |
+| config/products.json | rooms/etsy-digital/products.json | 2nd | copied unchanged; E6 c0: priceFloorUsd (owner D1); E6 c (owner, 18/10/2026): pngtuber-prop-pack's file purposes are format only (the subjects come from the brief), the schema line says so |
 | config/blocklist.txt | rooms/etsy-digital/blocklist.txt | 1st | copied unchanged |
 | prompts/agents/demand-researcher.md | agents/src/demand-researcher.md | 1st | copied unchanged; E6 c (owner decision 1, 17/10/2026): the PRICE line states the 3-price floor rule |
-| prompts/agents/designer.md | agents/src/designer.md | 2nd | copied unchanged |
+| prompts/agents/designer.md | agents/src/designer.md | 2nd | copied unchanged; E6 c (owner, 18/10/2026): step 3, the spec is the format, each file's subject comes from the brief |
 | prompts/agents/evidence-checker.md | agents/src/evidence-checker.md | 1st | copied unchanged; E6 b2 (17/10/2026, owner D1/D2) appended one paragraph for genre-scout briefs (indicative evidence, citations against the job's returned sources, report_blocked); the legacy orders above it are unchanged |
 | prompts/agents/lister.md | agents/src/lister.md | 5th | copied unchanged |
 | prompts/agents/overseer.md | agents/src/overseer.md | 1st | copied unchanged |
-| prompts/agents/qa-design.md | agents/src/qa-design.md | 5th | copied unchanged |
+| prompts/agents/qa-design.md | agents/src/qa-design.md | 5th | copied unchanged; E6 c (owner, 18/10/2026): step 2, `complete` (the brief's files, by subject) and `matchesSpec` (format only, never subjects) |
 | prompts/agents/qa-listing.md | agents/src/qa-listing.md | 5th | copied unchanged |
 | prompts/agents/rejects-desk.md | agents/src/rejects-desk.md | 1st | copied unchanged |
 | prompts/skills/brief-format.md | skills/brief-format.md | 3rd | copied unchanged |

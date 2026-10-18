@@ -1548,3 +1548,35 @@ After scout run 7 (`2026-10-17--genre-scout-7`, PROGRESS.md), the owner's decisi
   agent (checked: no code reads them), and the owner brief lists 12 distinct props with the pumpkin as file 1. The owner brief
   has no Keywords section (none were given); LISTER's prompt says to use the brief's keywords, so it writes tags from the
   title idea and the props, and QA-LISTING checks them.
+
+## E6 step c: product spec defines format, brief defines files (owner decision, 18/10/2026)
+
+During step c's line run on the owner brief `2026-10-17--cozy-autumn-desk-props`, QA-DESIGN pass 1 sent set-v2 back, chiefly
+because `products.json` listed files 11–12 as colour variants of props 1–10 while the brief lists a ghost plush and a desk
+lamp. The owner pressed the e-stop (pass 2 halted) and decided:
+
+- **For pngtuber-prop-pack, products.json defines the format only**: 12 transparent PNGs, sizes, naming, alpha, packaging.
+  **The file list and the subjects come from the brief.** The "files 11–12 are colour variants" rule is removed from
+  products.json and from every QA-DESIGN check or prompt that enforced it; QA-DESIGN grades file subjects against the brief.
+- Test: a brief with 12 distinct props passes the spec check; a set that does not match its brief's list fails.
+- Next (not done; no further live spend before the owner's go): re-run QA-DESIGN on the existing set-v2 images under the
+  corrected spec, then redraw only the files QA still fails for reasons other than the spec.
+
+Recorded with it: **the owner's file-1 approval** (18/10/2026) of `set-v1/raw/01-small-pumpkin.png`, "reviewed on white and
+dark: edges clean, no fringe, style accepted as reference" (the style-ref decision itself was recorded without the reason
+text: a reason with spaces does not survive PowerShell 5.1's argument passing; see PROGRESS.md).
+
+### As built
+- `config/products.json` (pngtuber-prop-pack): every file's purpose is now "file N of 12: a transparent prop; its subject is
+  the brief's item N" (file 1: the style reference); no colour variant anywhere. The `$schema` line for `deliverables.files`
+  says the spec is the format only. The styleReference note names file 1 as the brief's item 1 (the steaming mug was
+  DESK-PROPS-01's).
+- `lib/brief-files.mjs` (new): `briefFileList` reads the brief's first numbered list in Design direction;
+  `briefFileProblems` checks, when that list has exactly as many items as the spec has files, that every item N has a set file
+  `NN-<subject>.png` whose subject shares a word with item N (singular and plural match). A brief without such a list is not
+  checked by the station (DESK-PROPS-01's lists 10 props and 2 variants in prose: not checked, parity unchanged).
+- `orchestrator.mjs`: the check runs at prep (fail closed: a mismatch is a prep failure, back to DESIGNER once) and before a
+  QA-only run (refused on a mismatch). set-v2 of the job passes it (all 12 files match).
+- Prompts: DESIGNER step 3 (the spec's list is the exact format; subjects from the brief's file list); QA-DESIGN step 2,
+  `complete` (every file the brief lists, by subject) and `matchesSpec` (the spec's format: count, format, pixel size; never
+  subjects). QA-DESIGN 11,995 of 12,000 chars.

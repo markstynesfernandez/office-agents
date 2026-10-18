@@ -44,6 +44,7 @@ import { validateNotes, blocklistFromNotes, readDayNotes, scoutingBriefProblems,
 import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
 import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-sources.mjs';
 import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.mjs';
+import { briefFileProblems } from './lib/brief-files.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -511,10 +512,16 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     log.info('mechanical step', { jobId: job.id, step, ok: !r.blocked, next: r.next || r.end || null, reason: r.blocked || r.note || undefined });
     return r;
   }
+  // owner, 18/10/2026: the product spec defines the format, the brief the files. A set whose file NN does not match the brief's
+  // item N (when the brief numbers as many files as the spec has) fails closed, at prep and before a QA-only run (lib/brief-files.mjs)
+  function briefFilesCheck(id, n, product) {
+    const sd = path.join(jobDir(id), 'set-v' + n), dir = fs.existsSync(path.join(sd, 'raw')) ? path.join(sd, 'raw') : path.join(sd, 'files');
+    return briefFileProblems(readBrief(id), product, fs.existsSync(dir) ? fs.readdirSync(dir) : []);
+  }
   const MECH = {
     async prep(job, def, stopSignal) {
       const n = latestSet(dataRoot, job.id);
-      let reason = null;
+      let reason = null, filesNote = null;
       if (!n) reason = 'DESIGNER wrote no set-v<N> folder';
       else {
         // a packaged product (zip + preview): the station builds files/ from raw/ first (clean-up, Real-ESRGAN, zip), no model (owner,
@@ -532,9 +539,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
           const r = prepareDigitalSet({ roomDir: dataRoot, id: job.id, n, cfg: cfg.station, products: cfg.products, log });
           if (!r.ok) reason = r.reason;
           else if (r.originality.result === 'hit') reason = 'ORIGINALITY HARD FAIL in set-v' + n + '/design.md: ' + r.originality.hits.map((h) => hitLine(h)).join('; ');
+          else { const bf = briefFilesCheck(job.id, n, product); filesNote = bf.note; if (bf.problems.length) reason = 'the set does not match the brief\'s file list: ' + bf.problems.join('; '); }
         }
       }
-      if (!reason) return { next: def.next, note: 'set-v' + n + ' measured; originality clear' };
+      if (!reason) return { next: def.next, note: 'set-v' + n + ' measured; originality clear' + (filesNote ? '; ' + filesNote : '') };
       const used = (job.loops || {}).prep || 0;
       if (used < (def.onFail ? def.onFail.max : 0)) { store.updateJob(job.id, { loops: { prep: used + 1 }, data: { prepFailure: reason, prepFailureSeen: false } }); return { next: def.onFail.back, note: 'prep failed, back to ' + def.onFail.back + ' once: ' + reason }; }
       return { blocked: 'prep failed' + (used ? ' again after one retry' : '') + ': ' + reason };
@@ -877,6 +885,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (reasons.length) throw new Error('QA-only run refused: ' + reasons.join('; '));
     const pd = prepareDigitalSet({ roomDir: dataRoot, id, n, cfg: cfg.station, products: cfg.products, log });
     if (!pd.ok) throw new Error('QA-only run refused: set preparation failed: ' + pd.reason);
+    const bf = briefFilesCheck(id, n, productFor(dataRoot, id, cfg.products).product);
+    if (bf.problems.length) throw new Error('QA-only run refused: the set does not match the brief\'s file list: ' + bf.problems.join('; '));
     const lines = ['[RUN MODE: QA ONLY — the owner asked for one QA DESIGN pass on this set as it stands. The Designer is not run.]'];
     if (overrides.length) {
       lines.push('OWNER DECISIONS (' + review.date + ', recorded in work/' + id + '/owner-review.json; they overrule an earlier QA DESIGN finding on the point named, nothing else):');

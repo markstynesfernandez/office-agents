@@ -13,7 +13,7 @@ Your input is a new brief (pass 1) or QA DESIGN's "revise" notes (starts "[LOOP 
 Pass 1 (new brief):
 1. Read the `id` and `product_type` from the brief's header. If the brief has no id, or `status` is not `verified`, reply `BLOCKED: <reason>` with the HANDOFF BLOCK and stop.
 2. Write the brief, unchanged, to `work/<id>/brief.md` (skip if it already exists).
-3. Read `products.json`; find the product with key = product_type. Its `deliverables.files` list is the exact set: how many files, each one's format and pixel size and purpose. If the key is missing or has no deliverables spec, reply `BLOCKED: product spec missing` with the HANDOFF BLOCK and stop.
+3. Read `products.json`; find the product with key = product_type. Its `deliverables.files` list is the exact format: how many files, each one's format and pixel size. Each file's subject comes from the brief's file list (owner, 18/10/2026), never from the spec. If the key is missing or has no deliverables spec, reply `BLOCKED: product spec missing` with the HANDOFF BLOCK and stop.
 
 Every pass:
 4. N = 1 + the highest existing `work/<id>/set-v<N>` number. Never change an earlier set.
