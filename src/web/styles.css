@@ -285,6 +285,8 @@ body[data-theme="dark"] .badge-demo { background: #7d84e8; color: #11152a; borde
 .evidence-banner { margin: 2px 0 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; line-height: 1.35; border: 1px solid var(--muted); }
 .evidence-indicative { border: 2px solid #d9822b; background: rgba(217, 130, 43, 0.16); }
 .evidence-indicative strong { color: #d9822b; letter-spacing: 0.04em; }
+.evidence-owner { border: 2px solid #8a6fd1; background: rgba(138, 111, 209, 0.16); }
+.evidence-owner strong { color: #8a6fd1; letter-spacing: 0.04em; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 6px; }
 .ctlrow { display: flex; gap: 10px; margin-top: 8px; align-items: center; }
 .ctlrow.end { justify-content: space-between; }

@@ -11,7 +11,7 @@
 //   the daily caps; OpenRouter's own key limit (USD 2 a day) applies outside the engine. This script changes none of them and
 //   refuses to start if the job cap is not USD 5.00. Nothing is published: the line ends in the approval queue.
 // - The brief: data/research/briefs/<id>.md, else the engine's legacy import (data/legacy/research/briefs/<id>.md). Intake checks
-//   it as for any job (a refused brief creates no job and spends nothing).
+//   it as for any job (a refused brief creates no job and spends nothing). An owner brief (npm run owner-brief) runs the same way.
 // - Prints one pre-run line, then a key-free report (stages, QA verdicts, images, cost by stage, model and images, every ledger
 //   row with its request or generation id, today's ledger total, the listing draft, originality and IP checks, where the
 //   package and the approval item are). Exit 0 when the job is waiting for the owner or in the approval queue, else 1.
@@ -27,6 +27,7 @@ import { dublinDay } from '../src/engine/time.mjs';
 import { ownerFloor } from '../src/engine/lib/etsy-fees.mjs';
 import { listingSpellingProblems } from '../src/engine/lib/spelling.mjs';
 import { screenText, listingFields } from '../src/engine/lib/originality.mjs';
+import { evidenceLevelOf } from '../src/engine/lib/scout-brief.mjs';
 
 const JOB_CAP_USD = 5, LINE = 'room1-digital';
 const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? String(process.argv[i + 1] || '') : null; };
@@ -113,13 +114,13 @@ function report(engine, id, t0) {
   const tl = fs.existsSync(path.join(dir, 'transcript.jsonl')) ? fs.readFileSync(path.join(dir, 'transcript.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
   const lastReply = (agent) => { const x = tl.filter((l) => l.agent === agent && !l.nudge).pop(); return x ? { stop_reason: x.stop_reason, text: String(x.text || '').slice(0, 600), toolErrors: (x.toolResults || []).filter((r) => r.is_error).map((r) => r.content.slice(0, 300)) } : null; };
   const set = (cfg.station.digital || {}), ai = set.aiDisclosure && set.aiDisclosure.text;
-  const listing = L ? { title: L.title, tags: L.tags, listingPriceEur: L.listingPriceEur, variantPricesEur: L.variantPricesEur, floor: of ? { usd: of.floorUsd, eur: of.floorEur } : null, atOrAboveFloor: of && Array.isArray(L.variantPricesEur) ? L.variantPricesEur.every((v) => v.priceEur >= of.floorEur - 1e-9) : null, aiDisclosureWordForWord: !!(ai && String(L.description || '').includes(ai)), usEnglishProblems: listingSpellingProblems(L, cfg.station), marginEstimate: L.marginEstimate } : null;
+  const listing = L ? { title: L.title, tags: L.tags, priceProposal: L.priceProposal || null, listingPriceEur: L.listingPriceEur, variantPricesEur: L.variantPricesEur, floor: of ? { usd: of.floorUsd, eur: of.floorEur } : null, atOrAboveFloor: of && Array.isArray(L.variantPricesEur) ? L.variantPricesEur.every((v) => v.priceEur >= of.floorEur - 1e-9) : null, aiDisclosureWordForWord: !!(ai && String(L.description || '').includes(ai)), usEnglishProblems: listingSpellingProblems(L, cfg.station), marginEstimate: L.marginEstimate } : null;
   const ogListing = rj(path.join(dir, 'derived', 'listing.originality.json')), n = Number((/set-v(\d+)/.exec((rj(path.join(dir, 'outbox', 'qa-design.json')) || {}).designFile || '') || [])[1]) || null;
   const ogSet = n ? rj(path.join(dir, 'set-v' + n, 'originality.json')) : null;
   const listingScreen = L ? screenText(Object.values(listingFields(L)).join('\n'), cfg.station, { extra: cfg.blocklist || [] }) : null;
   const today = dublinDay(Date.now());
   return {
-    job: { id, state: job.state, step: job.step, reason: job.reason, loops: job.loops, hops: job.hops, minutes: r6((Date.now() - t0) / 60000), waitingFor: job.data.waitingFor || null },
+    job: { id, state: job.state, step: job.step, evidenceLevel: evidenceLevelOf(fs.existsSync(path.join(dir, 'brief.md')) ? fs.readFileSync(path.join(dir, 'brief.md'), 'utf8') : ''), reason: job.reason, loops: job.loops, hops: job.hops, minutes: r6((Date.now() - t0) / 60000), waitingFor: job.data.waitingFor || null },
     stages: store.stagesOf(id).map((s) => ({ step: s.step, pass: s.pass, status: s.status, note: s.reason })),
     runs: runs.map((r) => ({ agent: r.agent_key, step: r.step, pass: r.pass, model: r.model, status: r.status, turns: r.turns, usd: r.usd, endReason: r.end_reason })),
     qa: { file1: qa('qa').filter((x) => /file1-/.test(x.file)), design: qa('qa').filter((x) => !/file1-/.test(x.file)), listing: qa('qa-listing') },

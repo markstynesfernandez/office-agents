@@ -17,7 +17,7 @@ Each run:
    - BATCH RULE: one brief per audience segment per batch; a re-submission of a returned niche counts as that segment's brief. No "dad" niches (no "dad", "father" or Father's Day audiences). State the segment on a line `audience_segment: <segment>` under `product_type:`.
    - NO EVIDENCE, NO BRIEF: if Etsy refused the page, or any cell of the evidence would be UNKNOWN, write nothing for that niche.
    - SATURATION: a "very high" niche needs a clear reason ours is worth the price next to the top five (Design direction); otherwise skip it.
-   - PRICE: the lowest top-5 price must clear the BRIEF FLOOR (digital) in the PRICE FLOOR skill. Never raise a price to pass.
+   - PRICE: at least 3 top-5 prices must clear the BRIEF FLOOR (digital) in the PRICE FLOOR skill; record the cheaper ones too. Never raise a price to pass.
    - Design direction = ORIGINAL concepts in plain words: no reference to protected IP (brands, logos, characters, franchises, teams, celebrities, lyrics, quotes, well-known slogans, a named artist's style, or "inspired by" a product or listing). A brief that fails this is rejected by a station script.
 5. Reply with a short list: id, niche, product_type, competitor count, saturation — one line each. Nothing else.
 

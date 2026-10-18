@@ -13,7 +13,7 @@
 // them); the competitor count is "not measured" and the evidence level "indicative" until the Etsy Open API is in place.
 // Keywords and the price range each need at least MIN_CITED_RESULTS distinct cited results, and every URL anywhere in
 // the brief must be one a web call of the job returned (citationProblems; the job transcript keeps them).
-import { briefField, designDirectionOf } from './brief-check.mjs';
+import { briefField, designDirectionOf, MIN_FLOOR_ROWS } from './brief-check.mjs';
 import { keywordSourceProblems, ownerPrice } from './demand-evidence.mjs';
 import { briefUsdRange } from './gates.mjs';
 import { briefPriceCheck, variantLadder } from './etsy-fees.mjs';
@@ -65,7 +65,7 @@ const demandRows = (de) => (de || '').split('\n').filter((l) => /^\s*\|\s*\d+\s*
 // the market has no cheaper listings. A genre brief records the full range as shown, cheap rows included, and passes the floor
 // when at least MIN_FLOOR_ROWS cited listings (Demand evidence rows with a result URL, in USD) show a CURRENT price at or above
 // it (a sale counts at its current price; a range counts when its low end clears the floor, i.e. every option it sells does).
-export const MIN_FLOOR_ROWS = 3;
+export { MIN_FLOOR_ROWS };   // one rule for both lines (owner, 17/10/2026): defined in brief-check.mjs
 export function floorRows(text, floorUsd) {
   const rows = demandRows(section(norm(text), '## Demand evidence')).filter((r) => r.length >= 4 && urlsIn(r[3]).length).map((r) => parsePrice(r[2])).filter((p) => p.ok && p.currency === 'USD');
   const at = rows.filter((p) => p.current >= floorUsd - 1e-9).length;

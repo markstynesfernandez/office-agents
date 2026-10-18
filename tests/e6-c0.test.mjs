@@ -377,11 +377,12 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
   const ev = (price) => ['## Demand evidence', 'search phrase: pngtuber desk props', 'checked: 2026-10-17', 'search URL: https://www.etsy.com/search?q=pngtuber+desk+props', 'competitor count: 1,240', 'saturation: medium — 1,240 results, top five 40-900 reviews, one Bestseller',
     '| # | listing (short title) | shop | price | reviews | bestseller | URL |', '|---|---|---|---|---|---|---|', ...[1, 2, 3, 4, 5].map((n) => '| ' + n + ' | Desk props ' + n + ' | Shop' + n + ' | USD ' + price + ' | ' + (100 * n) + ' | ' + (n < 2 ? 'yes' : 'no') + ' | https://www.etsy.com/listing/40' + n + ' |'), ''].join('\n');
   const kw = ['## Keywords', ...['pngtuber props', 'desk props png', 'stream desk props', 'vtuber desk assets', 'cosy desk props'].map((k, i) => '- ' + k + ' — https://www.etsy.com/listing/40' + (i + 1)), '', '## Sources', ...[1, 2, 3, 4, 5].map((n) => '- https://www.etsy.com/listing/40' + n), ''].join('\n');
-  const brief = (price, id = '2026-10-17--floor-' + String(price).replace('.', '-')) => ['---', 'id: ' + id, 'status: verified', 'product_type: pngtuber-prop-pack', 'audience_segment: streamers', '---', '# Niche', 'Cosy desk props for streamers', '', ev(price), kw, '## Price range', 'USD ' + price + '–5.99 (https://www.etsy.com/listing/401)', '', '## Design direction', 'Original cosy desk props, soft outlines, no text.', ''].join('\n');
+  const brief = (price, id = '2026-10-17--floor-' + String(price).replace('.', '-')) => ['---', 'id: ' + id, 'status: verified', 'product_type: pngtuber-prop-pack', 'audience_segment: streamers', '---', '# Niche', 'Cosy desk props for streamers', '', ev(price), kw, '## Price range', 'USD ' + price + '–' + price + ' (https://www.etsy.com/listing/401)', '', '## Design direction', 'Original cosy desk props, soft outlines, no text.', ''].join('\n');
   const today = new Date('2026-10-17T12:00:00Z');
   const lo = checkBrief(brief('3.49'), { products: CFG.products, cfg: st, today }), hi = checkBrief(brief('3.50'), { products: CFG.products, cfg: st, today });
   assert.equal(lo.price && lo.price.ok, false, JSON.stringify(lo.reasons)); assert.equal(hi.price && hi.price.ok, true, JSON.stringify(hi.reasons));
-  assert.ok(lo.reasons.some((x) => /^price: lowest price USD 3.49 is below the floor USD 3.5/.test(x)));
+  // owner, 17/10/2026 (research floor = the genre rule): 3+ top-5 prices at or above the floor; here all five are at the price
+  assert.ok(lo.reasons.some((x) => /^price: 0 of 5 top-5 prices at or above the floor USD 3\.5, needs at least 3/.test(x)), lo.reasons.join('; '));
   assert.ok(!hi.reasons.some((x) => /^price:/.test(x)), hi.reasons.join('; '));
   // the scout's genre brief check (EVIDENCE-CHECKER's verified briefs go through it at brief-check and intake)
   const day = '2026-10-17', g = (p) => ({ ...GENRES[1], price: p });
@@ -393,7 +394,7 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
   const engine = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false });
   t.after(() => engine.close());
   const a = engine.orchestrator.createJob({ briefText: brief('3.49'), by: 'test' }), b = engine.orchestrator.createJob({ briefText: brief('3.50'), by: 'test' });
-  assert.equal(a.ok, false); assert.ok(a.reasons.some((x) => /^price: lowest price USD 3.49 is below the floor USD 3.5/.test(x)), a.reasons.join('; '));
+  assert.equal(a.ok, false); assert.ok(a.reasons.some((x) => /^price: 0 of 5 top-5 prices at or above the floor USD 3\.5/.test(x)), a.reasons.join('; '));
   assert.equal(b.ok, true, (b.reasons || []).join('; '));
   // the price fill: proposed = the larger of the floor and the brief high (a minimum, not a target)
   assert.deepEqual(variantLadder(PACK, { min: 3.5, max: 3.5 }, st).map((x) => [x.floorEur, x.proposedEur]), [[3.13, 3.13]]);
@@ -402,7 +403,7 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
   assert.deepEqual(variantLadder(PACK, null, st).map((x) => [x.floorEur, x.proposedEur, x.marginEur]), [[3.13, 3.6, 2.55]]);
   // the package gate (QA-LISTING's prices are re-checked there, with the gate's 2-cent tolerance): a brief at
   // USD 3.50 only lists at the floor EUR 3.13; EUR 3.10 is below it, 3.13 is right
-  const wd = path.join(r.dataRoot, 'gate'); fs.mkdirSync(wd, { recursive: true }); fs.writeFileSync(path.join(wd, 'brief.md'), brief('3.50').replace('USD 3.50–5.99', 'USD 3.50–3.50'));
+  const wd = path.join(r.dataRoot, 'gate'); fs.mkdirSync(wd, { recursive: true }); fs.writeFileSync(path.join(wd, 'brief.md'), brief('3.50'));
   const gate = (eur) => { const reasons = []; digitalListingChecks({ L: { delivery: st.digital.delivery, licence: PACK.licence, description: '', variantPricesEur: [{ variant: 'Digital download', priceEur: eur }] }, workDir: wd, design: { product: PACK, manifest: null }, reasons, cfg: { ...st, productType: 'digital' } }); return reasons.filter((x) => /variantPricesEur/.test(x)); };
   assert.match(gate(3.1).join(' '), /BELOW the digital floor EUR 3.13/);
   assert.deepEqual(gate(3.13), []);

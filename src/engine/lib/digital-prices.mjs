@@ -4,6 +4,9 @@
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
 //   change: fillDigitalPrices takes the blocklist terms (extra) from the engine instead of reading the station's file
 //   the engine's price-fill step calls it with the job's own id, never "the most recently changed listing" (legacy price-hook bug, port item 31)
+//   change (owner decision 5, 17/10/2026): an OWNER BRIEF (lib/owner-brief.mjs) has owner bounds instead of market prices; LISTER
+//           proposes a price within them with its reason (listing.json priceProposal), every variant lists at it, and the owner sets
+//           the final price at approval. A missing or out-of-bounds proposal fails the fill (and the gate). Other briefs: unchanged
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // digital-prices.mjs (lib) — the digital counterpart of fill-prices.mjs (productType "digital"). Before QA LISTING reviews a listing (price hook,
 // every run) a station script, not an agent, fills the listing's FACT fields from the approved deliverable set (QA DESIGN's approval, or a valid
@@ -23,6 +26,7 @@ import { config as defaultConfig, productsFile } from './common.mjs';
 import { variantLadder, noBriefUplift } from './etsy-fees.mjs';
 import { briefUsdRange, expectedPricing } from './gates.mjs';
 import { ownerPrice } from './demand-evidence.mjs';
+import { isOwnerBrief, ownerBounds, proposalProblem } from './owner-brief.mjs';
 import { publicView } from './digital-files.mjs';
 import { noticeFor } from './digital-build.mjs';
 import { recordListingOriginality } from './originality.mjs';
@@ -36,8 +40,18 @@ const ours = (t) => t === TODO_TERMS || Object.values(((defaultConfig.digital ||
 // the price decision for a digital listing, shared by the fill and the package gate. With an owner price line in the brief (owner,
 // 2026-10-16): every variant at the owner's price point, else at the low end of the owner range; never the top-5 high. Without one: the
 // brief high (or floor + uplift), as before. A malformed owner line is reported in `problem` and the gate fails on it.
-export function digitalPricing({ product, briefText, cfg = defaultConfig }) {
+const r2 = (n) => Math.round(n * 100) / 100;
+export function digitalPricing({ product, briefText, cfg = defaultConfig, proposal = null }) {
   const range = briefText ? briefUsdRange(briefText) : null, rate = cfg.fx && cfg.fx.usdToEur, op = briefText ? ownerPrice(briefText) : null;
+  // an owner brief without an owner price line: LISTER's proposal within the owner bounds (USD at fx.usdToEur, rounded UP to the
+  // cent as the owner floor is, so a proposal at the floor never lists a cent below it)
+  const ob = !op && briefText && isOwnerBrief(briefText) ? ownerBounds(briefText) : null;
+  if (ob) {
+    const problem = ob.problem || proposalProblem(proposal, ob), suggestion = ob.problem ? null : { min: r2(ob.min * rate), max: r2(ob.max * rate) };
+    const priceEur = problem ? null : Math.ceil(proposal.usd * rate * 100 - 1e-9) / 100;
+    return { basis: 'LISTER proposal', owner: null, ownerBrief: ob.problem ? null : { ...ob, proposal: problem ? null : proposal }, range, rate, priceEur, problem,
+      ladder: problem ? variantLadder(product, range, cfg) : variantLadder(product, range, cfg, { priceEur }), suggestion, listingPriceEur: priceEur };
+  }
   if (op && !op.problem) {
     const priceEur = op.point != null ? op.point : op.min;
     return { basis: op.point != null ? 'owner price point' : 'owner range low end', owner: op, range, rate, priceEur, problem: null,
@@ -49,10 +63,12 @@ export function digitalPricing({ product, briefText, cfg = defaultConfig }) {
 }
 
 export function digitalPriceFields({ L, product, briefText, manifest, cfg = defaultConfig }) {
-  const pr = digitalPricing({ product, briefText, cfg }), { range, rate, ladder } = pr;
+  const pr = digitalPricing({ product, briefText, cfg, proposal: L.priceProposal }), { range, rate, ladder } = pr;
   const exp = pr.suggestion;
   const url = (/https?:\/\/\S+/.exec((String(briefText || '').split('## Price range')[1] || '').split(/\n## /)[0]) || [''])[0].replace(/[).,;]+$/, '');
-  const priceSuggestion = pr.owner
+  const priceSuggestion = pr.ownerBrief && pr.priceEur != null
+    ? { min: exp.min, max: exp.max, currency: 'EUR', source: 'brief.md ## Price range, owner bounds USD ' + pr.ownerBrief.min.toFixed(2) + '–' + pr.ownerBrief.max.toFixed(2) + ' (owner brief, ' + pr.ownerBrief.date + '); LISTER proposal USD ' + pr.ownerBrief.proposal.usd.toFixed(2) + ': ' + pr.ownerBrief.proposal.reason, workings: pr.ownerBrief.proposal.usd.toFixed(2) + ' x ' + rate + ' = EUR ' + pr.priceEur.toFixed(2) + ' (fx.usdToEur ' + rate + '); listed at the LISTER proposal; the owner sets the final price at approval' }
+    : pr.owner
     ? { min: pr.owner.min, max: pr.owner.max, currency: 'EUR', source: 'brief.md ## Price range, owner price (recorded by owner, ' + pr.owner.date + ')' + (pr.owner.point != null ? '; owner price point EUR ' + pr.owner.point.toFixed(2) + ' (recorded by owner, ' + pr.owner.pointDate + ')' : ''), workings: 'listed at the ' + pr.basis + ': EUR ' + pr.priceEur.toFixed(2) + ' (never the top-5 high)' }
     : exp
       ? { min: exp.min, max: exp.max, currency: 'EUR', source: 'brief.md ## Price range, USD ' + range.min + (range.max !== range.min ? '–' + range.max : '') + (url ? ' (' + url + ')' : ''), workings: range.min + ' x ' + rate + ' = ' + exp.min + '; ' + range.max + ' x ' + rate + ' = ' + exp.max + ' (fx.usdToEur ' + rate + ')' }
@@ -81,7 +97,10 @@ export function fillDigitalPrices({ id, roomDir, cfg = defaultConfig, products =
   const m = rd(path.join(roomDir, String(so.designFile || 'missing')), String(so.designFile)); if (m.err) return { ok: false, reason: m.err };
   const list = products || JSON.parse(fs.readFileSync(productsFile('digital'), 'utf8')).products, product = list.find((x) => x.key === l.v.productKey);
   if (!product || product.digital !== true) return { ok: false, reason: 'productKey "' + l.v.productKey + '" is not a digital product in products.json' };
-  const next = digitalPriceFields({ L: l.v, product, briefText: fs.existsSync(bf) ? fs.readFileSync(bf, 'utf8') : '', manifest: m.v, cfg });
+  const bt = fs.existsSync(bf) ? fs.readFileSync(bf, 'utf8') : '';
+  // an owner brief lists at LISTER's proposal: without a valid one there is no price to fill (fail closed, nothing written)
+  if (isOwnerBrief(bt)) { const pp = digitalPricing({ product, briefText: bt, cfg, proposal: l.v.priceProposal }); if (pp.problem) return { ok: false, reason: 'owner brief: ' + pp.problem }; }
+  const next = digitalPriceFields({ L: l.v, product, briefText: bt, manifest: m.v, cfg });
   const changed = JSON.stringify(next) !== JSON.stringify(l.v);
   if (changed && !dry) { const tmp = lf + '.tmp'; fs.writeFileSync(dataJail(tmp), JSON.stringify(next, null, 2) + '\n'); fs.renameSync(dataJail(tmp), dataJail(lf)); }
   log.info(dry ? 'dry run: digital fields not written' : changed ? 'digital fields written' : 'digital fields already correct: unchanged', { id, prices: next.variantPricesEur, files: next.deliverables.length });

@@ -43,6 +43,7 @@ import { dublinDay } from './time.mjs';
 import { validateNotes, blocklistFromNotes, readDayNotes, scoutingBriefProblems, isScoutBrief, notesFile, notesRel, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
 import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
 import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-sources.mjs';
+import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -74,7 +75,11 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const transcriptOf = (id) => path.join(dataRoot, 'jobs', id, 'transcript.jsonl');
   function checkBriefAll(t, { citationsJob = null, productKey = null } = {}) {
     let c;
-    if (isScoutBrief(t)) {
+    // owner decision 5 (17/10/2026): an owner brief claims no demand evidence (level "owner"); its own schema, the originality
+    // screen of the whole brief, the image policy and the owner bounds against the floor (lib/owner-brief.mjs), then the
+    // scouting screen below like every brief
+    if (isOwnerBrief(t)) c = checkOwnerBrief(t, { products: cfg.products, cfg: cfg.station });
+    else if (isScoutBrief(t)) {
       const jid = citationsJob || ([...t.matchAll(new RegExp(STATION_CITATIONS_RE.source, 'gm'))].pop() || [])[2] || null;   // the last one: brief-check appends it
       const tf = jid && isListingId(jid) ? transcriptOf(jid) : null;
       // owner, 17/10/2026 ("prices as shown"): every price figure must be one the job's web calls returned, too
@@ -122,14 +127,15 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (idempotencyKey) { const prev = store.idem.get('createJob:' + idempotencyKey); if (prev) return prev; }
     const L = lineOf(line), t = String(briefText || '').replace(/\r\n/g, '\n'), id = briefField(t, 'id'), reasons = [];
     if (!isListingId(id)) reasons.push('the brief has no valid id (YYYY-MM-DD--slug)');
-    if (briefField(t, 'status') !== 'verified') reasons.push('the brief status is "' + (briefField(t, 'status') || 'missing') + '", not "verified"');
+    const wantStatus = isOwnerBrief(t) ? OWNER_STATUS : 'verified';   // an owner brief is the owner's, never "verified" by the Evidence Checker
+    if (briefField(t, 'status') !== wantStatus) reasons.push('the brief status is "' + (briefField(t, 'status') || 'missing') + '", not "' + wantStatus + '"');
     const chk = checkBriefAll(t);
     if (!chk.ok) reasons.push(...chk.reasons);
     if (id && store.getJob(id)) reasons.push('a job with id ' + id + ' already exists (a re-run needs a new -rN id)');
     if (reasons.length) { log.warn('intake refused a brief', { id, reasons, by }); return { ok: false, id, reasons }; }
     const job = store.tx(() => {
       const j = store.insertJob({ id, line, kind: 'line', title: titleOf(id), product_key: chk.key, state: 'queued', step: L.start, data: { createdBy: by, brief: 'jobs/' + id + '/brief.md' } });
-      const sid = store.openStage(id, 'intake', 1); store.closeStage(sid, 'done', 'brief checked: demand evidence, keyword sources, product, originality, image policy, price');
+      const sid = store.openStage(id, 'intake', 1); store.closeStage(sid, 'done', isOwnerBrief(t) ? 'owner brief checked (evidence level owner: no market evidence): format, product, originality of the whole brief, scouting blocklist, image policy, owner bounds against the floor' : 'brief checked: demand evidence, keyword sources, product, originality, image policy, price');
       return j;
     });
     J.put(path.join(jobDir(id), 'brief.md'), t);
@@ -928,6 +934,21 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       return { file, id, niche: niche(t) || null, status: briefField(t, 'status') || null, product: briefField(t, 'product') || null, jobId: id && store.getJob(id) ? id : null };
     });
   }
+  // owner decision 5 (17/10/2026): an owner brief is saved to research/briefs/<id>.md only when it passes the intake checks (the
+  // same checkBriefAll); never over another brief or a job's id. Saving the same text again changes nothing (idempotent).
+  function saveOwnerBrief({ text, by = 'owner' }) {
+    const t = String(text || '').replace(/\r\n/g, '\n'), id = briefField(t, 'id');
+    if (!isOwnerBrief(t)) return { ok: false, id, reasons: ['not an owner brief (front matter "origin: owner")'] };
+    const chk = checkBriefAll(t), reasons = chk.ok ? [] : [...chk.reasons];
+    if (briefField(t, 'status') !== OWNER_STATUS) reasons.push('the brief status must be "' + OWNER_STATUS + '"');
+    const f = isListingId(id) ? path.join(dataRoot, 'research', 'briefs', id + '.md') : null, same = f && fs.existsSync(f) && fs.readFileSync(f, 'utf8') === t;
+    if (f && fs.existsSync(f) && !same) reasons.push('research/briefs/' + id + '.md already exists with other text (an owner brief is written once; use a new id)');
+    if (id && store.getJob(id) && !same) reasons.push('a job with id ' + id + ' already exists');
+    if (reasons.length) { log.warn('owner brief refused', { id, reasons, by }); return { ok: false, id, reasons }; }
+    if (!same) J.put(f, t);
+    log.info(same ? 'owner brief already saved: unchanged' : 'owner brief saved', { id, by, file: 'research/briefs/' + id + '.md' });
+    return { ok: true, id, file: 'research/briefs/' + id + '.md', changed: !same, warnings: chk.warnings || [] };
+  }
   function startBrief(file, { by = 'owner', idempotencyKey = null } = {}) {
     if (!/^[A-Za-z0-9._-]+\.md$/.test(String(file || ''))) throw new Error('pick a verified brief');
     const f = path.join(dataRoot, 'research', 'briefs', file); if (!fs.existsSync(f)) throw new Error('no such brief: ' + file);
@@ -989,5 +1010,5 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  return { createJob, startJob, runJob, createResearchJob, decide, qaOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
+  return { createJob, saveOwnerBrief, startJob, runJob, createResearchJob, decide, qaOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
 }

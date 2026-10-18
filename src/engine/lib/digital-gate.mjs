@@ -1,6 +1,8 @@
 // PORTED from Virtual-workers/station/scripts/lib/digital-gate.mjs (the owner's own code) at 17/10/2026 12:34 Irish time (5th moment, re-ported: it changed after 16/10 20:04), source sha256 7a81b0ff6cac146bc631bec5dc60a05cf8a0feb49e8961fa6b71aff7ccdf6ebe.
 //   5th moment: the removed-area and near-white fill rules, fileLimitProblems from digital-files.mjs, digitalDesignChecks' ownerApproved, as in the source
 //   change: job folders are data/jobs/<id>/ with outbox/ inside (were room1-etsy/work/<id>/ and outbox/<id>/)
+//   change (owner decision 5, 17/10/2026): the prices of an owner brief are re-checked against LISTER's proposal (listing.json
+//           priceProposal) within the owner bounds, as digital-prices.mjs fills them; other briefs unchanged
 // Everything else is the source unchanged. PORTED.md lists every ported file; npm run port-drift checks the source.
 // digital-gate.mjs (lib) — the DIGITAL parts of the package gate (productType "digital"; checkPackage in gates.mjs calls these). Pure reads.
 // A digital package passes only when:
@@ -202,7 +204,7 @@ export function digitalListingChecks({ L, workDir, design, reasons, cfg = defaul
   }
   // prices on the digital floor, reconciled with the brief (or the owner price in it) and the fee model
   if (!product) return;
-  const bf = path.join(workDir, 'brief.md'), pr = digitalPricing({ product, briefText: fs.existsSync(bf) ? fs.readFileSync(bf, 'utf8') : '', cfg });
+  const bf = path.join(workDir, 'brief.md'), pr = digitalPricing({ product, briefText: fs.existsSync(bf) ? fs.readFileSync(bf, 'utf8') : '', cfg, proposal: L.priceProposal });
   if (pr.problem) reasons.push('brief owner price: ' + pr.problem);
   const usd = pr.range, rate = pr.rate, ladder = pr.ladder, exp = pr.suggestion, ps = L.priceSuggestion || {}, me = L.marginEstimate || {};
   if (!Array.isArray(L.variantPricesEur) || !L.variantPricesEur.length) { reasons.push('variantPricesEur is required (one { variant, priceEur } per variant)'); return; }
@@ -211,13 +213,13 @@ export function digitalListingChecks({ L, workDir, design, reasons, cfg = defaul
     const g = got.get(w.label);
     if (typeof g !== 'number') reasons.push('variantPricesEur has no price for "' + w.label + '" (expected EUR ' + w.proposedEur + ')');
     else if (g < w.floorEur - PRICE_TOL) reasons.push('variantPricesEur "' + w.label + '" is ' + g + ', BELOW the digital floor EUR ' + w.floorEur + ' (Etsy fees incl. VAT + minimum margin)');
-    else if (Math.abs(g - w.proposedEur) > PRICE_TOL) reasons.push('variantPricesEur "' + w.label + '" is ' + g + ', expected EUR ' + w.proposedEur + (pr.owner ? ' (the ' + pr.basis + ' in the brief)' : usd ? ' (the larger of the floor ' + w.floorEur + ' and the brief high)' : ' (no brief price: floor + the no-brief uplift)'));
+    else if (Math.abs(g - w.proposedEur) > PRICE_TOL) reasons.push('variantPricesEur "' + w.label + '" is ' + g + ', expected EUR ' + w.proposedEur + (pr.owner ? ' (the ' + pr.basis + ' in the brief)' : pr.ownerBrief ? ' (the LISTER proposal within the owner bounds)' : usd ? ' (the larger of the floor ' + w.floorEur + ' and the brief high)' : ' (no brief price: floor + the no-brief uplift)'));
   }
   for (const k of got.keys()) if (!ladder.some((w) => w.label === k)) reasons.push('variantPricesEur names a variant that is not in products.json: "' + k + '"');
-  const what = pr.owner ? 'the owner price range in the brief' : 'the brief range at ' + rate;
+  const what = pr.owner ? 'the owner price range in the brief' : pr.ownerBrief ? 'the owner bounds in the brief at ' + rate : 'the brief range at ' + rate;
   if (!exp) { if (ps.min != null || ps.max != null) reasons.push('priceSuggestion has numbers but the brief has no parsable USD range or there is no FX rate: it must be null'); }
   else if (ps.currency !== 'EUR' || Math.abs((ps.min ?? NaN) - exp.min) > PRICE_TOL || Math.abs((ps.max ?? NaN) - exp.max) > PRICE_TOL) reasons.push('priceSuggestion must be EUR ' + exp.min + '–' + exp.max + ' (' + what + ')');
-  if (pr.listingPriceEur != null && L.listingPriceEur != null && Math.abs(L.listingPriceEur - pr.listingPriceEur) > PRICE_TOL) reasons.push('listingPriceEur ' + L.listingPriceEur + ' must be EUR ' + pr.listingPriceEur + ' (' + (pr.owner ? 'the ' + pr.basis : 'the top of the brief range') + ')');
+  if (pr.listingPriceEur != null && L.listingPriceEur != null && Math.abs(L.listingPriceEur - pr.listingPriceEur) > PRICE_TOL) reasons.push('listingPriceEur ' + L.listingPriceEur + ' must be EUR ' + pr.listingPriceEur + ' (' + (pr.owner ? 'the ' + pr.basis : pr.ownerBrief ? 'the LISTER proposal' : 'the top of the brief range') + ')');
   const ms = ladder.map((w) => w.marginEur);
   if (typeof me.minMarginEur !== 'number' || Math.abs(me.minMarginEur - Math.min(...ms)) > PRICE_TOL || Math.abs(me.maxMarginEur - Math.max(...ms)) > PRICE_TOL) reasons.push('marginEstimate must be EUR ' + Math.min(...ms) + '–' + Math.max(...ms) + ' after Etsy fees (got ' + me.minMarginEur + '–' + me.maxMarginEur + ')');
 }

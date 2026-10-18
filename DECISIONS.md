@@ -1496,3 +1496,55 @@ is our minimum listing price, not a requirement that the market has no cheaper l
   14,000). TREND-SCOUT reads the rule from its skill; its prompt and IP-rule lines are unchanged.
 - **Not changed (flagged):** the research line's Etsy briefs (DEMAND-RESEARCHER, `checkBrief`, `price-rules-brief.md`) still
   need the lowest top-5 price at or above the floor. The correction named the genre-scout pieces; say if it applies there too.
+
+## E6 step c: owner brief path, research floor, scout paused (owner-approved, 17/10/2026)
+
+After scout run 7 (`2026-10-17--genre-scout-7`, PROGRESS.md), the owner's decisions:
+
+1. **The research line uses the genre-scout floor rule.** DEMAND-RESEARCHER's Etsy briefs record the full range honestly and
+   pass when 3 or more cited current prices are at or above USD 3.50 (the product's BRIEF FLOOR). Tests to match.
+2. **Ranges** count toward the 3 only if their low end is at or above USD 3.50: approved as read.
+3. **Hidden-row false positives** (a non-listing figure under the floor in a search result, such as a shipping fee, read as a
+   result the brief must record): parked with scout tuning until the Etsy Open API is in. An E6 open item; no change now.
+4. **Scout tuning is paused** until the Etsy Open API key arrives (the owner is applying). Scout run 7 recorded; checklist
+   row 21 "blocked on data: Etsy Open API".
+5. **Step c proceeds on an owner brief** instead of a scout brief. Owner briefs go through intake with evidence level
+   "owner" (no demand evidence claimed), shown on the approval card as "Evidence: OWNER BRIEF — no market evidence". Every
+   originality, IP, blocklist and format check still applies in full. The first owner brief: Cozy Autumn Desk Props
+   (`2026-10-17--cozy-autumn-desk-props`, product pngtuber-prop-pack); LISTER proposes a price between USD 3.50 and USD 9.00
+   with its reason, and the owner sets the final price at approval; AI use disclosed as on DESK-PROPS-01.
+
+### As built
+- **Research floor** (`lib/brief-check.mjs`, ported file, change line in its header): without an owner price line,
+  `floorRowsResearch` counts the top-5 rows whose current price in USD (a EUR row at fx.usdToEur, to the cent; another
+  currency not counted) is at or above the floor; `MIN_FLOOR_ROWS` 3 (one constant for both lines, re-exported by
+  `scout-brief.mjs`). The Price range must be the rows' full range (within a cent), so a cheap row cannot be left out. The
+  owner price line still replaces the rule (DESK-PROPS-01 unchanged, parity unchanged). Prompts: `skills/price-rules-brief.md`
+  (BRIEF FLOOR, DEMAND RESEARCHER, EVIDENCE CHECKER bullets), `skills/price-floor.md` line 7, `agents/demand-researcher.md`
+  PRICE, EVIDENCE-CHECKER's genre paragraph shortened to "Floor: the BRIEF FLOOR rule (cheaper rows stay)" (13,991 chars),
+  `skills/scout-brief-format.md` (the floor named as BRIEF PRICE RULES' for both lines).
+- **Owner brief** (`lib/owner-brief.mjs`, new): front matter `status: owner`, `origin: owner` (never "verified": the
+  Evidence Checker has not seen it, and a line routine, which takes verified briefs only, never starts one); headings
+  `# Niche`, `## Demand evidence`, `## Design direction`, `## Price range`; Demand evidence `evidence level: owner` with no URL,
+  price, table, Etsy evidence field or owner-recorded marker; `owner bounds: USD <min>–<max> (owner brief, YYYY-MM-DD)` with
+  the minimum at or above the floor; no UNKNOWN/TBD/TODO. Checked: the schema, a digital product, the originality screen of
+  the WHOLE brief in every category (as the prep step screens brief.md), the image policy, the bounds; then the scouting
+  blocklist screen like every brief (`checkBriefAll`). The listing blocklist and every downstream gate apply as always.
+- **Intake** accepts an owner brief with status `owner` (other briefs still need `verified`); its intake stage says
+  "owner brief checked (evidence level owner: no market evidence) ...".
+- **Saving**: `orchestrator.saveOwnerBrief` / `npm run owner-brief -- --file <brief.md> [--check]` writes
+  `research/briefs/<id>.md` only when the brief passes the intake checks; once (other text under the same id, or a job with
+  that id, is refused); the same text again changes nothing.
+- **Approval card**: `ui/evidence.js` level "owner" -> "Evidence: OWNER BRIEF — no market evidence" (own style).
+- **Price** (`digital-prices.mjs` and `digital-gate.mjs`, ported files, change lines in their headers): for an owner brief
+  without an owner price line, LISTER writes `priceProposal: { usd, reason }` in listing.json (one paragraph in
+  `skills/price-rules-lister.md`; LISTER 11,703 of 12,000 chars). The price fill lists every variant at it (USD x
+  fx.usdToEur, rounded UP to the cent like the owner floor, so a proposal at USD 3.50 lists at EUR 3.13, never below);
+  priceSuggestion is the bounds in EUR with LISTER's reason in its source line. A missing or out-of-bounds proposal fails
+  the fill (nothing written) and the gate re-checks the same. The owner still sets the final price at approval ("confirm
+  price" stays on the to-do list). Other briefs are priced as before.
+- **Not changed (flagged):** `products.json` for pngtuber-prop-pack still describes DESK-PROPS-01: files 11 and 12 are
+  "colour variant" purposes and the styleReference note names "the steaming mug". The engine does not pass either to an
+  agent (checked: no code reads them), and the owner brief lists 12 distinct props with the pumpkin as file 1. The owner brief
+  has no Keywords section (none were given); LISTER's prompt says to use the brief's keywords, so it writes tags from the
+  title idea and the props, and QA-LISTING checks them.
