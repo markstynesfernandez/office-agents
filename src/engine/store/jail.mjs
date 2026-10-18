@@ -2,7 +2,7 @@
 //
 // createJail() returns `dataJail(path)`, which resolves a path (through the real path of its nearest existing ancestor,
 // so symlinks, junctions and 8.3 short names are expanded) and refuses anything that is not inside one of the allowed
-// roots: STATION_DATA_ROOT (default office-agents/data), office-agents/logs and office-agents/.cache. It ALWAYS refuses
+// roots: STATION_DATA_ROOT (default ./data, relative to the checkout), office-agents/logs and office-agents/.cache. It ALWAYS refuses
 // the legacy StarNet build (STATION_LEGACY_ROOT, default ../Virtual-workers) and any path with a `Virtual-workers` or
 // `station-workspace` segment, even if someone points the data root inside it. Device and UNC paths are refused.
 //
@@ -46,7 +46,7 @@ export function defaultLegacyRoot() { return path.resolve(APP_ROOT, '..', 'Virtu
 
 // Roots are created (data root only) and pinned to their real paths at creation time.
 export function createJail({ dataRoot = process.env.STATION_DATA_ROOT || path.join(APP_ROOT, 'data'), extraRoots = [path.join(APP_ROOT, 'logs'), path.join(APP_ROOT, '.cache')], legacyRoots = [defaultLegacyRoot(), process.env.STATION_LEGACY_ROOT].filter(Boolean) } = {}) {
-  const raw = path.resolve(dataRoot);
+  const raw = path.resolve(APP_ROOT, dataRoot);   // L1: a relative STATION_DATA_ROOT (default ./data) is the checkout's
   if (DEVICE_PATH.test(String(dataRoot))) throw new JailError('data root must be a local drive path: ' + dataRoot);
   const legacy = legacyRoots.map((r) => realResolve(r));
   const check = (r) => {

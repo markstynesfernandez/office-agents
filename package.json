@@ -8,9 +8,11 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node src/server/index.mjs",
+    "start": "node scripts/start.mjs",
     "mock": "node src/server/index.mjs --fixtures",
     "test": "node --test",
+    "test:record": "node scripts/record-tests.mjs",
+    "deploy:live": "node scripts/deploy-live.mjs",
     "screenshots": "node scripts/screenshots.mjs",
     "snapshot-fixtures": "node scripts/snapshot-fixtures.mjs",
     "estop": "node scripts/estop.mjs",

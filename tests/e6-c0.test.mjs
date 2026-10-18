@@ -31,7 +31,7 @@ const CONFIG = path.join(APP_ROOT, 'config'), PROMPTS = path.join(APP_ROOT, 'pro
 const CFG = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS });
 const PACK = CFG.products.find((p) => p.key === 'pngtuber-prop-pack');
 const FAKE_KEY = 'sk-or-v1-c0TESTKEY0123456789abcdef0123456789abcdef';
-const LIVE = { STATION_PROVIDER: 'live', OPENROUTER_API_KEY: FAKE_KEY };
+const LIVE = { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', OPENROUTER_API_KEY: FAKE_KEY };
 const MODEL = 'openai/gpt-5-image-mini';
 const ID = '2026-10-17--c0-desk-props';
 const BRIEF = ['---', 'id: ' + ID, 'status: verified', 'product_type: pngtuber-prop-pack', '---', '# Niche', 'Cosy desk props for streamers', '', '## Design direction', 'Original cosy desk props, soft outlines, no text.', ''].join('\n');
@@ -90,7 +90,7 @@ test('OpenRouter client: one request per image, the allowed model only, transpar
   // live only, never demo, never without the key; providers fall back to a refusing stub without the key
   assert.throws(() => createOpenRouterImage({ engineCfg: CFG.engine, env: { OPENROUTER_API_KEY: FAKE_KEY } }), (e) => e.code === 'NOT_LIVE');
   assert.throws(() => createOpenRouterImage({ engineCfg: CFG.engine, env: LIVE, demo: true }), (e) => e.code === 'DEMO');
-  assert.throws(() => createOpenRouterImage({ engineCfg: CFG.engine, env: { STATION_PROVIDER: 'live' } }), (e) => e.code === 'NO_KEY');
+  assert.throws(() => createOpenRouterImage({ engineCfg: CFG.engine, env: { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live' } }), (e) => e.code === 'NO_KEY');
   assert.ok(log.lines.every((l) => !l.includes(FAKE_KEY)));
 });
 
@@ -423,12 +423,12 @@ test('D2: thinking is off for every agent in config; sent per model (Haiku disab
   assert.deepEqual(CFG.engine.effortLevels, ['low', 'medium', 'high']);
   const seen = [];
   const client = { messages: { create: async (body) => { seen.push(body); return { id: 'msg', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage: { input_tokens: 3, output_tokens: 1 }, _request_id: 'req' }; } } };
-  const text = createAnthropicText({ engineCfg: CFG.engine, env: { STATION_PROVIDER: 'live', ANTHROPIC_API_KEY: 'sk-ant-test-0123456789' }, client });
+  const text = createAnthropicText({ engineCfg: CFG.engine, env: { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', ANTHROPIC_API_KEY: 'sk-ant-test-0123456789' }, client });
   await text.create({ model: 'claude-haiku-5-5', max_tokens: 64, messages: [{ role: 'user', content: 'x' }] }, { ctx: { thinking: 'off', effort: 'low' } });
   await text.create({ model: 'claude-sonnet-5-5', max_tokens: 64, messages: [{ role: 'user', content: 'x' }] }, { ctx: { thinking: 'off', effort: 'low' } });
   await text.create({ model: 'claude-sonnet-5-5', max_tokens: 64, messages: [{ role: 'user', content: 'x' }] }, { ctx: { thinking: 'default' } });
   assert.deepEqual(seen.map((b) => b.thinking), [{ type: 'disabled' }, { type: 'between_tools' }, undefined]);
-  const noMap = createAnthropicText({ engineCfg: { ...CFG.engine, thinking: { off: {} } }, env: { STATION_PROVIDER: 'live', ANTHROPIC_API_KEY: 'sk-ant-test-0123456789' }, client });
+  const noMap = createAnthropicText({ engineCfg: { ...CFG.engine, thinking: { off: {} } }, env: { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', ANTHROPIC_API_KEY: 'sk-ant-test-0123456789' }, client });
   await assert.rejects(noMap.create({ model: 'claude-haiku-5-5', max_tokens: 64, messages: [] }, { ctx: { thinking: 'off' } }), (e) => e.code === 'CONFIG');
   assert.equal(seen.length, 3, 'no call without a setting');
 });

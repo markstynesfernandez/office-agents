@@ -85,6 +85,14 @@ function renderTopbar(s) {
   badge.textContent = eng.label;
   badge.className = 'badge ' + (eng.state === 'halted' ? 'badge-halt' : eng.state === 'running' ? 'badge-on' : eng.state === 'legacy' ? 'badge-muted' : 'badge-off');
   badge.title = (eng.detail ? eng.detail + '\n' : '') + s.station.runtime + '\n' + (s.station.host || '') + '\nread from: ' + (s.source.root || '');
+  // L1: which Station this is. LIVE owns the real data; DEV is the build checkout's scratch data on the mock provider
+  const ib = $('#instance-badge'), inst = s.instance;
+  ib.classList.toggle('hidden', !inst);
+  if (inst) {
+    ib.textContent = inst.name === 'live' ? 'LIVE · real data' : 'DEV · scratch data';
+    ib.className = 'badge ' + (inst.name === 'live' ? 'badge-live' : 'badge-dev');
+    ib.title = (inst.name === 'live' ? 'The live Station: the real data, the live provider when its .env says so.' : 'The dev Station: scratch data on the mock provider. Nothing here is the station\'s real data or spend.') + (inst.commit ? '\ncommit ' + inst.commit : '');
+  }
   let mock = $('#mock-badge');
   if (s.source.mode === 'fixtures') { if (!mock) { mock = document.createElement('span'); mock.id = 'mock-badge'; mock.className = 'badge badge-muted'; badge.after(mock); } mock.textContent = 'mock · snapshot ' + (s.source.snapshotAt ? dateTime(s.source.snapshotAt) : '—'); mock.title = 'fixtures/station-root: a read-only snapshot of the legacy build files (npm run snapshot-fixtures)'; }
   else if (mock) mock.remove();

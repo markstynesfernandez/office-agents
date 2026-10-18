@@ -203,6 +203,8 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
 
   return {
     generatedAt: now, warnings, errors: [], sourcesRead: 0,
+    // L1: which Station this is (live | dev) and the commit it runs; null for an engine not started by npm start (demo, dry run)
+    instance: engine.instance ? { name: engine.instance.name, commit: engine.instance.commit } : null,
     source: { mode: 'engine', root: 'data/', snapshotAt: null, synthetic: [], legacy: false },
     engine: { state: halted ? 'halted' : 'running', label: halted ? 'E-STOP ON' : 'engine · ' + (mock ? 'mock provider' : 'live'), detail: halted ? 'every call is refused until you resume (typed confirmation)' : 'Station engine, data root ' + J.dataRoot + '; provider ' + providers.mode, halted, haltedBy: halted ? halt.state.by || null : null, haltedAt: halted ? halt.state.at || null : null, provider: providers.mode, inFlight: g.inFlight, seq: engine.bus.seq, overridden: !!cfg.overridden },
     station: { name: 'Station', runtime: 'Station engine (Node ' + process.version + ')', host: host.label || null, provider: providers.mode },

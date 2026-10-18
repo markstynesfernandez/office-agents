@@ -18,6 +18,7 @@
 //     server tool, of a type config/engine.json live.web.tools names, with max_uses set, and nothing else in `tools`.
 //     The usage it returns carries server_tool_use (web_search_requests / web_fetch_requests) for the settle.
 import Anthropic from '@anthropic-ai/sdk';
+import { liveInstanceProblem } from '../instance.mjs';
 
 export const BASE_URL = 'https://api.anthropic.com';
 // server-side tool types allowed through create() (the agents' door): none. The web tools go through createWithWebTool.
@@ -99,6 +100,7 @@ const usageOf = (u = {}) => {
 export function createAnthropicText({ engineCfg, env = process.env, demo = false, halt = null, log = null, client = null, timeoutMs = null } = {}) {
   if (demo) throw new LiveProviderError('the live provider never runs in demo mode', { code: 'DEMO' });
   if (env.STATION_PROVIDER !== 'live') throw new LiveProviderError('the live provider needs STATION_PROVIDER=live in this process\'s environment (it is "' + (env.STATION_PROVIDER || 'unset') + '")', { code: 'NOT_LIVE' });
+  const notLive = liveInstanceProblem(env); if (notLive) throw new LiveProviderError(notLive, { code: 'NOT_LIVE_INSTANCE' });   // L1
   if (!engineCfg) throw new LiveProviderError('the live provider needs config/engine.json', { code: 'CONFIG' });
   const key = env.ANTHROPIC_API_KEY;
   if (typeof key !== 'string' || !key.trim()) throw new LiveProviderError('ANTHROPIC_API_KEY is not set: the live provider cannot start', { code: 'NO_KEY' });

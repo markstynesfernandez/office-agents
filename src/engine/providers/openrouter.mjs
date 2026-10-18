@@ -23,6 +23,7 @@
 //     prompt says it is a style reference only.
 import sharp from 'sharp';
 import { makeRedactor } from './anthropic.mjs';
+import { liveInstanceProblem } from '../instance.mjs';
 
 export class ImageProviderError extends Error {
   constructor(message, { code, status = undefined, retryable = false, hardStop = false, refusal = false, retryAfterMs = null, generationId = null, usd = null } = {}) {
@@ -104,6 +105,7 @@ export async function alphaFacts(buf) {
 export function createOpenRouterImage({ engineCfg, env = process.env, demo = false, halt = null, log = null, fetchImpl = null } = {}) {
   if (demo) throw new ImageProviderError('the live image provider never runs in demo mode', { code: 'DEMO', hardStop: true });
   if (env.STATION_PROVIDER !== 'live') throw new ImageProviderError('the live image provider needs STATION_PROVIDER=live in this process\'s environment (it is "' + (env.STATION_PROVIDER || 'unset') + '")', { code: 'NOT_LIVE', hardStop: true });
+  const notLive = liveInstanceProblem(env); if (notLive) throw new ImageProviderError(notLive, { code: 'NOT_LIVE_INSTANCE', hardStop: true });   // L1
   const img = (engineCfg && engineCfg.image) || {};
   if (img.provider !== 'openrouter') throw new ImageProviderError('config/engine.json image.provider is "' + img.provider + '", not openrouter', { code: 'CONFIG', hardStop: true });
   const key = env.OPENROUTER_API_KEY;

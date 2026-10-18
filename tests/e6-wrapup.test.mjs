@@ -124,7 +124,7 @@ test('frozen inputs: a direct edit of the snapshot is refused; an edit made arou
 
 // ---- 3. the file-1 gate (live image client on a fake fetch, the mock text provider; nothing leaves the process)
 
-const FAKE_KEY = 'sk-or-v1-wrapTESTKEY0123456789abcdef0123456789abcdef', LIVE = { STATION_PROVIDER: 'live', OPENROUTER_API_KEY: FAKE_KEY };
+const FAKE_KEY = 'sk-or-v1-wrapTESTKEY0123456789abcdef0123456789abcdef', LIVE = { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', OPENROUTER_API_KEY: FAKE_KEY };
 const ID = '2026-10-18--wrap-desk-props', MODEL = 'openai/gpt-5-image-mini';
 const BRIEF = ['---', 'id: ' + ID, 'status: verified', 'product_type: pngtuber-prop-pack', '---', '# Niche', 'Cosy desk props for streamers', '', '## Design direction', 'Original cosy desk props, soft outlines, no text.', ''].join('\n');
 const pad = (n) => String(n).padStart(2, '0');

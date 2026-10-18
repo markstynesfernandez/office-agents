@@ -84,12 +84,14 @@ export function createOfficeServer({ stationRoot, fixtures = false, synthetic = 
   return { server, snapshot, mode, root };
 }
 
-// npm start: the engine (mock provider until E6). --legacy / --fixtures: the read-only legacy view.
-export async function startFromEnv({ argv = process.argv.slice(2) } = {}) {
+// npm start (scripts/start.mjs): the engine. --legacy / --fixtures: the read-only legacy view. Run directly, this file
+// starts the dev instance only (the live one needs the launcher's git check).
+export async function startFromEnv({ argv = process.argv.slice(2), git = null } = {}) {
   loadEnv(path.join(ROOT, '.env'));
-  if (!argv.includes('--legacy') && !argv.includes('--fixtures')) return startEngine();
+  if (!argv.includes('--legacy') && !argv.includes('--fixtures')) return startEngine({ git });
   const fixtures = argv.includes('--fixtures') || !process.env.STATION_LEGACY_ROOT;
-  const port = Number(process.env.STATION_PORT || 8790);
+  const { resolvePort } = await import('../engine/instance.mjs');
+  const port = resolvePort(process.env);
   if (port === LEGACY_PORT) { console.error('refusing to listen on ' + LEGACY_PORT + ': that is the legacy system port'); process.exit(2); }
   const log = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'station' });
   const stationRoot = process.env.STATION_LEGACY_ROOT ? path.resolve(process.env.STATION_LEGACY_ROOT) : null;
@@ -105,20 +107,35 @@ export async function startFromEnv({ argv = process.argv.slice(2) } = {}) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) startFromEnv();
 
 // ---- engine mode: one engine on STATION_DATA_ROOT, served on 127.0.0.1 only
-export async function startEngine() {
-  const port = Number(process.env.STATION_PORT || 8790);
+// L1: the instance (live | dev, src/engine/instance.mjs) is checked before anything opens; `git` comes from the launcher
+// (scripts/start.mjs), and the live instance refuses to start without it. <data root>/SHUTDOWN (written by
+// scripts/deploy-live.mjs) asks this server to stop cleanly; it is polled every second.
+export const SHUTDOWN_FILE = 'SHUTDOWN';
+export async function startEngine({ git = null } = {}) {
+  const { instanceName, resolvePort, resolveDataRoot, checkInstance, stampDataRoot } = await import('../engine/instance.mjs');
+  let inst;
+  try { const name = instanceName(process.env); inst = checkInstance({ name, env: process.env, port: resolvePort(process.env, name), dataRoot: resolveDataRoot(process.env, ROOT), appRoot: ROOT, git }); }
+  catch (e) { console.error('station refused to start: ' + e.message); process.exit(2); }
+  const port = inst.port;
   if (port === LEGACY_PORT) { console.error('refusing to listen on ' + LEGACY_PORT + ': that is the legacy system port'); process.exit(2); }
   const { createJail } = await import('../engine/store/jail.mjs');
   const { createEngine } = await import('../engine/engine.mjs');
   const { createEngineServer } = await import('./engine-server.mjs');
-  const J = createJail();
+  const J = createJail({ dataRoot: inst.dataRoot });
   const log = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'station', jail: J });
+  log.info('station instance', { instance: inst.name, commit: inst.commit, branch: inst.branch, dataRoot: inst.dataRoot, port });
+  const shutdownFile = path.join(J.dataRoot, SHUTDOWN_FILE);
+  if (fs.existsSync(shutdownFile)) { log.warn('a stale shutdown request was removed at start'); J.remove(shutdownFile); }
   let engine;
   try { engine = createEngine({ J, log }); } catch (e) { log.error('engine did not start', { error: e.message, code: e.code || null }); console.error('engine did not start: ' + e.message); process.exit(2); }
+  engine.instance = { name: inst.name, commit: inst.commit, branch: inst.branch, port };
+  if (stampDataRoot(J, inst)) log.info('data root stamped for the ' + inst.name + ' instance', { dataRoot: J.dataRoot });
   const { server, closeAll } = createEngineServer({ engine, log });
   server.on('error', (e) => { if (e.code === 'EADDRINUSE') { log.error('port ' + port + ' is already in use (is another station running?)'); engine.close(); process.exit(3); } log.error('server error', { error: String(e) }); process.exit(1); });
-  server.listen(port, '127.0.0.1', () => { log.info('station engine listening', { url: 'http://127.0.0.1:' + port, dataRoot: J.dataRoot, provider: engine.providers.mode }); console.log('station engine: http://127.0.0.1:' + port + '  (provider ' + engine.providers.mode + ', data ' + J.dataRoot + ')'); });
-  const stop = () => { log.info('shutting down'); closeAll(); server.close(() => { engine.close(); process.exit(0); }); setTimeout(() => { engine.close(); process.exit(0); }, 1500).unref(); };
+  server.listen(port, '127.0.0.1', () => { log.info('station engine listening', { url: 'http://127.0.0.1:' + port, instance: inst.name, commit: inst.commit, dataRoot: J.dataRoot, provider: engine.providers.mode }); console.log('station engine (' + inst.name + (inst.commit ? ' ' + inst.commit.slice(0, 7) : '') + '): http://127.0.0.1:' + port + '  (provider ' + engine.providers.mode + ', data ' + J.dataRoot + ')'); });
+  let stopping = false;
+  const stop = () => { if (stopping) return; stopping = true; log.info('shutting down'); closeAll(); server.close(() => { engine.close(); process.exit(0); }); setTimeout(() => { engine.close(); process.exit(0); }, 1500).unref(); };
+  const poll = setInterval(() => { if (!stopping && fs.existsSync(shutdownFile)) { log.warn('shutdown requested (' + SHUTDOWN_FILE + ' file)'); J.remove(shutdownFile); stop(); } }, 1000); poll.unref();
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   return { server, engine };
 }

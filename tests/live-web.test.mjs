@@ -28,7 +28,7 @@ import { createScoutScript, fixtureWeb, FIXTURE_GAMES, BAD_BRIEF_GAME } from '..
 
 const ENGINE = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config', 'engine.json'), 'utf8'));
 const FAKE_KEY = 'sk-ant-api03-FAKE-web-test-key-0123456789abcdefghijklmnopqrstuvwxyz-NOTREAL';
-const LIVE_ENV = { STATION_PROVIDER: 'live', ANTHROPIC_API_KEY: FAKE_KEY };
+const LIVE_ENV = { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', ANTHROPIC_API_KEY: FAKE_KEY };
 const NOON = Date.parse('2026-10-17T11:00:00Z');
 const usd = (n) => Math.round(n * 1e6) / 1e6;
 const W = webSettings(ENGINE);

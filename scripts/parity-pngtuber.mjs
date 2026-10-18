@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
+import { resolveLiveRoot } from '../src/engine/instance.mjs';
 import { useJail } from '../src/engine/store/active.mjs';
 import { loadConfig } from '../src/engine/config.mjs';
 import { sha256 } from '../src/engine/lib/common.mjs';
@@ -33,7 +34,10 @@ import { renderListingPhotos } from '../src/engine/owner.mjs';
 
 export const ID = '2026-10-16--pngtuber-cosy-desk-props-r2', OTHER = '2026-10-14--outdoors-dad-camping-tee-r5', SET = 4;
 const OUT = path.join(APP_ROOT, 'dry-run', 'parity'), DATA = path.join(OUT, 'data');
-const LEG = path.join(APP_ROOT, 'data', 'legacy', 'jobs', ID);
+// L1: the imported legacy job is read (never written) from this checkout's data/legacy/ when it has one; the dev checkout's
+// scratch data has none, so it is read from the live checkout's (STATION_PARITY_DATA overrides). Writes stay in dry-run/parity/.
+export const PARITY_DATA = process.env.STATION_PARITY_DATA ? path.resolve(APP_ROOT, process.env.STATION_PARITY_DATA) : fs.existsSync(path.join(APP_ROOT, 'data', 'legacy', 'jobs', ID)) ? path.join(APP_ROOT, 'data') : path.join(resolveLiveRoot(process.env, APP_ROOT), 'data');
+const LEG = path.join(PARITY_DATA, 'legacy', 'jobs', ID);
 const rj = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 const walk = (d, base = d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name), base) : [path.relative(base, path.join(d, e.name)).replace(/\\/g, '/')]));
 // the layout rewrite of a path string in a record (the only change made to the legacy records in the replay copy)
@@ -47,7 +51,7 @@ function diff(a, b, p = '') {
 }
 
 export async function parity({ rebuild = false, log = () => {} } = {}) {
-  if (!fs.existsSync(LEG)) throw new Error('no imported legacy job at data/legacy/jobs/' + ID + ': run npm run import-legacy first');
+  if (!fs.existsSync(LEG)) throw new Error('no imported legacy job at ' + LEG + ': run npm run import-legacy first (or set STATION_PARITY_DATA)');
   const P = createJail({ dataRoot: OUT, extraRoots: [] });
   if (fs.existsSync(DATA)) P.remove(DATA);
   const J = createJail({ dataRoot: DATA, extraRoots: [] }); useJail(J);
@@ -114,7 +118,7 @@ export async function parity({ rebuild = false, log = () => {} } = {}) {
   const legM = rj(path.join(LEG, 'package', 'MANIFEST.json'));
   check('package gate passes', !g.reasons.length, { reasons: g.reasons, warnings: g.warnings, passes: g.passes });
   check('design passes on disk == the legacy gate\'s (3)', g.passes === legM.gates.designPasses, { legacy: legM.gates.designPasses, engine: g.passes });
-  const otherOut = path.join(APP_ROOT, 'data', 'legacy', 'jobs', OTHER, 'outbox');
+  const otherOut = path.join(PARITY_DATA, 'legacy', 'jobs', OTHER, 'outbox');
   if (fs.existsSync(otherOut)) for (const rel of walk(otherOut)) J.copy(path.join(otherOut, rel), path.join(jobs, OTHER, 'outbox', rel));
   const before = fs.existsSync(path.join(jobs, OTHER)) ? walk(path.join(jobs, OTHER)).map((r) => r + ':' + sha256(fs.readFileSync(path.join(jobs, OTHER, r)))) : [];
   const fill = fillDigitalPrices({ id: ID, roomDir: DATA, cfg: station, products, dry: true, extra: cfg.blocklist });
@@ -144,7 +148,7 @@ export async function parity({ rebuild = false, log = () => {} } = {}) {
   check('listing: US spelling (market: US English)', !listingSpellingProblems(L, station).length, { problems: listingSpellingProblems(L, station) });
 
   // ---- 7. the digital package step (legacy cost: the imported ledger rows of this job's runs, by run id)
-  const legJob = (() => { try { return rj(path.join(APP_ROOT, 'data', 'legacy', 'jobs.json')).jobs.find((j) => j.id === ID); } catch (_) { return null; } })();
+  const legJob = (() => { try { return rj(path.join(PARITY_DATA, 'legacy', 'jobs.json')).jobs.find((j) => j.id === ID); } catch (_) { return null; } })();
   const legCost = rj(path.join(LEG, 'package', 'cost.json'));
   const cost = { jobId: ID, source: 'the imported legacy ledger, rows of this job\'s runs (by run id)', totalUsd: legCost.totalUsd, legacyWorkings: legCost.workings || null, note: 'replay: cost.json is not recomputed; the engine\'s own jobs use ledger rows by jobId' };
   const pk = packageDigital({ id: ID, roomDir: DATA, blocklist: cfg.blocklist, cost, apply: true, cfg: station, products });
@@ -203,6 +207,7 @@ export async function parity({ rebuild = false, log = () => {} } = {}) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))) {
+  console.log('  legacy source (read only): ' + LEG);
   parity({ rebuild: process.argv.includes('--rebuild'), log: (l) => console.log('  ' + l) }).then((r) => {
     console.log('parity ' + (r.ok ? 'PASS' : 'FAIL') + ': ' + r.checks.filter((c) => c.ok).length + '/' + r.checks.length + ' checks, ' + r.differences.length + ' differences (' + r.unexplained + ' unexplained). Report: dry-run/parity/PARITY.md');
     if (!r.ok) process.exitCode = 1;

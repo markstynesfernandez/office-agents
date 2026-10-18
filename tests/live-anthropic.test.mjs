@@ -22,7 +22,7 @@ import { APP_ROOT } from '../src/engine/store/jail.mjs';
 
 const ENGINE = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config', 'engine.json'), 'utf8'));
 const FAKE_KEY = 'sk-ant-api03-FAKE-test-key-0123456789abcdefghijklmnopqrstuvwxyz-NOTREAL';
-const LIVE_ENV = { STATION_PROVIDER: 'live', ANTHROPIC_API_KEY: FAKE_KEY };
+const LIVE_ENV = { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', ANTHROPIC_API_KEY: FAKE_KEY };
 const NOON = Date.parse('2026-10-17T11:00:00Z');
 const usd = (n) => Math.round(n * 1e6) / 1e6;
 
@@ -129,8 +129,8 @@ test('the live provider refuses to start without STATION_PROVIDER=live, in demo 
     assert.throws(() => createProviders({ mode: 'live', engineCfg: ENGINE, env, client }), (e) => e.code === 'NOT_LIVE' && !e.message.includes(FAKE_KEY));
   }
   assert.throws(() => createProviders({ mode: 'live', engineCfg: ENGINE, env: LIVE_ENV, demo: true, client }), (e) => e.code === 'DEMO');
-  assert.throws(() => createProviders({ mode: 'live', engineCfg: ENGINE, env: { STATION_PROVIDER: 'live' }, client }), (e) => e.code === 'NO_KEY' && /ANTHROPIC_API_KEY is not set/.test(e.message));
-  assert.throws(() => createProviders({ mode: 'live', engineCfg: ENGINE, env: { STATION_PROVIDER: 'live', ANTHROPIC_API_KEY: '  ' }, client }), (e) => e.code === 'NO_KEY');
+  assert.throws(() => createProviders({ mode: 'live', engineCfg: ENGINE, env: { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live' }, client }), (e) => e.code === 'NO_KEY' && /ANTHROPIC_API_KEY is not set/.test(e.message));
+  assert.throws(() => createProviders({ mode: 'live', engineCfg: ENGINE, env: { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', ANTHROPIC_API_KEY: '  ' }, client }), (e) => e.code === 'NO_KEY');
   assert.throws(() => createProviders({ mode: 'openrouter', engineCfg: ENGINE, env: LIVE_ENV, client }), (e) => e.code === 'LOCKED');
   assert.equal(client.seen.length, 0);
   // the mock reads no key and is unchanged

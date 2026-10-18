@@ -16,7 +16,7 @@ Station is the station's own agent engine, with a live 3D isometric office that 
 ```
 npm install                       # exact versions: three, sharp, croner; playwright (dev)
 npx playwright install chromium   # once, for screenshots and the dry run's pictures
-npm start                         # the engine + office at http://127.0.0.1:8790 (data in office-agents/data/)
+npm start                         # this checkout's Station (dev here: http://127.0.0.1:8791, scratch data in data/); see "Running live"
 npm test                          # every suite (node --test)
 npm run dry-run                   # the E3 dry run on its own data root (dry-run/e3/), screenshots to screenshots/e3/
 npm run demo                      # demo mode: a scripted ~3-minute day on the mock provider, http://127.0.0.1:8791 (data-demo/)
@@ -27,7 +27,54 @@ npm run legacy-view               # the Phase 1 read-only view of the legacy bui
 npm run mock                      # the Phase 1 view from fixtures/ (no legacy root needed)
 ```
 
-Copy `.env.example` to `.env` for settings. `STATION_PROVIDER=mock` is the only working value until E6, and keys are never read in mock mode. The server binds to 127.0.0.1 only and refuses 8787, the legacy system's port.
+Copy `.env.example` to `.env` for settings. The dev checkout runs on `STATION_PROVIDER=mock` only, and keys are never read in mock mode. The server binds to 127.0.0.1 only and refuses 8787, the legacy system's port.
+
+## Running live
+
+Since L1 there are two Stations, each in its own checkout of this repository, and they never share data or a port.
+
+| | **live** | **dev** |
+|---|---|---|
+| Checkout | `C:\Users\marks\projects\office-agents-live` (a git worktree on branch `live`) | `C:\Users\marks\projects\office-agents` (branch `main`; Claude Code builds here) |
+| Port | 8790 | 8791 |
+| Data | `office-agents-live\data\` (the station's real data: jobs, ledger, approval queue) | `office-agents\data\` (scratch: a fresh store on first start, never a copy of live data) |
+| Provider | live (from its own `.env`) | mock only |
+| Top bar | **LIVE · real data** | **DEV · scratch data** (the ledger panel says "Dev ledger") |
+
+`STATION_INSTANCE` (`live` or `dev`; unset means dev) says which one a process is. The guards (`src/engine/instance.mjs`, `tests/l1-instance.test.mjs`):
+- **dev** refuses `STATION_PROVIDER=live`, port 8790, any data root in the live checkout, and a data backup folder. The live providers themselves build only when `STATION_INSTANCE=live`, so no dev script can go live.
+- **live** starts only through `npm start` (`scripts/start.mjs`), only from the live checkout, only on branch `live`, only with no uncommitted changes to tracked files, only on port 8790 and only with its data inside its own checkout. It logs the commit it runs and shows it in the badge's tooltip and on `/api/office/health`.
+- Each data root is stamped with its instance on the first start (`data\INSTANCE.json`); the other instance refuses a stamped root.
+
+**Start** (each in its own PowerShell window; Ctrl+C stops it; the shell's environment is restored afterwards):
+```
+cd C:\Users\marks\projects\office-agents-live
+powershell -ExecutionPolicy Bypass -File scripts\start-live.ps1     # live, http://127.0.0.1:8790
+
+cd C:\Users\marks\projects\office-agents
+powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1      # dev, http://127.0.0.1:8791
+powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1 -Demo   # or demo mode (data-demo\, also port 8791)
+```
+The scripts set the instance, port and data root themselves and pass on no `STATION_*` or key variable from your shell, so the live provider and keys come only from the live checkout's `.env`.
+
+**Deploy** (from the dev checkout):
+1. Commit on `main`, then `npm run test:record`: it runs the full suite on the clean tree and records the result in `logs\test-passes.jsonl`.
+2. `npm run deploy:live` (the current commit; `-- --to <commit>` for another, `-- --plan` to see what it would do). It refuses while the live engine reports a job running or a call in flight (`-- --force` overrides, and only with the live e-stop on: `cd ..\office-agents-live; npm run estop`), refuses a commit with no passing record, and refuses a dirty live worktree. Then it stops the live server (it writes `data\SHUTDOWN`; the server stops cleanly within a few seconds), moves branch `live` to the commit, runs `npm ci` only if `package-lock.json` changed, starts the server in its own window and checks the health route reports instance live and that commit. `-- --no-start` leaves the server stopped.
+3. **Roll back**: `npm run deploy:live -- --rollback` returns to the commit the last deploy came from (no test record needed: it already ran live).
+
+Every deploy and rollback appends a row (from, to, time, who, result) to `office-agents-live\data\deploys.jsonl`.
+
+**Owner's `.env` steps** (by hand; nothing in this repository writes a `.env`):
+- Live: copy `.env.live.example` to `C:\Users\marks\projects\office-agents-live\.env` and fill in `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY`.
+- Dev (`C:\Users\marks\projects\office-agents\.env`): set `STATION_INSTANCE=dev`, `STATION_PORT=8791`, keep `STATION_PROVIDER=mock`; the two API keys can be removed (dev never reads them). Compare with `.env.example`.
+
+**Notes**
+- The e-stop works on live exactly as on dev: the page's E-STOP, or `npm run estop` run in the live checkout (it writes that checkout's `data\HALT`).
+- Routines are all disabled on live; the owner enables (arms) them in the page.
+- `npm run line:live`, `scout:live` and `smoke:live` run only in the live checkout now (the dev instance refuses the live provider), still with the per-process `$env:STATION_PROVIDER='live'`, and only while the live server is stopped (one engine per data root).
+- `npm run parity` on dev reads the imported legacy job read-only from the live checkout's `data\legacy\` (dev's scratch data has none); `STATION_PARITY_DATA` overrides.
+- Backups: `C:\Users\marks\projects\office-agents-data-backup-L1` is the copy of `data\` taken before the move on 18/10/2026 (3,211 files, sha256-verified).
+- The pinned Real-ESRGAN binary (`tools\`, git-ignored) is copied into the live checkout by hand; its sha256s are in `config/engine.json` `upscale`.
 
 ### The dry run
 
@@ -53,7 +100,7 @@ Keys: **Space** pauses or resumes, **1 / 2 / 4** set the speed, **R** restarts (
 
 ### The e-stop
 
-The **E-STOP** button in the page aborts every in-flight model and image call, stops the scheduler and refuses new calls. To resume, type `RESUME`. Stopped jobs are not restarted on their own. `npm run estop` does the same from a terminal by writing `data/HALT`, which works even when the page or server is stuck. The state survives a restart.
+The **E-STOP** button in the page aborts every in-flight model and image call, stops the scheduler and refuses new calls. To resume, type `RESUME`. Stopped jobs are not restarted on their own. `npm run estop` does the same from a terminal by writing `data/HALT` (of the checkout it is run in), which works even when the page or server is stuck. The state survives a restart.
 
 ## Layout
 
@@ -65,6 +112,7 @@ src/engine/            the engine
   guard.mjs            the spend guard (every cap, every call; crash-safe reservations)
   ledger.mjs           append-only money record (fsync), the only source of cost
   halt.mjs             the e-stop (page, HALT file, CLI)
+  instance.mjs         L1: live | dev, and the guards that keep the two apart (data root stamp, ports, provider)
   scheduler.mjs        routines (croner), Europe/Dublin days, created disabled
   tools/index.mjs      the agents' tools, jailed to the job folder; no messaging, shell or browser tools exist
   providers/           mock.mjs (E1–E5); live providers are locked until E6

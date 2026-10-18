@@ -21,7 +21,7 @@ import { useJail } from '../src/engine/store/active.mjs';
 
 const CONFIG = path.join(APP_ROOT, 'config'), PROMPTS = path.join(APP_ROOT, 'prompts');
 const CFG = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS });
-const FAKE_KEY = 'sk-or-v1-redrawTESTKEY0123456789abcdef0123456789abcd', LIVE = { STATION_PROVIDER: 'live', OPENROUTER_API_KEY: FAKE_KEY }, MODEL = 'openai/gpt-5-image-mini';
+const FAKE_KEY = 'sk-or-v1-redrawTESTKEY0123456789abcdef0123456789abcd', LIVE = { STATION_PROVIDER: 'live', STATION_INSTANCE: 'live', OPENROUTER_API_KEY: FAKE_KEY }, MODEL = 'openai/gpt-5-image-mini';
 const ID = '2026-10-17--cozy-autumn-desk-props';
 const OWNER = fs.readFileSync(path.join(APP_ROOT, 'fixtures', 'engine', 'owner-brief.md'), 'utf8').replace(/\r\n/g, '\n');
 const NAMES = ['01-small-pumpkin', '02-book-stack', '03-cider-mug', '04-beeswax-candle', '05-maple-leaf-scatter', '06-knitted-throw', '07-brass-lantern', '08-cinnamon-jar', '09-acorn-pinecone', '10-teapot', '11-ghost-plush', '12-desk-lamp'].map((n) => n + '.png');

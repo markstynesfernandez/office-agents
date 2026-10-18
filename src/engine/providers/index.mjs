@@ -5,6 +5,7 @@
 //         backend is Anthropic's server-side web search / fetch through that provider (providers/anthropic-web.mjs).
 //         E6 step c0: images are OpenRouter (providers/openrouter.mjs), built with OPENROUTER_API_KEY; without that key the
 //         image provider refuses every call as a hard stop (a scout run, which draws nothing, still starts).
+//         L1: and only on the live instance (STATION_INSTANCE=live, src/engine/instance.mjs); the dev instance never goes live.
 import { createMockText, createMockImage } from './mock.mjs';
 import { createAnthropicText } from './anthropic.mjs';
 import { createAnthropicWeb } from './anthropic-web.mjs';

@@ -1792,3 +1792,79 @@ the mock provider only ($0, no live call), with tests (`tests/e6-wrapup.test.mjs
    id (each call failed before OpenRouter answered), so the script cannot settle them; they stay estimated for the owner to check
    on OpenRouter's activity page. From now on an image call that fails after a response keeps the generation id on its estimated
    row. Rows for failed Anthropic calls stay estimated. Not run: it needs the key and the network.
+
+## L1: live instance, deploy script, instance guards (build record, 18/10/2026)
+
+The owner's L1 brief: a separate always-on live Station beside the dev checkout, so agents can work on the real data while
+Claude Code keeps building. Built and tested on the mock provider only ($0, no live call, no `.env` read or written; nothing
+written to Virtual-workers). The owner makes the first live start. Tests: `tests/l1-instance.test.mjs` (11),
+`tests/l1-deploy.test.mjs` (5).
+
+1. **Two checkouts.** Live is a git worktree, `..\office-agents-live`, on branch `live` (created at `51273e9`); dev stays
+   `office-agents` on `main`. Dependencies by `npm ci` (sharp loads; npm's allow-scripts warning about sharp's install check is
+   harmless, its prebuilt binary is in place). The git-ignored `tools/realesrgan/` (4 files) was copied by hand; all four sha256s
+   match `config/engine.json` `upscale`. Nothing else git-ignored is needed by the live server (`fixtures/station-root` is for the
+   legacy view and the tests, `.cache/` was empty).
+2. **Data move.** With no Station process running and the engine lock free: the store's WAL checkpointed with the engine's own
+   store code (`PRAGMA wal_checkpoint(TRUNCATE)`, lock held; the `-wal` was 0 bytes before and gone after; the `-wal`/`-shm` pair
+   had been created by a read-only count, and no database file was deleted), the counts re-checked, then `data/` copied to
+   `..\office-agents-data-backup-L1` (3,211 files, 2,022,195,217 bytes, 1,182 folders, 0 sha256 mismatches) and moved into the
+   live checkout. Verified there with the live checkout's store code: 247 ledger rows (USD 4.443632; mirror 247), 30 jobs (same
+   states), the approval queue's one item (`2026-10-17--cozy-autumn-desk-props`, pending), 3 routines, all disabled.
+3. **Instance identity** (`src/engine/instance.mjs`, pure). `STATION_INSTANCE` live | dev; **unset is dev**, so a forgotten
+   setting never goes live. `STATION_DATA_ROOT` default `./data`, now resolved against the checkout (the jail did it against the
+   working directory). Guards:
+   - dev refuses `STATION_PROVIDER=live`, port 8790, a data root overlapping the live checkout (`STATION_LIVE_ROOT`, default the
+     sibling `office-agents-live`) and a data root inside an `office-agents-data-backup-*` folder;
+   - live refuses: no git state (it must start through `npm start`), a checkout other than the live one, a branch other than
+     `live`, uncommitted changes to tracked files (untracked and ignored files do not count), an unreadable commit, a port other
+     than 8790, a data root outside its own checkout. It logs the commit (log line "station instance", the console line, the
+     health route, the badge's tooltip);
+   - each data root is stamped `INSTANCE.json` (instance, first start, checkout, commit) on its first start, with the lock held;
+     the other instance refuses a stamped root. Together with the fixed ports, the two can never share a data root or a port;
+   - the live providers (`providers/anthropic.mjs`, `providers/openrouter.mjs`) build only with `STATION_INSTANCE=live` (code
+     `NOT_LIVE_INSTANCE`), so no script in the dev checkout can make a live call. The stubbed live tests now set it.
+   - **Choice for the owner to review:** the git checks run in `scripts/start.mjs` (now `npm start`) and `scripts/git-state.mjs`,
+     not in `src/`, because the write guard allows no child process in `src/` outside the pinned upscaler (owner decision
+     17/10/2026). Running `node src/server/index.mjs` directly starts the dev instance only.
+4. **Top bar and ledger.** A badge, **LIVE · real data** (red) or **DEV · scratch data** (green), with the commit in its tooltip;
+   the memory-core ledger panel says "DEV ledger · scratch data, not the station's spend" on dev. Health adds `instance`, `commit`
+   and `jobsRunning`; the snapshot adds `instance`. Engines not started by `npm start` (demo, dry runs) show no badge.
+5. **Dev scratch data.** The dev data root starts empty: the first start makes a fresh store (the seeded routine, disabled, and
+   nothing else). Demo mode is the scripted alternative (`start-dev.ps1 -Demo`). No live data is copied to dev.
+   - **Parity** read the imported legacy job from `data/legacy/` of its own checkout; dev now has none, so it reads it read-only
+     from the live checkout's `data/legacy/` (`STATION_PARITY_DATA` overrides). Its replay copy is still written under
+     `dry-run/parity/` as before. Flagged: this is dev reading live's folder (read only); the owner may prefer another source.
+6. **Deploy** (`scripts/deploy-live.mjs`, `npm run deploy:live`, run from dev):
+   - "tested on dev" = a row in `logs/test-passes.jsonl` for the exact commit, written by `npm run test:record`
+     (`scripts/record-tests.mjs`: refuses a dirty tree, runs `node --test`, records pass/fail counts and whether the tree stayed
+     clean). Deploy needs exit 0, fail 0, cancelled 0, pass > 0 and clean. (The script is not named `test-*.mjs`: `node --test`
+     would run it as a test file.)
+   - busy = the live health route reports a job running or a call in flight, or the live engine lock is held by a running process
+     that does not answer. Refused unless `--force`, and `--force` is refused unless the live e-stop is on;
+   - stop = a `SHUTDOWN` file in the live data root, which the server (from L1 on) polls every second and then stops cleanly; if
+     it has not stopped within 30 s the deploy fails and removes the request (a pre-L1 server must be stopped by hand);
+   - move = `git checkout -B live <commit>` in the live worktree (refused if it has uncommitted tracked changes); `npm ci` only if
+     `package-lock.json` differs between the two commits; start = `scripts/start-live.ps1` in its own window, with no `STATION_*`
+     or key variable from the deploying shell; health = instance live and the target commit within 60 s;
+   - every attempt past the refusals appends a row to `<live data>/deploys.jsonl` (at, action, from, to, by, forced, npmCi,
+     stopped, started, health, ok, and the error if any); `by` is `--by` or the Windows user name;
+   - `--rollback` goes to the `from` of the last successful deploy to the current live commit (so repeated rollbacks step back
+     through the deploys) and needs no test record (its target already ran live). `--plan` shows the steps and changes nothing.
+7. **Start scripts.** `scripts/start-live.ps1` (live, 8790, `<live>\data`) and `scripts/start-dev.ps1` (dev, 8791, `<dev>\data`,
+   mock; `-Demo` for demo mode). Both clear the shell's `STATION_*`, `ANTHROPIC_*`, `OPENROUTER_*`, `OPENAI_*` variables for the
+   server, run in the foreground, and restore the shell's environment on exit. Templates: `.env.live.example` (key names only;
+   `STATION_INSTANCE=live`, `STATION_PROVIDER=live`, `STATION_PORT=8790`) and `.env.example` for dev (`STATION_INSTANCE=dev`,
+   `STATION_PROVIDER=mock`, `STATION_PORT=8791`).
+8. **Routines** stay disabled on live (all 3 verified disabled after the move); the owner enables them in the page. The e-stop is
+   unchanged and per data root: the page's button, or `npm run estop` in the live checkout (tested on a live-stamped root).
+
+**Points for the owner:**
+- **Port 8791 is in use right now** by a non-Station program (`pythonw.exe ...\jarvis-wake\wake_listener.py`). The dev Station
+  and the demo (its default port is also 8791) cannot start while it holds the port. Options: move that listener, or choose
+  another dev port (and demo port); not changed here.
+- The live line scripts (`line:live`, `scout:live`, `smoke:live`) now run only in the live checkout, still with the
+  per-process `$env:STATION_PROVIDER='live'`, and only while the live server is stopped (one engine per data root). Running
+  lines on the always-on server from the page is the natural next step; not built.
+- The dev `.env` probably still says `STATION_PORT=8790` (the old template's default): the dev instance now refuses that port
+  until the owner sets 8791 (the start script sets it anyway).
