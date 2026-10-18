@@ -178,6 +178,8 @@ export function createToolbox(ctx) {
           if (/^01[-_.]/.test(name)) throw new ToolError('file 1 is the owner-approved style reference, copied into raw/ by the station: never draw it (' + rel + ')');
           const num = Number((/^(\d+)-/.exec(name) || [])[1]);
           if (!(num >= pol.from && num <= pol.to)) throw new ToolError('this batch draws files ' + String(pol.from).padStart(2, '0') + '–' + String(pol.to).padStart(2, '0') + ' only, named NN-<subject>.png: ' + rel);
+          // a redraw-only run (owner, 18/10/2026): the named files only; every other file of the set is kept as the station placed it
+          if (Array.isArray(pol.only) && !pol.only.includes(num)) throw new ToolError('[RUN MODE: REDRAW ONLY] draw files ' + pol.only.map((x) => String(x).padStart(2, '0')).join(', ') + ' only; the other files of set-v' + pol.set + ' are kept as they are: ' + rel);
         }
       }
       if (refArg != null) {

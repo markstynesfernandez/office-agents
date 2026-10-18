@@ -26,7 +26,7 @@ import { runAgent, effectiveAgent } from './runtime.mjs';
 import { VersionConflict } from './store/db.mjs';
 import { checkBrief, briefField } from './lib/brief-check.mjs';
 import { prepareDigitalSet, latestSet, manifestRel } from './lib/digital-prep.mjs';
-import { buildDigitalSet, isPackaged, productFor } from './lib/digital-build.mjs';
+import { buildDigitalSet, isPackaged, productFor, processFile } from './lib/digital-build.mjs';
 import { usesStyleRef, approvedRef, ensureStyleRefInSet, readStyleRef, firstFileOf, fileOneVersion, makeReviewImages } from './lib/style-ref.mjs';
 import { esrganUpscaler } from './lib/esrgan.mjs';
 import { packageDigital } from './lib/package-digital.mjs';
@@ -34,7 +34,7 @@ import { designSignOff } from './lib/owner-approval.mjs';
 import { readJsonSafe, designPasses } from './lib/gates.mjs';
 import { fillDigitalPrices } from './lib/digital-prices.mjs';
 import { checkPackage } from './lib/gates.mjs';
-import { isListingId, sha256 } from './lib/common.mjs';
+import { isListingId, sha256, sha256File } from './lib/common.mjs';
 import { hitLine, listingFields } from './lib/originality.mjs';
 import { publicView } from './lib/digital-files.mjs';
 import { canonicalDesignFile } from './tools/index.mjs';
@@ -44,7 +44,8 @@ import { validateNotes, blocklistFromNotes, readDayNotes, scoutingBriefProblems,
 import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
 import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-sources.mjs';
 import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.mjs';
-import { briefFileProblems } from './lib/brief-files.mjs';
+import { briefFileProblems, briefFileList } from './lib/brief-files.mjs';
+import { strictCleanFile, writeFlattened } from './lib/strict-cleanup.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -123,6 +124,16 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return j;
   }
 
+  // owner, 18/10/2026 (DECISIONS.md "E6 step c: redraw-only mode, cleanup pass, mock guard"): the mock provider never runs an agent on
+  // a job with live spend (its scripted replies would be recorded as the job's work). Run modes that run an agent and a restart are
+  // refused up front; runSteps stops any other start before its first agent step
+  const mockOnLive = (id) => !!(engine.providers && engine.providers.mode === 'mock') && ledger.rowsForJob(id).some((r) => r.provider && r.provider !== 'mock');
+  function mockGuard(id, what) {
+    if (!mockOnLive(id)) return;
+    const e = new Error(what + ' refused: job ' + id + ' has live spend and this engine runs the mock provider (its replies would be recorded as the job\'s work); run it live, as a per-process override (npm run line:live)');
+    e.code = 'MOCK_ON_LIVE'; throw e;
+  }
+
   // ---- intake: a verified brief becomes a job (or is refused with its reasons; no job is created then)
   function createJob({ briefText, line = 'room1-digital', by = 'owner', idempotencyKey = null }) {
     if (idempotencyKey) { const prev = store.idem.get('createJob:' + idempotencyKey); if (prev) return prev; }
@@ -186,6 +197,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
         setJob(id, { state: 'queued', step, reason: 'waiting: ' + who + ' is off duty', data: { waitingFor: def.agent, autoStart: true } }, 'job.stage', { step, waiting: def.agent });
         return store.getJob(id);
       }
+      // owner, 18/10/2026: the backstop of mockGuard (a server resume, a routine, any other start): no agent step of a job with live
+      // spend runs on the mock; the job stops there and is resumed live (npm run line:live)
+      if (def.kind === 'agent' && mockOnLive(id)) { setJob(id, { state: 'stopped', step, reason: 'stopped before ' + step + ': the job has live spend and this engine runs the mock provider (resume it live: npm run line:live)', ended_at: Date.now() }, 'job.stopped'); log.warn('mock run on a live job refused', { jobId: id, step }); return store.getJob(id); }
       // listing-only (the owner's cap): before every hop, spend so far + the estimate of this agent's run must fit under the cap
       const mode = job.data.runMode;
       if (mode && mode.kind === 'listing-only' && def.kind === 'agent') {
@@ -300,7 +314,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       else if (job.data.prepFailure && (l.prep || 0) > 0 && !job.data.prepFailureSeen) { input = '[STATION — the set could not be prepared] ' + job.data.prepFailure + '\nWrite a corrected set-v' + n + '.\n\n' + handoff(job); store.updateJob(job.id, { data: { prepFailureSeen: true } }); }
       else { const q = readJson(path.join(folder, 'qa', 'design-pass' + (l.design || 0) + '.json')) || {}; input = '[LOOP — pass ' + pass + ' of ' + (max + 1) + '] QA DESIGN asked for a revise. Write set-v' + n + ' and fix EVERY reason:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' + handoff(job); }
     } else if (step === 'qa-design' && job.data.runMode && job.data.runMode.kind === 'qa-only') input = job.data.runMode.startText;
-    else if (step === 'qa-design') input = 'Review the newest set.' + (pass > 1 ? ' [LOOP — pass ' + pass + ' of ' + (max + 1) + ']' : '') + '\n\n' + handoff(job);
+    else if (step === 'qa-design') input = 'Review the newest set.' + (pass > 1 ? ' [LOOP — pass ' + pass + ' of ' + (max + 1) + ']' : '') + '\n\n' + handoff(job) + redrawNote(job);
     else if (job.data.runMode && job.data.runMode.kind === 'listing-only' && (step === 'lister' || step === 'qa-listing')) {
       const m = job.data.runMode, q = step === 'lister' && pass > 1 ? readJson(path.join(folder, 'qa-listing', 'pass' + ((job.data.qaPasses || {}).listing || 0) + '.json')) || {} : null;
       const ho = ['```', 'LISTING_ID: ' + job.id, 'BRIEF: work/' + job.id + '/brief.md', 'DESIGN: ' + m.designFile.replace(/^jobs\//, 'work/'), 'STAGE_DONE: ' + (m.signOff === 'owner-set-approval' ? 'OWNER SET APPROVAL' : 'QA DESIGN'), '```'].join('\n');
@@ -312,6 +326,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     else input = handoff(job);
     if (step === 'designer' && !research) {
       const { product } = productFor(dataRoot, job.id, cfg.products);
+      if (product && usesStyleRef(product) && job.data.runMode && job.data.runMode.kind === 'redraw-only') return redrawFiles(job, def, pass, stopSignal, product);
       if (product && usesStyleRef(product)) return styleRefDesigner(job, def, pass, input, stopSignal, product);
     }
     const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart } });
@@ -543,6 +558,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
         }
       }
       if (!reason) return { next: def.next, note: 'set-v' + n + ' measured; originality clear' + (filesNote ? '; ' + filesNote : '') };
+      // a redraw-only set is never sent back to DESIGNER from prep (that would redraw the whole set): the owner decides
+      if (redrawPlanOf(job.id, n)) return { blocked: 'prep failed on the redraw-only set-v' + n + ' (no retry, no loop added): ' + reason };
       const used = (job.loops || {}).prep || 0;
       if (used < (def.onFail ? def.onFail.max : 0)) { store.updateJob(job.id, { loops: { prep: used + 1 }, data: { prepFailure: reason, prepFailureSeen: false } }); return { next: def.onFail.back, note: 'prep failed, back to ' + def.onFail.back + ' once: ' + reason }; }
       return { blocked: 'prep failed' + (used ? ' again after one retry' : '') + ': ' + reason };
@@ -815,6 +832,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const j = ownJob(id); checkVersion(j, expectedVersion);
     if (!controlsFor(j).restart) throw new Error('job ' + id + ' is ' + effState(j) + ': only a blocked or stopped job can be restarted');
     notHalted('restart');
+    mockGuard(id, 'a restart');
     const spent = ledger.spent.job(id), cap = cfg.engine.caps.perJobUsd;
     if (spent >= cap) throw new Error('job cap reached (' + spent.toFixed(2) + ' of ' + cap.toFixed(2) + '): a restart would be refused at its first call');
     const L = lineOf(j.line), step = j.step && L.steps[j.step] ? j.step : L.start;
@@ -860,8 +878,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const MODE_STATES = ['blocked', 'stopped', 'rejected'];
   // the run's promise rides along without being sent to the page (tests await it)
   const withRun = (out, promise) => Object.defineProperty(out, 'run', { value: promise, enumerable: false });
-  const forMode = (id, expectedVersion, what) => {
+  // the owner's run modes; a mode that runs an agent (model: true) is refused on the mock for a job with live spend (mockGuard)
+  const forMode = (id, expectedVersion, what, { model = true } = {}) => {
     const j = ownJob(id); checkVersion(j, expectedVersion); notHalted(what);
+    if (model) mockGuard(id, what);
     if (isActive(id) || !MODE_STATES.includes(j.state)) throw new Error('job ' + id + ' is ' + effState(j) + ': ' + what + ' needs a blocked, stopped or rejected job');
     if (j.kind !== 'line') throw new Error(what + ' is for line jobs');
     return j;
@@ -899,6 +919,106 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     log.info('QA-only run', { jobId: id, set: n, maxUsd: cap, overrides: overrides.map((o) => o.name), measured: { files: pd.manifest.count, limitProblems: pd.manifest.limitProblems, buildWarnings: pd.manifest.buildWarnings, originality: pd.originality.result } });
     return withRun({ jobId: id, mode: 'qa-only', set: n, maxUsd: cap, overrides: overrides.map((o) => o.name) }, startJob(id));
   }
+  // REDRAW ONLY (owner decision 3, 18/10/2026; DECISIONS.md "E6 step c: redraw-only mode, cleanup pass, mock guard"), for a style-reference
+  // product: a new set made of the owner-approved file 1, an earlier set's files QA DESIGN did not fail (copied byte for byte), files the
+  // station cleans strictly at $0 (lib/strict-cleanup.mjs), and the files DESIGNER redraws, each with QA DESIGN's finding as its brief.
+  //   prepareRedraw   station code, no model, $0 (allowed under the e-stop): writes set-vN (raw/, design.md copied, cleanup.json, the
+  //                   before/after review images of the cleaned files, redraw.json). Re-run with another plan before the set is drawn: the
+  //                   old prepared set is moved to jobs/<id>/redraw-replaced-<stamp>/ (never deleted); the same plan again changes nothing.
+  //   redrawOnly      the run mode: one DESIGNER run draws only the named files (the image tool refuses any other number), then the line
+  //                   runs on from prep. It is the next design loop (loops.design + 1), so a QA DESIGN revise past the loop limit goes to
+  //                   the Rejects Desk as always; no loop is added.
+  const redrawPlanOf = (id, n) => (n ? readJson(path.join(jobDir(id), 'set-v' + n, 'redraw.json')) : null);
+  const numOf = (f) => Number((/^(\d{2})-/.exec(String(f)) || [])[1]) || null;
+  async function prepareRedraw(id, { from, clean = [], redraw = [], expectedVersion, by = 'owner', signal = null } = {}) {
+    const j = ownJob(id); checkVersion(j, expectedVersion);
+    if (isActive(id) || !MODE_STATES.includes(j.state)) throw new Error('job ' + id + ' is ' + effState(j) + ': a redraw needs a blocked, stopped or rejected job');
+    const { product } = productFor(dataRoot, id, cfg.products);
+    if (!product || !usesStyleRef(product) || !isPackaged(product)) throw new Error('redraw-only is for a packaged style-reference product');
+    const a = approvedRef(dataRoot, id); if (!a.ok) throw new Error('redraw refused: no owner-approved file 1 (' + a.reason + ')');
+    const total = product.deliverables.files.length, src = Number(from), srcRaw = path.join(jobDir(id), 'set-v' + src, 'raw');
+    if (!Number.isInteger(src) || !fs.existsSync(srcRaw)) throw new Error('redraw refused: jobs/' + id + '/set-v' + from + '/raw does not exist');
+    const srcFiles = new Map(fs.readdirSync(srcRaw).filter((f) => /\.png$/i.test(f) && numOf(f)).map((f) => [numOf(f), f]));
+    const cleanN = clean.map(Number), list = redraw.map((r) => ({ n: Number(r.file), finding: String(r.finding || '').trim() })), seen = new Set(), bad = [];
+    for (const k of [...cleanN, ...list.map((r) => r.n)]) { if (!Number.isInteger(k) || k < 2 || k > total) bad.push('file ' + k + ' is not one of 02–' + pad2(total)); else if (seen.has(k)) bad.push('file ' + pad2(k) + ' is named twice'); seen.add(k); }
+    for (const k of cleanN) if (!srcFiles.has(k)) bad.push('set-v' + src + ' has no file ' + pad2(k) + ' to clean');
+    for (const r of list) if (r.finding.length < 10) bad.push('file ' + pad2(r.n) + ' needs QA DESIGN\'s finding as its brief');
+    const keep = []; for (let k = 2; k <= total; k++) if (!seen.has(k)) { if (srcFiles.has(k)) keep.push(k); else bad.push('set-v' + src + ' has no file ' + pad2(k) + ' to reuse'); }
+    if (bad.length) throw new Error('redraw plan refused: ' + bad.join('; '));
+    const items = briefFileList(readBrief(id)), itemOf = (k) => (items.length === total && items[k - 1] ? items[k - 1].text : null);
+    const want = { from: src, keep: keep.map((k) => srcFiles.get(k)), clean: cleanN.map((k) => srcFiles.get(k)), redraw: list.map((r) => ({ n: r.n, was: srcFiles.get(r.n) || null, item: itemOf(r.n), finding: r.finding })), file1: { name: a.ref.name, sha256: a.ref.sha256 } };
+    // the same plan on a prepared, undrawn set: unchanged; another plan: that set is moved aside and prepared again at the same number
+    const latest = latestSet(dataRoot, id), lp = redrawPlanOf(id, latest);
+    if (lp && lp.status === 'prepared' && JSON.stringify(lp.plan) === JSON.stringify(want)) return { jobId: id, set: latest, action: 'unchanged', plan: lp };
+    if (lp && lp.status === 'prepared') J.move(path.join(jobDir(id), 'set-v' + latest), path.join(jobDir(id), 'redraw-replaced-' + stamp(), 'set-v' + latest));
+    const n = lp && lp.status === 'prepared' ? latest : latest + 1, sd = path.join(jobDir(id), 'set-v' + n), raw = path.join(sd, 'raw'), rv = path.join(sd, 'review');
+    J.makeDir(raw);
+    const e1 = ensureStyleRefInSet({ roomDir: dataRoot, id, n, log }); if (!e1.ok) throw new Error('redraw refused: file 1: ' + e1.reason);
+    const kept = want.keep.map((f) => { J.copy(path.join(srcRaw, f), path.join(raw, f)); return { name: f, sha256: sha256File(path.join(raw, f)) }; });
+    if (fs.existsSync(path.join(sd, '..', 'set-v' + src, 'design.md'))) J.copy(path.join(jobDir(id), 'set-v' + src, 'design.md'), path.join(sd, 'design.md'));
+    const upscaler = engine.upscaler || esrganUpscaler({ pin: cfg.engine.upscale, workDir: sd, signal });
+    const bgs = cfg.station.digital.styleReference.review.backgrounds, cleaned = [];
+    for (const f of want.clean) {
+      const k = numOf(f), base = f.replace(/\.png$/i, ''), spec = product.deliverables.files[k - 1];
+      const rec = await strictCleanFile({ input: path.join(srcRaw, f), output: path.join(raw, f) });
+      const tmpDir = path.join(sd, '.tmp-redraw-' + process.pid), built = path.join(tmpDir, f);
+      J.makeDir(tmpDir);
+      let b; try { b = await processFile({ input: path.join(raw, f), output: built, widthPx: spec.widthPx, heightPx: spec.heightPx, cfg: cfg.station, upscaler, tmpDir, log }); if (b.ok) b.buf = fs.readFileSync(built); } finally { J.remove(tmpDir); }
+      if (!b.ok) throw new Error('redraw refused: the cleaned ' + f + ' did not build: ' + b.reason);
+      const beforeFile = path.join(jobDir(id), 'set-v' + src, 'build', f);
+      const before = fs.existsSync(beforeFile) ? await writeFlattened({ buf: fs.readFileSync(beforeFile), dir: rv, base: base + '-before', backgrounds: bgs, rel: 'jobs/' + id + '/set-v' + n + '/review' }) : null;
+      const after = await writeFlattened({ buf: b.buf, dir: rv, base: base + '-after', backgrounds: bgs, rel: 'jobs/' + id + '/set-v' + n + '/review' });
+      cleaned.push({ name: f, ...rec, built: { cleanup: b.record.cleanup }, review: { before: before || 'set-v' + src + '/build/' + f + ' missing: no before image', after } });
+      log.info('strict clean-up', { jobId: id, set: n, file: f, removedPx: rec.removedPx, regionsRemoved: rec.regionsRemoved, flooredPx: rec.flooredPx });
+    }
+    J.put(path.join(sd, 'cleanup.json'), JSON.stringify({ listingId: id, set: n, from: src, note: 'the station\'s strict clean-up of disconnected faint regions (lib/strict-cleanup.mjs), $0, no model; before = set-v' + src + '/build as delivered, after = the cleaned raw built the same way', files: cleaned }, null, 1) + '\n');
+    const plan = { listingId: id, set: n, status: 'prepared', preparedBy: by, preparedAt: new Date().toISOString(), plan: want, kept, cleaned: cleaned.map((c) => ({ name: c.name, removedPx: c.removedPx, regionsRemoved: c.regionsRemoved, sha256: c.output.sha256 })) };
+    J.put(path.join(sd, 'redraw.json'), JSON.stringify(plan, null, 1) + '\n');
+    store.updateJob(id, { reason: 'redraw-only set-v' + n + ' prepared (files ' + (list.map((r) => pad2(r.n)).join(', ') || 'none') + ' to draw); the owner starts it', data: { redraw: { set: n, from: src, status: 'prepared' } } });
+    log.info('redraw-only set prepared', { jobId: id, set: n, from: src, keep: want.keep.length, clean: want.clean.length, redraw: list.map((r) => r.n), by });
+    return { jobId: id, set: n, action: 'prepared', plan, cleanup: cleaned };
+  }
+  function redrawOnly(id, { maxUsd = null, expectedVersion, by = 'owner' } = {}) {
+    const j = forMode(id, expectedVersion, 'a redraw-only run'), n = latestSet(dataRoot, id), p = redrawPlanOf(id, n);
+    if (!p || p.status !== 'prepared') throw new Error('redraw-only run refused: set-v' + n + ' is not a prepared redraw set (run prepare-redraw first)');
+    const L = lineOf(j.line), max = (L.steps['qa-design'].onRevise || {}).max ?? 2, used = (j.loops || {}).design || 0;
+    if (used >= max) throw new Error('redraw-only run refused: no design loop left (' + used + ' of ' + max + ' used); a loop is never added');
+    const spent = ledger.spent.job(id); if (spent >= cfg.engine.caps.perJobUsd) throw new Error('job cap reached (' + spent.toFixed(2) + ' of ' + cfg.engine.caps.perJobUsd.toFixed(2) + ')');
+    const cap = maxUsd != null ? capOf(maxUsd) : null, files = p.plan.redraw.map((r) => r.n), step = files.length ? 'designer' : 'prep';
+    store.updateJob(id, { state: 'queued', step, loops: { design: used + 1 }, reason: 'redraw-only run started by the owner (set-v' + n + ', design loop ' + (used + 1) + ' of ' + max + ')', ended_at: null, data: { runMode: files.length ? { kind: 'redraw-only', set: n, files, by } : null, ...(cap != null ? { runCapUsd: cap } : {}), visited: (j.data.visited || []).filter((x) => !['designer', 'qa-design'].includes(x)), autoStart: true, waitingFor: null, stopRequested: null, prepFailure: null } }, { expectedVersion });
+    bus.emit('job.stage', { jobId: id, data: { state: 'queued', step, runMode: 'redraw-only', by } });
+    log.info('redraw-only run', { jobId: id, set: n, files, designLoop: used + 1, by });
+    return withRun({ jobId: id, mode: 'redraw-only', set: n, files, designLoop: used + 1 }, startJob(id));
+  }
+  // the DESIGNER run of a redraw-only set: the named files only, file 1 as the reference with every image
+  async function redrawFiles(job, def, pass, stopSignal, product) {
+    const id = job.id, m = job.data.runMode, n = m.set, sd = path.join(jobDir(id), 'set-v' + n), p = redrawPlanOf(id, n), a = approvedRef(dataRoot, id);
+    if (!p || p.status !== 'prepared' || n !== latestSet(dataRoot, id)) return { blocked: 'redraw-only: set-v' + n + ' is not the prepared redraw set' };
+    if (!a.ok) return { blocked: 'redraw-only: no owner-approved file 1: ' + a.reason };
+    const L = lineOf(job.line), revise = L.steps['qa-design'].onRevise || {}, total = product.deliverables.files.length, files = p.plan.redraw, nums = files.map((f) => f.n);
+    const refRel = String(a.ref.file).replace(/^jobs\/[^/]+\//, ''), refAbs = path.join(dataRoot, a.ref.file);
+    const run0 = { job, line: job.line, folder: jobDir(id), folderLabel: 'the job folder of ' + id, loopNote: null, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: null, hooks: { onRunStart: hooks.onRunStart }, imageAttemptLimit: 1 + (revise.max ?? 2) };
+    const input = '[RUN MODE: REDRAW ONLY — design loop ' + ((job.loops || {}).design || 1) + ': files ' + nums.map(pad2).join(', ') + ' of ' + total + '] STYLE REFERENCE: work/' + id + '/' + refRel + ' (the owner-approved file 1, ' + a.ref.name + '; the station sends it with every image). '
+      + 'work/' + id + '/set-v' + n + '/raw/ already holds every other file of the set (file 1, the files reused from set-v' + p.plan.from + ' and the files the station cleaned): never draw, rename or touch them. '
+      + 'Draw ONLY these files, each to work/' + id + '/set-v' + n + '/raw/NN-<subject>.png (NN = the file number; the subject is the brief\'s item N), each checked with image analysis:\n'
+      + files.map((f) => '- ' + pad2(f.n) + (f.was ? ' (was ' + f.was + ')' : '') + (f.item ? ': the brief\'s item: "' + f.item + '"' : '') + '. QA DESIGN\'s finding to fix: ' + f.finding).join('\n')
+      + '\nThen read work/' + id + '/set-v' + n + '/design.md (set-v' + p.plan.from + '\'s plan, copied by the station) and write it back whole, with these files\' new prompts and analysis.\n\n' + readBrief(id) + '\n\n' + handoff(job);
+    const run = await runAgent(engine, { ...run0, job: store.getJob(id), agentKey: def.agent, step: 'designer', pass, input, image: { mode: 'rest', set: n, from: Math.min(...nums), to: Math.max(...nums), only: nums, reference: { abs: refAbs, rel: refRel, name: a.ref.name, sha256: a.ref.sha256 } } });
+    const stop = stopFrom(run, 'DESIGNER'); if (stop) return stop;
+    const names = fs.readdirSync(path.join(sd, 'raw')), missing = nums.filter((k) => !names.some((f) => numOf(f) === k));
+    J.put(path.join(sd, 'redraw.json'), JSON.stringify({ ...p, status: 'drawn', drawnAt: new Date().toISOString(), drawn: names.filter((f) => nums.includes(numOf(f))), missing: missing.map(pad2) }, null, 1) + '\n');
+    store.updateJob(id, { data: { runMode: null, redraw: { ...(job.data.redraw || {}), status: 'drawn' } } });
+    if (missing.length) return { blocked: 'redraw-only: DESIGNER did not draw file(s) ' + missing.map(pad2).join(', ') + ' (no loop is added)' };
+    return { next: def.next, note: 'redraw-only set-v' + n + ': files ' + nums.map(pad2).join(', ') + ' drawn with the style reference ' + a.ref.name + '; the rest kept or cleaned by the station' };
+  }
+  // what QA DESIGN is told about a redraw-only set (the whole set is reviewed as usual)
+  function redrawNote(job) {
+    const n = latestSet(dataRoot, job.id), p = redrawPlanOf(job.id, n); if (!p || !p.plan) return '';
+    const names = (xs) => (xs.length ? xs.join(', ') : 'none');
+    return '\n\n[STATION — redraw-only set-v' + n + ', design loop ' + ((job.loops || {}).design || 1) + '] 01 is the owner-approved style reference. Reused unchanged (byte for byte) from set-v' + p.plan.from + ': ' + names(p.plan.keep)
+      + '. Cleaned by the station (strict clean-up of disconnected faint regions, $0; set-v' + n + '/cleanup.json): ' + names(p.plan.clean) + '. Redrawn by DESIGNER for your earlier findings: ' + names(p.plan.redraw.map((r) => pad2(r.n) + (r.was ? ' (was ' + r.was + ')' : ''))) + '. Review EVERY file of the set as usual.';
+  }
+
   // LISTING ONLY: LISTER -> price fill -> QA LISTING (one rework if its estimate fits) on the design sign-off; refused when listing files
   // already exist (nothing is overwritten); the cap is checked before every hop; it never packages
   function listingOnly(id, { maxUsd, expectedVersion, by = 'owner' } = {}) {
@@ -919,7 +1039,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // the package step on the owner's word (after a listing-only run, an owner listing approval or a text fix): the package gate, then the
   // package, then the approval queue. No model.
   function packageJob(id, { expectedVersion, by = 'owner' } = {}) {
-    forMode(id, expectedVersion, 'the package step');
+    forMode(id, expectedVersion, 'the package step', { model: false });   // station code only: no agent runs
     store.updateJob(id, { state: 'queued', step: 'package-gate', reason: 'package step started by the owner', ended_at: null, data: { runMode: null, autoStart: true, waitingFor: null, stopRequested: null } }, { expectedVersion });
     bus.emit('job.stage', { jobId: id, data: { state: 'queued', step: 'package-gate', by } });
     return withRun({ jobId: id, step: 'package-gate' }, startJob(id));
@@ -1020,5 +1140,5 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  return { createJob, saveOwnerBrief, startJob, runJob, createResearchJob, decide, qaOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
+  return { createJob, saveOwnerBrief, startJob, runJob, createResearchJob, decide, qaOnly, prepareRedraw, redrawOnly, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
 }

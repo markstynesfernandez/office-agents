@@ -4,6 +4,8 @@
 //   PowerShell: $env:STATION_PROVIDER='live'; npm run line:live -- --brief <brief id>; Remove-Item Env:STATION_PROVIDER
 //   after the owner's decision on file 1 (npm run owner -- style-ref <job id> '{"set":N,"status":"approved"}'):
 //   PowerShell: $env:STATION_PROVIDER='live'; npm run line:live -- --resume <job id>; Remove-Item Env:STATION_PROVIDER
+//   after npm run owner -- prepare-redraw <job id> '<plan>' (owner, 18/10/2026: a redraw-only set, $0):
+//   PowerShell: $env:STATION_PROVIDER='live'; npm run line:live -- --redraw <job id>; Remove-Item Env:STATION_PROVIDER
 //   npm run line:live -- --plan          the pre-run line only: no engine, no key, no call (any provider setting)
 // - Refuses unless this process's own environment says live (except --plan); refuses on the e-stop; needs the server stopped
 //   (the engine lock); refuses without OPENROUTER_API_KEY (names only, never values). No scheduler, no resumed jobs, no routine.
@@ -31,7 +33,7 @@ import { evidenceLevelOf } from '../src/engine/lib/scout-brief.mjs';
 
 const JOB_CAP_USD = 5, LINE = 'room1-digital';
 const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? String(process.argv[i + 1] || '') : null; };
-const BRIEF = arg('--brief'), RESUME = arg('--resume'), PLAN = process.argv.includes('--plan');
+const BRIEF = arg('--brief'), RESUME = arg('--resume'), REDRAW = arg('--redraw'), PLAN = process.argv.includes('--plan');
 const r6 = (n) => Math.round(n * 1e6) / 1e6;
 const rj = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return null; } };
 
@@ -58,7 +60,7 @@ if (process.env.STATION_PROVIDER !== 'live') {
   console.error('line-live refused: this process\'s STATION_PROVIDER is "' + (process.env.STATION_PROVIDER || 'unset') + '". Run it as: $env:STATION_PROVIDER=\'live\'; npm run line:live -- --brief <id>; Remove-Item Env:STATION_PROVIDER');
   process.exit(2);
 }
-if (!!BRIEF === !!RESUME) { console.error('line-live: give exactly one of --brief <brief id> or --resume <job id>'); process.exit(2); }
+if ([BRIEF, RESUME, REDRAW].filter(Boolean).length !== 1) { console.error('line-live: give exactly one of --brief <brief id>, --resume <job id> or --redraw <job id>'); process.exit(2); }
 loadEnv(path.join(APP_ROOT, '.env'));   // fills only what the shell has not set; no value is printed
 const J = createJail(), log = makeLogger({ dir: path.join(APP_ROOT, 'logs'), name: 'line-live', jail: J });
 const out = (s) => console.log(log.redact(s));
@@ -88,6 +90,12 @@ try {
     if (!c.ok) throw new Error('intake refused the brief (no job, nothing spent): ' + c.reasons.join('; '));
     id = c.id;
     await orchestrator.startJob(id);
+  } else if (REDRAW) {
+    // the redraw-only run of a prepared set (npm run owner -- prepare-redraw ...): the named files, then prep, QA DESIGN and the line on
+    id = REDRAW; const j = store.getJob(id); if (!j) throw new Error('no such job: ' + id);
+    const r = orchestrator.redrawOnly(id, { expectedVersion: j.version, by: 'owner (scripts/line-live.mjs --redraw)' });
+    out('line-live: redraw-only set-v' + r.set + ': files ' + r.files.map((k) => String(k).padStart(2, '0')).join(', ') + ' (design loop ' + r.designLoop + ')');
+    if (r.run) await r.run;
   } else {
     id = RESUME; const j = store.getJob(id); if (!j) throw new Error('no such job: ' + id);
     if (j.data && j.data.waitingFor) throw new Error('job ' + id + ' still waits for ' + j.data.waitingFor + ': the owner decides first (npm run owner -- style-ref ...)');

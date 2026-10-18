@@ -1580,3 +1580,45 @@ text: a reason with spaces does not survive PowerShell 5.1's argument passing; s
 - Prompts: DESIGNER step 3 (the spec's list is the exact format; subjects from the brief's file list); QA-DESIGN step 2,
   `complete` (every file the brief lists, by subject) and `matchesSpec` (the spec's format: count, format, pixel size; never
   subjects). QA-DESIGN 11,995 of 12,000 chars.
+
+## E6 step c: redraw-only mode, cleanup pass, mock guard (owner decisions, 18/10/2026)
+
+1. **Mock guard.** Refuse any mock run mode (the owner script's qa-only included) on a job that has live spend. Tested.
+2. **No live QA-only re-run of set-v2.** QA DESIGN's pass-1 findings stand; the spec finding is covered by the station's
+   deterministic brief-match check (`lib/brief-files.mjs`), which set-v2 passes.
+3. **Redraw-only mode**: a new set from set-v2's passing files plus the approved file 1; DESIGNER draws only the named files,
+   with file 1 as the reference. Before any redraw, files 02, 04 and 09 get a stricter deterministic clean-up at $0 (disconnected
+   regions whose alpha or luminance marks them as faint smudges, specks or fragments outside the main part are removed), with the
+   pixels removed per file reported and new review images; a file that still shows its QA finding afterwards joins the redraw
+   list. 07 (the flame), 08 (clearly cream ceramic or clear glass with a readable shape, not a grey-white slab) and 10 (no soft
+   shadow under the base) are redrawn, each with QA's finding passed to DESIGNER as the brief for that file.
+4. **Then one QA-DESIGN pass on the complete new set: design loop 2.** Approved: packaging, LISTER and QA-LISTING as briefed.
+   Revise: the Rejects Desk as designed; no loop is added.
+
+### As built
+- **Guard** (`orchestrator.mjs` `mockOnLive` / `mockGuard`): on the mock provider, a job with any ledger row from another
+  provider is refused for qa-only, listing-only, redraw-only and restart (`MOCK_ON_LIVE`); `runSteps` also stops any other
+  start (a server resume, a routine) before its first agent step, with no call made. The package step runs no agent and is
+  not refused.
+- **Strict clean-up** (`lib/strict-cleanup.mjs`): pixels under alpha 12 (the build's own floor) cleared; 8-connected parts;
+  the part with the most solid pixels (alpha >= 200) is kept; any other part is removed when its mean alpha is under 115
+  ("faint"), it has fewer than 150 solid pixels ("small"), or it is near-white (mean luminance >= 235) with under 10% of the
+  main part's solid pixels ("pale"). A glow or smudge attached to the drawing is never touched. Records per file: pixels
+  floored and removed, the regions removed with their reason and box.
+- **Redraw-only** (`orchestrator.mjs`): `prepareRedraw` ($0, no model, allowed under the e-stop; `npm run owner --
+  prepare-redraw <job> '<plan>'`) writes the new set: file 1 (the approved bytes), the reused files byte for byte, the
+  cleaned files with `cleanup.json` and before/after review images, `design.md` copied, `redraw.json` (the plan with each
+  file's brief item and QA finding). The same plan again changes nothing; another plan moves the undrawn set to
+  `redraw-replaced-<stamp>/` (never deleted). `redrawOnly` (`npm run line:live -- --redraw <job>`, live only) is the next
+  design loop: one DESIGNER run draws only the named files (the image tool refuses every other number), then prep (no retry
+  to DESIGNER from prep on a redraw set: it blocks), QA DESIGN (told which files are reused, cleaned and redrawn) and the line
+  on. A revise past the loop limit goes to the Rejects Desk; a loop is never added.
+
+### Applied to `2026-10-17--cozy-autumn-desk-props` (18/10/2026, $0, e-stop on)
+- Strict clean-up of set-v2's 02, 04 and 09: 02 removed 34 px (18 regions), 04 1,354 px (373 regions), 09 507 px (109
+  regions). Checked on the review images (before/after, on white and dark): **all three still show their QA finding** (02:
+  a soft fringe under the bottom book's lower-left edge, attached to the drawing; 04: the speckled glow either side of the
+  flame, thinner; 09: the smudge under the left acorn, fainter; the speck by the leaf stem is gone), so they joined the
+  redraw list. The cleaned set is kept in `redraw-replaced-20261018T144502Z/set-v4/` with its review images.
+- **Prepared set-v4**: 01 (approved file 1), 03, 05, 06, 11, 12 from set-v2 byte for byte; to draw: 02, 04, 07, 08, 09, 10.
+  Not run: it waits for the owner's "go redraw" (e-stop off, then the live redraw).

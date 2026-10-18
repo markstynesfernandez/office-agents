@@ -6,7 +6,7 @@
 //   node scripts/owner.mjs <action> <job-id> '<json args>'      e.g.
 //   node scripts/owner.mjs file-decision 2026-..--x '{"set":4,"name":"03-x.png","decision":"keep","qaPass":2,"qaSaid":"...","reason":"..."}'
 //   actions: file-decision, set-approval, listing-approval, edit-set, fix-listing-text, listing-photos, style-ref, qa-only, listing-only,
-//            package, resume, show
+//            package, resume, prepare-redraw, show
 // The job's current version is used (expectedVersion), so a decision made in a page tab at the same moment still wins or is refused.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +17,9 @@ import { makeLogger } from '../src/server/log.mjs';
 const [action, id, json = '{}'] = process.argv.slice(2);
 const ACTIONS = { 'file-decision': 'recordFileDecision', 'set-approval': 'approveSet', 'listing-approval': 'approveListing', 'edit-set': 'editSet', 'fix-listing-text': 'fixListingText', 'listing-photos': 'makeListingPhotos', 'style-ref': 'styleRefDecision' };
 // resume (E6 c0): a job the owner released (e.g. after the file 1 decision) runs on from its step, as the page's Restart
-const MODES = { 'qa-only': 'qaOnly', 'listing-only': 'listingOnly', package: 'packageJob', resume: 'restartJob' };
+// prepare-redraw (owner, 18/10/2026): the redraw-only set at $0 (station code, no model; allowed under the e-stop). Its run (redraw-only)
+// is live only: npm run line:live -- --redraw <job>; on the mock it is refused, as every mode that runs an agent on a job with live spend
+const MODES = { 'qa-only': 'qaOnly', 'listing-only': 'listingOnly', package: 'packageJob', resume: 'restartJob', 'prepare-redraw': 'prepareRedraw' };
 if (!action || !id || !(ACTIONS[action] || MODES[action] || action === 'show')) { console.error('usage: node scripts/owner.mjs <' + [...Object.keys(ACTIONS), ...Object.keys(MODES), 'show'].join('|') + '> <job-id> [json args]'); process.exit(2); }
 let args; try { args = JSON.parse(json); } catch (e) { console.error('the args are not valid JSON: ' + e.message); process.exit(2); }
 // the photo plan of a product may be named instead of pasted: {"planFile":"config/listing-photos/pngtuber-prop-pack.json"}
@@ -33,7 +35,7 @@ try {
   else {
     // a job that ran on the live provider is resumed live only (npm run line:live -- --resume <id>), never on the mock
     if (action === 'resume' && engine.providers.mode === 'mock' && engine.ledger.rowsForJob(id).some((r) => r.provider !== 'mock')) throw new Error('this job has live ledger rows: resume it with npm run line:live -- --resume ' + id + ' (live, per-process override), not on the mock');
-    const out = ACTIONS[action] ? await engine.owner[ACTIONS[action]](id, { ...args, expectedVersion: j.version }) : engine.orchestrator[MODES[action]](id, { ...args, expectedVersion: j.version, by: 'owner (cli)' });
+    const out = ACTIONS[action] ? await engine.owner[ACTIONS[action]](id, { ...args, expectedVersion: j.version }) : await engine.orchestrator[MODES[action]](id, { ...args, expectedVersion: j.version, by: 'owner (cli)' });
     if (out && out.run) await out.run;
     const after = engine.store.getJob(id);
     console.log(JSON.stringify({ ...out, job: { state: after.state, step: after.step, reason: after.reason, version: after.version } }, null, 1));
