@@ -55,7 +55,8 @@ details and the points for the owner are in DECISIONS.md "L1"; how to run it is 
   `npm run dry-run:scout` (4 verified, 1 blocked, 13 blocklist names, 12 web calls, 23 rows, USD 0) unchanged;
   `npm run parity -- --rebuild` 26/26, 0 unexplained (legacy job read from the live checkout, read only); port drift none (69).
 - **Dev port 8792** (owner, 18/10/2026; commit "L1: dev port 8792"): 8791 is held by another program
-  (`jarvis-wake\wake_listener.py`). The demo's default stays 8791, so demo mode cannot start while that program holds it.
+  (`jarvis-wake\wake_listener.py`). **Demo port 8793** (owner, 19/10/2026; commit "L1: Etsy key names in template, demo
+  port 8793"): the demo refuses 8787, 8790 and 8792; `.env.live.example` gains `ETSY_API_KEY` and `ETSY_SHARED_SECRET` (empty).
 - **For the owner:** create the live `.env` from `.env.live.example`; edit the dev `.env` (README).
 
 ### E6 wrap-up: frozen inputs, file-1 QA gate, allow-list, prompt trim (18/10/2026) — E6 complete

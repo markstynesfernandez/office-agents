@@ -1862,8 +1862,9 @@ written to Virtual-workers). The owner makes the first live start. Tests: `tests
 **Points for the owner:**
 - **Port 8791 is in use** by a non-Station program (`pythonw.exe ...\jarvis-wake\wake_listener.py`). **Owner decision
   (18/10/2026): the dev default port is 8792** (`PORTS.dev` in `src/engine/instance.mjs`, `start-dev.ps1`, `.env.example`, the
-  tests). The demo's own default (`DEMO_PORT` 8791, `STATION_DEMO_PORT` overrides) is unchanged, so demo mode still cannot start
-  while the listener holds 8791.
+  tests). **Owner decision (19/10/2026): the demo's default port is 8793** (`DEMO_PORT` in `scripts/demo.mjs`;
+  `STATION_DEMO_PORT` overrides); the demo now also refuses the instance ports 8790 and 8792, as well as 8787.
+- `.env.live.example` lists `ETSY_API_KEY` and `ETSY_SHARED_SECRET` (names only, empty) for E7 (owner, 19/10/2026).
 - The live line scripts (`line:live`, `scout:live`, `smoke:live`) now run only in the live checkout, still with the
   per-process `$env:STATION_PROVIDER='live'`, and only while the live server is stopped (one engine per data root). Running
   lines on the always-on server from the page is the natural next step; not built.

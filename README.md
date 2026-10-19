@@ -19,7 +19,7 @@ npx playwright install chromium   # once, for screenshots and the dry run's pict
 npm start                         # this checkout's Station (dev here: http://127.0.0.1:8792, scratch data in data/); see "Running live"
 npm test                          # every suite (node --test)
 npm run dry-run                   # the E3 dry run on its own data root (dry-run/e3/), screenshots to screenshots/e3/
-npm run demo                      # demo mode: a scripted ~3-minute day on the mock provider, http://127.0.0.1:8791 (data-demo/)
+npm run demo                      # demo mode: a scripted ~3-minute day on the mock provider, http://127.0.0.1:8793 (data-demo/)
 npm run demo:record               # records the demo in headed Chrome: screenshots/demo/station-demo.webm + 4 stills
 npm run estop                     # e-stop from a terminal; --off releases, --status shows the state
 npm run port-drift                # read-only: has any ported legacy source changed since the port?
@@ -53,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File scripts\start-live.ps1     # live, http
 
 cd C:\Users\marks\projects\office-agents
 powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1      # dev, http://127.0.0.1:8792
-powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1 -Demo   # or demo mode (data-demo\, port 8791: the demo's own default, STATION_DEMO_PORT)
+powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1 -Demo   # or demo mode (data-demo\, port 8793)
 ```
 The scripts set the instance, port and data root themselves and pass on no `STATION_*` or key variable from your shell, so the live provider and keys come only from the live checkout's `.env`.
 
@@ -87,7 +87,7 @@ The office page stays open on the run's own server and takes a screenshot at eac
 
 ### Demo mode
 
-`npm run demo` runs the real engine on the mock provider ($0, no model called) for showing the station to people. It refuses to start if a provider key (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` or any other `ANTHROPIC_`/`OPENROUTER_`/`OPENAI_` key or token) is set in the environment, or if `STATION_PROVIDER` is not `mock`. It never reads `.env`. Its data root is `office-agents/data-demo/`, which is wiped and rebuilt on every start and every restart. Its jail has only `data-demo/` and `logs/` as roots, so it cannot write to `data/` or the legacy build, and a demo root that overlaps the station data root is refused. Port: 8791 (`STATION_DEMO_PORT`). The day starts when a page connects.
+`npm run demo` runs the real engine on the mock provider ($0, no model called) for showing the station to people. It refuses to start if a provider key (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` or any other `ANTHROPIC_`/`OPENROUTER_`/`OPENAI_` key or token) is set in the environment, or if `STATION_PROVIDER` is not `mock`. It never reads `.env`. Its data root is `office-agents/data-demo/`, which is wiped and rebuilt on every start and every restart. Its jail has only `data-demo/` and `logs/` as roots, so it cannot write to `data/` or the legacy build, and a demo root that overlaps the station data root is refused. Port: 8793 (`STATION_DEMO_PORT`; it refuses 8787 and the instance ports 8790 and 8792). The day starts when a page connects.
 
 The scripted day (`demo/script.mjs`; the timing is in one file, `demo/pacing.json`) goes through the real orchestrator, spend guard, ledger and SSE. The research line and job B run side by side, and job A follows B on the Room 1 line (one job per line, Q12):
 - **Research:** DEMAND-RESEARCHER drafts the mushroom-sticker brief and EVIDENCE-CHECKER verifies it. The station's brief check then moves it to `research/briefs/`.

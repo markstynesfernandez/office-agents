@@ -13,7 +13,7 @@
 //                   back once then approves, LISTER, QA-LISTING approves, the package gate passes, approval queue
 // One job per line at a time (owner Q12) is unchanged: B and the research batch run side by side on different lines.
 // Controls (page keys, sent as same-origin, token-checked POSTs): Space pause/resume, 1/2/4 speed, R restart.
-//   npm run demo                  -> http://127.0.0.1:8791 (STATION_DEMO_PORT); the day starts when a page connects
+//   npm run demo                  -> http://127.0.0.1:8793 (STATION_DEMO_PORT; 8791 is taken on this machine by another program); the day starts when a page connects
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -25,13 +25,14 @@ import { send, sendJson, LEGACY_PORT } from '../src/server/index.mjs';
 import { makeLogger, SECRET_ENV } from '../src/server/log.mjs';
 import { loadConfig } from '../src/engine/config.mjs';
 import { createProviders } from '../src/engine/providers/index.mjs';
+import { PORTS } from '../src/engine/instance.mjs';
 import { dublinDay } from '../src/engine/time.mjs';
 import { TERMINAL } from '../src/engine/orchestrator.mjs';
 import { createDemoScript } from '../demo/script.mjs';
 
 export const DEMO_DIR = path.join(APP_ROOT, 'demo');
 export const DEMO_ROOT = path.join(APP_ROOT, 'data-demo');
-export const DEMO_PORT = 8791;
+export const DEMO_PORT = 8793;
 export const DEMO_LABEL = 'DEMO · simulated data';
 const BY = 'demo director (as the owner\'s Start click)';
 
@@ -196,6 +197,8 @@ async function waitIdle(engine, ms) { const t0 = Date.now(); while (engine.orche
 export async function startDemo({ port = Number(process.env.STATION_DEMO_PORT || DEMO_PORT), dataRoot = DEMO_ROOT, logDir = path.join(APP_ROOT, 'logs'), pacing = null, env = process.env, quiet = false, startWhen = 'page' } = {}) {
   assertDemoEnv(env);
   if (port === LEGACY_PORT) throw new DemoRefused('refusing to listen on ' + LEGACY_PORT + ': that is the legacy system port');
+  // L1: never on an instance's port (live 8790, dev 8792), so the demo can run beside both
+  for (const [name, p] of Object.entries(PORTS)) if (port === p) throw new DemoRefused('refusing to listen on ' + p + ': that is the ' + name + ' instance\'s port');
   pacing = pacing || loadPacing();
   const J = createDemoJail({ dataRoot, logDir, env });
   const log = makeLogger({ dir: logDir, name: 'demo', jail: J, quiet });

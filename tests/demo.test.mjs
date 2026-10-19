@@ -12,7 +12,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { startDemo, demoRefusals, createDemoJail, createDemoClock, loadPacing, ZERO_PACING, DemoRefused } from '../scripts/demo.mjs';
+import { startDemo, DEMO_PORT, demoRefusals, createDemoJail, createDemoClock, loadPacing, ZERO_PACING, DemoRefused } from '../scripts/demo.mjs';
 import { JailError } from '../src/engine/store/jail.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,6 +40,15 @@ test('npm run demo (node scripts/demo.mjs) exits at once with keys in the enviro
   assert.ok(!(r.stdout + r.stderr).includes(FAKE), 'the key value is never printed');
   assert.doesNotMatch(r.stdout, /Station demo: http/, 'it never listened');
   assert.ok(Date.now() - t0 < 30000);
+});
+
+test('demo port: 8793 by default (8791 is taken on this machine); never 8787 or an instance\'s port (live 8790, dev 8792)', async (t) => {
+  assert.equal(DEMO_PORT, 8793);
+  const r = temp(t);
+  for (const [port, re] of [[8787, /legacy system port/], [8790, /the live instance's port/], [8792, /the dev instance's port/]]) {
+    await assert.rejects(startDemo({ port, ...r, quiet: true, env: cleanEnv() }), (e) => e instanceof DemoRefused && re.test(e.message), String(port));
+  }
+  assert.ok(!fs.existsSync(r.dataRoot), 'refused before the jail, the wipe and the engine');
 });
 
 test('demo mode runs on the mock provider only', async (t) => {
