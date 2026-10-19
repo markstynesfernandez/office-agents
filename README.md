@@ -71,7 +71,15 @@ Every deploy and rollback appends a row (from, to, time, who, result) to `office
 **Notes**
 - The e-stop works on live exactly as on dev: the page's E-STOP, or `npm run estop` run in the live checkout (it writes that checkout's `data\HALT`).
 - Routines are all disabled on live; the owner enables (arms) them in the page.
-- `npm run line:live`, `scout:live` and `smoke:live` run only in the live checkout now (the dev instance refuses the live provider), still with the per-process `$env:STATION_PROVIDER='live'`, and only while the live server is stopped (one engine per data root).
+- Since L2 the line is started and steered from the live page (below). `npm run line:live`, `scout:live` and `smoke:live` still work, only in the live checkout (the dev instance refuses the live provider), with the per-process `$env:STATION_PROVIDER='live'`, and only while the live server is stopped (one engine per data root); the same goes for `npm run owner` (region fixes).
+
+**Driving the line from the page** (L2; on live the calls are real, on dev they are mock: $0):
+- **Start line on brief**: pick a brief (verified research briefs and owner briefs, "OWNER · ..."), or **New owner brief…**: title, theme, audience, one item per file of the product spec, price bounds at or above the floor, and whether you approve file 1 yourself. It is saved to `data\research\briefs\` after the same checks as `npm run owner-brief`; saving spends nothing. **Start line** then queues the job.
+- **Research this** queues a research job; its demand evidence is indicative until the Etsy API (E7).
+- **Every action that can spend** (start line, research, resume, re-run listing, an agent back on duty with waiting jobs) shows a dialog first: the line, the models, the job cap, today's spend and the worst case of open jobs against the daily cap, the Console's monthly limit (set `outerLimits.anthropicConsoleMonthlyUsd` in `config\engine.json` to see it), and whether it starts now or waits as next. Only **Confirm** gets the server's one-time token; the server refuses without it (428), under the e-stop (423) and when the daily cap would be exceeded (422).
+- **One job runs at a time** (`runtime.maxRunningJobs`); a further start waits as **next** and starts when the running job ends.
+- **The job panel** shows the live status (stage, agent, spend against the cap, the last 5 events) and the steering: Resume, Amend brief, file 1 Approve/Reject (when the brief set ownerFile1), Approve/Reject set in your words, and the approval queue's Approve/Reject. Region fixes stay on the command line (the panel shows the commands; stop the server first).
+- The page is served on 127.0.0.1 only; there is no login yet.
 - `npm run parity` on dev reads the imported legacy job read-only from the live checkout's `data\legacy\` (dev's scratch data has none); `STATION_PARITY_DATA` overrides.
 - Backups: `C:\Users\marks\projects\office-agents-data-backup-L1` is the copy of `data\` taken before the move on 18/10/2026 (3,211 files, sha256-verified).
 - The pinned Real-ESRGAN binary (`tools\`, git-ignored) is copied into the live checkout by hand; its sha256s are in `config/engine.json` `upscale`.

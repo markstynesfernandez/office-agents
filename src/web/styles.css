@@ -353,3 +353,23 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
   .dept-card .metrics, .dept-card .counts { display: none; }
   .dept-card h3 { margin: 0; }
 }
+
+/* L2: the spend confirmation, the owner brief form, the live status and steering in the job panel */
+.spendbox { display: grid; gap: 4px; margin: 4px 0 2px; font-size: 12px; }
+.spend-row { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; }
+.spend-row .m { color: var(--muted); }
+.spend-what { font-weight: 600; margin-bottom: 2px; }
+.spend-mock { padding: 5px 8px; border-radius: 8px; background: rgba(79, 191, 115, 0.12); border: 1px solid rgba(79, 191, 115, 0.5); }
+.spend-live { padding: 5px 8px; border-radius: 8px; background: rgba(226, 88, 77, 0.08); border: 1px solid rgba(226, 88, 77, 0.5); }
+.spend-refused { margin: 6px 0; padding: 5px 8px; border-radius: 8px; color: var(--err); background: rgba(226, 88, 77, 0.08); border: 1px solid rgba(226, 88, 77, 0.5); font-size: 12px; }
+.tp-indicative { margin-top: 4px; font-size: 11px; color: var(--muted); white-space: normal; }
+#task-product { flex: 1; min-width: 0; margin-right: 6px; }
+[data-go="owner-brief"] { white-space: nowrap; }
+.pill-next { color: var(--accent); border-color: var(--accent); }
+.task .live-line { color: var(--text); }
+.livebox .spendbar { height: 5px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; margin: 4px 0 2px; }
+.livebox .spendbar i { display: block; height: 100%; background: var(--accent); }
+.livebox .events { margin-top: 4px; display: grid; gap: 2px; font-size: 11px; }
+.livebox .ev { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.livebox .ev .m { color: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+.file1box .design img { background: repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 12px 12px; }

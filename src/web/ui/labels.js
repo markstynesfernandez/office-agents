@@ -39,7 +39,7 @@ export function createLabels({ container, office, onDept, onHub, onService }) {
     hub.addEventListener('click', onHub); container.appendChild(hub); els.hub = hub; leader('hub');
     const rack = document.createElement('div'); rack.className = 'lbl rack-lbl';
     rack.innerHTML = '<span class="lbl-name">SERVICES ' + s.services.map((sv) => '<i title="' + esc(sv.label + ': ' + sv.status) + '" style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i>').join('') + '</span>';
-    rack.title = s.services.map((sv) => sv.label + ': ' + sv.status + ' — ' + sv.detail).join('\n');
+    rack.title = s.services.map((sv) => sv.label + ': ' + sv.status + (sv.reason ? ' (why: ' + sv.reason + ')' : '') + ' — ' + sv.detail).join('\n');
     container.appendChild(rack); els.rack = rack;
     for (const sv of s.services) {
       const el = document.createElement('div'); el.className = 'lbl svc-lbl';

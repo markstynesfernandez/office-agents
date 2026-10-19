@@ -10,6 +10,30 @@ import { latestSet } from '../engine/lib/digital-prep.mjs';
 import { loadLegacy, legacyJobView, legacyMemory } from './legacy-view.mjs';
 import { roleLabel } from '../web/ui/role.js';
 import { evidenceLevelOf } from '../engine/lib/scout-brief.mjs';
+import { upscalerStatus } from '../engine/lib/upscaler-status.mjs';
+import { formProducts } from '../engine/lib/owner-brief-form.mjs';
+
+// L2: one line per engine event for a job's live status (the last 5 events in the job panel)
+export function eventText(ev, nameOf = {}) {
+  const d = ev.data || {}, who = ev.agentKey ? (nameOf[ev.agentKey] || ev.agentKey) : 'station', usd = (n) => 'USD ' + Number(n || 0).toFixed(4);
+  switch (ev.type) {
+    case 'job.created': return 'job created' + (d.by ? ' by ' + d.by : '');
+    case 'job.stage': return d.waiting ? 'waits for ' + (d.waiting === 'owner-style-ref' ? 'your decision on file 1' : d.waiting) : d.restart ? 'restarted at ' + d.step : 'stage ' + (d.step || '?') + (d.pass > 1 ? ' pass ' + d.pass : '');
+    case 'run.start': return who + ' started' + (d.step ? ' ' + d.step : '') + (d.pass > 1 ? ' pass ' + d.pass : '') + (d.model ? ' · ' + d.model : '');
+    case 'run.tool': return who + ' · ' + (d.tool || 'tool') + (d.path ? ' ' + d.path : '');
+    case 'run.end': return who + ' ' + (d.status || 'finished') + ' · ' + usd(d.usd) + (d.turns != null ? ' · ' + d.turns + ' turns' : '');
+    case 'spend.row': return 'spend ' + usd(d.usd) + ' · ' + (d.kind || '') + (d.model ? ' · ' + d.model : '');
+    case 'job.blocked': return 'blocked: ' + String(d.reason || '').slice(0, 160);
+    case 'job.stopped': return 'stopped: ' + String(d.reason || '').slice(0, 160);
+    case 'job.rejected': return 'rejected' + (d.by ? ' by ' + d.by : '');
+    case 'job.queued-for-approval': return 'packaged: in the approval queue';
+    case 'job.decided': return 'owner decision: ' + (d.action || '') + ' (' + (d.status || '') + ')';
+    case 'owner.action': return 'owner: ' + (d.action || '');
+    case 'action.refused': return 'refused: ' + String(d.error || '').slice(0, 160);
+    case 'action.done': return 'done: ' + String(d.action || '').replace(/^\/api\//, '');
+    default: return ev.type;
+  }
+}
 
 const PROGRESS = { brief: 0.08, design: 0.25, 'qa-design': 0.42, listing: 0.6, 'qa-listing': 0.75, 'approval-queue': 0.9, done: 1 };
 const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
@@ -49,6 +73,9 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
 
   // ---- jobs
   const approvals = Object.fromEntries(store.listApprovals().map((a) => [a.job_id, a]));
+  const recentByJob = {};   // L2: each job's newest engine events (the bus's ring buffer)
+  for (const ev of (engine.bus && engine.bus.recent ? engine.bus.recent(1000) : [])) if (ev.jobId) (recentByJob[ev.jobId] = recentByJob[ev.jobId] || []).push(ev);
+  const jobCapOf = (line) => ((cfg.engine.caps.perJobUsdByLine || {})[line] ?? cfg.engine.caps.perJobUsd);
   const LEG = loadLegacy(J.dataRoot);   // the imported legacy station (E4), or null before the first import
   const jobs = store.listJobs().map((j) => {
     if (j.legacy) return LEG ? legacyJobView(j, LEG, { nameOf, deptOf }) : null;
@@ -78,12 +105,20 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     out.hops = myRuns.map((r, i) => ({ i, agentId: r.agent_key, agentName: nameOf[r.agent_key] || r.agent_key, stage: (stepDef(j, r.step) || {}).column || r.step, pass: r.pass, verdict: null, usd: r6(r.usd), ms: r.ended_at ? r.ended_at - r.started_at : null, output: r.status !== 'done' && r.status !== 'running' ? r.status + ': ' + (r.end_reason || r.error || '') : null, live: r.status === 'running', at: r.ended_at || r.started_at, runId: r.run_id }));
     const qa = (sub, re) => (fs.existsSync(path.join(dir, sub)) ? fs.readdirSync(path.join(dir, sub)).map((f) => re.exec(f)).filter(Boolean).map((m) => ({ n: Number(m[1]), rec: readJson(path.join(dir, sub, m[0])) })).sort((a, b) => a.n - b.n).map((p) => ({ pass: p.n, verdict: p.rec && p.rec.verdict, reasons: ((p.rec && p.rec.reasons) || []).slice(0, 3) })) : []);
     if (j.kind !== 'research') {
-      out.qaDesign = qa('qa', /^design-pass(\d+)\.json$/); out.qaListing = qa('qa-listing', /^pass(\d+)\.json$/);
+      out.qaDesign = qa('qa', /^design-pass(\d+)\.json$/); out.qaListing = qa('qa-listing', /^pass(\d+)\.json$/); out.qaFile1 = qa('qa', /^file1-pass(\d+)\.json$/);
       // QA verdicts onto their hops, in order
       for (const [agent, list] of [['qa-design', out.qaDesign], ['qa-listing', out.qaListing]]) { let k = 0; for (const h of out.hops) if (h.agentId === agent && !h.live && list[k]) h.verdict = list[k++].verdict; }
       out.files = listFiles(dir).map((f) => 'jobs/' + j.id + '/' + f);
       const n = latestSet(J.dataRoot, j.id);
-      for (let v = 1; v <= n; v++) { const fd = path.join(dir, 'set-v' + v, 'files'); if (fs.existsSync(fd)) for (const f of fs.readdirSync(fd).filter((x) => /\.(png|jpg)$/i.test(x)).sort()) out.images.push({ url: '/api/office/image/job/' + j.id + '/set-v' + v + '/' + f, file: 'set-v' + v + '/' + f, n: v, at: fs.statSync(path.join(fd, f)).mtimeMs }); }
+      // L2: a packaged product's set-vN/files/ holds its zip, so its pictures are the built PNGs in set-vN/build/; setsBuilt counts every set
+      // the station built (a files/ folder with anything in it), whatever the product
+      out.setsBuilt = 0;
+      for (let v = 1; v <= n; v++) {
+        const fd = path.join(dir, 'set-v' + v, 'files'), bd = path.join(dir, 'set-v' + v, 'build'), inFiles = fs.existsSync(fd) ? fs.readdirSync(fd) : [];
+        if (inFiles.length) out.setsBuilt++;
+        const pics = inFiles.filter((x) => /\.(png|jpg)$/i.test(x)).sort(), useBuild = !pics.length && fs.existsSync(bd), from = useBuild ? bd : fd, sub = useBuild ? 'build/' : '';
+        for (const f of (useBuild ? fs.readdirSync(bd).filter((x) => /^[a-z0-9][a-z0-9._-]*\.png$/.test(x)).sort() : pics)) out.images.push({ url: '/api/office/image/job/' + j.id + '/set-v' + v + '/' + sub + f, file: 'set-v' + v + '/' + sub + f, n: v, at: fs.statSync(path.join(from, f)).mtimeMs });
+      }
       const lj = readJson(path.join(dir, 'outbox', 'listing.json'));
       if (lj) out.listing = { title: lj.title, tags: (lj.tags || []).length, priceEur: lj.listingPriceEur ?? null };
       const tr = store.getTracker(j.id); if (tr) out.tracker = { status: tr.status, status_reason: tr.status_reason, packaged_at: tr.packaged_at, cost_usd: tr.cost_usd, updated_at: tr.updated_at };
@@ -111,6 +146,13 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     if (!j.legacy && j.kind === 'line' && engine.owner) { try { out.owner = engine.owner.summary(j.id); } catch (_) { out.owner = null; } }
     if (j.state === 'archived') out.statusReason = j.reason;
     if (j.state === 'queued' && j.data && j.data.waitingFor) out.waitingFor = j.data.waitingFor;
+    // L2: queued to start by itself when a running job ends (at most runtime.maxRunningJobs at once)
+    out.next = j.state === 'queued' && !!(j.data && j.data.next && j.data.autoStart && !j.data.waitingFor);
+    // L2: the live status: the stage, the agent at work, spend so far against the job's cap, the last 5 events
+    if (j.kind !== 'legacy') out.liveStatus = { running: j.state === 'running', stage: out.stageLabel, step: j.step, agent: live ? live.agentName : (def.kind === 'mechanical' && j.state === 'running' ? 'station step (no model)' : null), spendUsd: out.costUsd, capUsd: jobCapOf(j.line), events: (recentByJob[j.id] || []).slice(-5).map((e) => ({ seq: e.seq, at: e.ts, type: e.type, text: eventText(e, nameOf) })) };
+    // L2: the owner's decision on file 1 (ownerFile1): the review images of the set it waits on
+    const aw = j.state === 'queued' && j.data && j.data.waitingFor === 'owner-style-ref' && j.data.styleRef && j.data.styleRef.awaiting;
+    if (aw) { const rd = path.join(dir, 'set-v' + aw.set, 'review'); out.file1Review = { set: aw.set, images: fs.existsSync(rd) ? fs.readdirSync(rd).filter((x) => /^[a-z0-9][a-z0-9._-]*\.png$/.test(x)).sort().map((f) => ({ url: '/api/office/image/job/' + j.id + '/set-v' + aw.set + '/review/' + f, file: 'set-v' + aw.set + '/review/' + f })) : [] }; }
     return out;
   }).filter(Boolean).sort((a, b) => (b.stageChangedAt || 0) - (a.stageChangedAt || 0));
 
@@ -154,7 +196,12 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     d.counts.done = ownJobs.filter((j) => (j.status === 'done' || j.lane) && j.dept === d.key).length;
     const lineJobs = jobs.filter((j) => j.kind !== 'research' && j.kind !== 'legacy');   // engine work only; legacy history is not counted here
     if (d.key === 'research') d.metrics = [{ label: 'research jobs', value: jobs.filter((j) => j.kind === 'research').length, source: 'engine store' }, { label: 'verified', value: fs.existsSync(path.join(J.dataRoot, 'research', 'briefs')) ? fs.readdirSync(path.join(J.dataRoot, 'research', 'briefs')).length : 0, source: 'data/research/briefs' }];
-    else if (d.key === 'design') { const all = lineJobs.flatMap((j) => j.qaDesign || []); d.metrics = [{ label: 'sets made', value: lineJobs.reduce((s, j) => s + new Set(j.images.map((i) => i.n)).size, 0), source: 'jobs/*/set-vN' }, { label: 'QA pass rate', value: all.length ? Math.round(100 * all.filter((p) => p.verdict === 'approved').length / all.length) + '%' : 'n/a', source: 'jobs/*/qa/design-passN.json' }]; }
+    else if (d.key === 'design') {
+      // L2 fix: sets counted from set-vN/files/ whatever it holds (a packaged product's zip too: the card showed 0 sets with the autumn job
+      // done), and the QA pass rate over every QA DESIGN verdict on disk, set reviews and file-1 checks, from all line jobs
+      const all = lineJobs.flatMap((j) => [...(j.qaDesign || []), ...(j.qaFile1 || [])]), ok = all.filter((p) => p.verdict === 'approved').length;
+      d.metrics = [{ label: 'sets made', value: lineJobs.reduce((s, j) => s + (j.setsBuilt || 0), 0), source: 'jobs/*/set-vN/files (built sets)' }, { label: 'QA pass rate', value: all.length ? Math.round(100 * ok / all.length) + '% (' + ok + ' of ' + all.length + ')' : 'n/a', source: 'jobs/*/qa/design-passN.json + file1-passN.json' }];
+    }
     else d.metrics = [{ label: 'listings drafted', value: lineJobs.filter((j) => j.listing).length, source: 'jobs/*/outbox/listing.json' }, { label: 'approval queue', value: jobs.filter((j) => j.state === 'approval').length, source: 'approvals' }];
   }
 
@@ -191,7 +238,8 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     { id: 'mock', label: 'Mock provider', kind: 'model', status: mock ? 'configured' : 'offline', detail: mock ? 'scripted replies and procedural images, $0; no key is read (E1–E5)' : 'not in use', source: 'STATION_PROVIDER' },
     { id: 'anthropic', label: 'Anthropic', kind: 'model', status: mock ? 'offline' : 'configured', detail: mock ? 'locked until E6 (owner go-ahead: billing Q1, caps Q2, products Q3)' : 'text and vision', source: 'config/engine.json tiers' },
     { id: 'openrouter', label: 'OpenRouter', kind: 'image', status: mock ? 'offline' : 'configured', detail: mock ? 'locked until E6' : 'image generation: ' + cfg.engine.image.allowedModels.join(', '), source: 'config/engine.json image' },
-    { id: 'realesrgan', label: 'Real-ESRGAN', kind: 'local', status: 'offline', detail: 'not wired in the engine yet (packaged products fail closed; owner decision at E6)', source: 'PORTED.md' },
+    // L2: from the pin, the Vulkan loader and the GPU pick (lib/upscaler-status.mjs); the reason is in the tooltip when it is red
+    (() => { const u = upscalerStatus({ ...(cfg.engine.upscale || {}), gpuId: ((cfg.station && cfg.station.upscale) || {}).gpuId ?? null }); return { id: 'realesrgan', label: 'Real-ESRGAN', kind: 'local', status: u.status, detail: u.detail, reason: u.reason, source: 'config/engine.json upscale (pinned)' }; })(),
     { id: 'etsy', label: 'Etsy', kind: 'market', status: 'manual', detail: 'no API key; the owner publishes approved packages by hand', source: 'ENGINE-PLAN.md §5.3' }
   ];
 
@@ -211,7 +259,10 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     services, departments, agents, hub, jobs, board, stages: columns.filter((c) => !['brief', 'approval-queue', 'done'].includes(c.key)), columns, routines, events, spend,
     // E5: what the page's controls may offer (the server checks every action again)
     controls: { live: true, haltVersion: halt.state.at || 0, tiers: Object.entries(cfg.engine.tiers).map(([k, t]) => ({ key: k, model: t.model })), effortLevels: cfg.engine.effortLevels || [], routineTargets: (engine.routineTargets || []).map((t) => ({ id: t.id, label: t.label })), perRunCapUsd: caps.perRunUsd, today: day },
-    briefs: engine.orchestrator ? engine.orchestrator.verifiedBriefs().map((b) => ({ file: b.file, id: b.id, niche: b.niche, status: b.status, product: b.product, jobId: b.jobId })) : []
+    briefs: engine.orchestrator ? engine.orchestrator.verifiedBriefs().map((b) => ({ file: b.file, id: b.id, niche: b.niche, status: b.status, product: b.product, jobId: b.jobId })) : [],
+    // L2: the owner brief form (products.json: the file count from the spec, the floor, whether file 1 is a style reference) and the job limit
+    ownerBriefForm: { products: formProducts(cfg.products, cfg.station), today: day },
+    jobLimit: { maxRunning: engine.maxRunningJobs || null, running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }
   };
 }
 

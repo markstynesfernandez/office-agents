@@ -78,7 +78,7 @@ const svcGlyph = (id) => '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none
 function renderTopbar(s) {
   $('#station-name').textContent = s.station.name;
   // services: glyph + short name + status dot, details in the tooltip (they are also on the services rack)
-  $('#services').innerHTML = s.services.map((sv) => '<span class="svc" title="' + esc(sv.label + ' — ' + sv.status + '\n' + sv.detail + '\nsource: ' + sv.source) + '">' + svcGlyph(sv.id) + '<span class="svc-name">' + esc(SVC_NAME[sv.id] || sv.label) + '</span><i style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i></span>').join('');
+  $('#services').innerHTML = s.services.map((sv) => '<span class="svc" title="' + esc(sv.label + ' — ' + sv.status + (sv.reason ? '\nwhy: ' + sv.reason : '') + '\n' + sv.detail + '\nsource: ' + sv.source) + '">' + svcGlyph(sv.id) + '<span class="svc-name">' + esc(SVC_NAME[sv.id] || sv.label) + '</span><i style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i></span>').join('');
   // engine status badge; the runtime line (engine, Node, host) lives in its tooltip
   const badge = $('#source-badge');
   const eng = s.engine || { state: 'legacy', label: 'legacy view' };

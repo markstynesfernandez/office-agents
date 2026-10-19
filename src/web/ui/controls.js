@@ -81,5 +81,48 @@ export function createControls({ root, toastRoot, onRefresh = () => {} }) {
     });
   }
   function close(v) { if (open) open.finish(v); }
-  return { act, dialog, toast, isDialogOpen: () => !!open, closeDialog: () => close(null), session: getSession };
+
+  // ---- L2: the spend confirmation. Every action that can spend asks the server for a quote (the line, the models, the job cap, today's
+  // spend against the daily cap, the Console's monthly limit if configured; "mock: $0" on the mock) and shows it; Confirm returns the
+  // server's single-use token, which the action must carry (the server refuses without it). Resolves { token } (null when nothing would
+  // spend), or null when cancelled or refused.
+  async function confirmSpend(action, params, { extra = '' } = {}) {
+    const s = await getSession();
+    let r, j;
+    try { r = await fetch('/api/spend/quote', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-station-action': s.actionToken, 'x-idempotency-key': intentKey('quote', action, params, Date.now()) }, body: JSON.stringify({ action, params }) }); j = await r.json().catch(() => ({})); }
+    catch (e) { toast('Not sent: the station server did not answer (' + e.message + ')', 'err'); return null; }
+    if (!r.ok) { if (r.status === 403 && /token/.test(j.error || '')) session = null; toast('Not done: ' + (j.error || 'HTTP ' + r.status), 'err'); return null; }
+    const q = j.result || {};
+    if (!q.needed) return { token: null };
+    const ok = await dialog({ title: (q.refusals.length ? 'Cannot start: ' : 'Confirm spend: ') + q.label, intro: spendHtml(q) + extra, confirm: q.refusals.length ? 'Close' : (q.mock ? 'Confirm (mock: $0)' : 'Confirm'), danger: !q.mock && !q.refusals.length });
+    if (!ok || q.refusals.length) return null;
+    return { token: q.token };
+  }
+  // the action with its confirm token: the confirm step first, then the write
+  async function spendAct(action, pathname, body, opts = {}) {
+    const c = await confirmSpend(action, body, opts);
+    if (!c) return null;
+    return act(pathname, c.token ? { ...body, confirmToken: c.token } : body, opts);
+  }
+  return { act, dialog, toast, confirmSpend, spendAct, isDialogOpen: () => !!open, closeDialog: () => close(null), session: getSession };
+}
+
+const usd = (n, d = 2) => 'USD ' + Number(n || 0).toFixed(d);
+// pure (tests/l2-steer.test.mjs): the dialog body of a spend quote
+export function spendHtml(q) {
+  const row = (k, v) => '<div class="spend-row"><span class="m">' + esc(k) + '</span><span>' + v + '</span></div>';
+  const dy = q.day || {}, ln = dy.line || {}, c = q.console || {}, jb = q.job || {};
+  return '<div class="spendbox">'
+    + (q.mock ? '<div class="spend-mock"><b>mock: $0</b> · no model is called and nothing is charged</div>' : '<div class="spend-live"><b>LIVE</b> · real model and image calls, charged to the station\'s accounts</div>')
+    + '<div class="spend-what">' + esc(q.what || '') + '</div>'
+    + row('line', esc(q.lineLabel || q.line) + ' <span class="mono">(' + esc(q.line) + ')</span>')
+    + row('models', (q.agents || []).map((a) => esc(a.name) + ': <span class="mono">' + esc(a.model || '?') + '</span> · ' + esc(a.effort || '') + (a.onDuty ? '' : ' <span class="tag tag-warn">off duty</span>')).join('<br>') + (q.imageModel ? '<br>images: <span class="mono">' + esc(q.imageModel) + '</span>' : ''))
+    + row('job cap', usd(jb.capUsd) + (jb.spentUsd ? ' · spent so far ' + usd(jb.spentUsd, 4) : '') + ' · this up to ' + usd(jb.headroomUsd) + ' · one agent run at most ' + usd(jb.perRunUsd))
+    + row('today', usd(dy.spentUsd, 4) + ' spent + open jobs up to ' + usd(dy.openJobsUsd) + ' + this up to ' + usd(jb.headroomUsd) + ' = ' + usd(dy.worstUsd) + ' of the daily cap ' + usd(dy.capUsd) + ' <span class="muted">(' + esc(dy.date || '') + ', Dublin)</span>')
+    + (ln.capUsd ? row('line today', usd(ln.worstUsd) + ' worst case of ' + usd(ln.capUsd)) : '')
+    + row('Console', c.configured ? usd(c.leftUsd) + ' left of the monthly limit ' + usd(c.limitUsd) + ' <span class="muted">(' + esc(c.note) + ')</span>' : 'monthly limit not configured <span class="muted">(' + esc(c.note || '') + '; Anthropic rows this month ' + usd(c.usedUsd, 4) + ')</span>')
+    + (q.openrouterDailyUsd != null && q.imageModel ? row('OpenRouter', 'key limit ' + usd(q.openrouterDailyUsd) + ' a day (outside the engine)') : '')
+    + row('queue', q.queue && q.queue.startsAsNext ? 'waits as <b>next</b>: ' + esc(q.queue.running.join(', ')) + ' running (at most ' + q.queue.maxRunning + ' at a time)' : 'starts now')
+    + (q.refusals && q.refusals.length ? '<div class="spend-refused">' + q.refusals.map((x) => '<div>✕ ' + esc(x) + '</div>').join('') + '</div>' : '')
+    + '</div>';
 }

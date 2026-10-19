@@ -36,7 +36,8 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
     save.addEventListener('click', async () => {
       const patch = {}; if (duty.checked !== a.enabled) patch.enabled = duty.checked; if (tier.value !== a.tier) patch.tier = tier.value; if (effort.value !== a.effort) patch.effort = effort.value;
       save.disabled = true;
-      const r = await ctl.act('/api/agents/update', { agentKey: a.id, expectedVersion: a.version, ...patch }, { ok: (x) => a.name + ': ' + (x.enabled ? 'on duty' : 'off duty') + ' · ' + x.tier + ' · effort ' + x.effort + ' (from the next run)' + (x.started && x.started.length ? '; ' + x.started.length + ' waiting job(s) started' : '') });
+      const send = patch.enabled === true ? (p, b, o) => ctl.spendAct('agent-on-duty', p, b, o) : (p, b, o) => ctl.act(p, b, o);
+      const r = await send('/api/agents/update', { agentKey: a.id, expectedVersion: a.version, ...patch }, { ok: (x) => a.name + ': ' + (x.enabled ? 'on duty' : 'off duty') + ' · ' + x.tier + ' · effort ' + x.effort + ' (from the next run)' + (x.started && x.started.length ? '; ' + x.started.length + ' waiting job(s) started' : '') });
       if (r && still('agent', a.id)) showAgent(a.id, true); else if (!r) dirty();
     });
   }
@@ -46,11 +47,35 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
     const c = j.controls || {}; if (!live() || !Object.values(c).some(Boolean)) return '';
     const b = (k, label, cls = '', title = '') => '<button class="btn ' + cls + '" data-jobact="' + k + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</button>';
     const appr = [c.approve && b('approve', 'Approve', 'btn-ok', 'records approved and the time; nothing is sent anywhere'), c.reject && b('reject', 'Reject…', 'btn-danger', 'a reason is required'), c.publish && b('publish', 'Mark published…', 'btn-primary', 'the date and the Etsy listing URL you published by hand')].filter(Boolean).join('');
-    const job = [c.stop && b('stop', '■ Stop job', 'btn-danger', 'aborts this job\'s call in flight; nothing else stops'), c.restart && b('restart', '↻ Restart', 'btn-primary', 'runs again from the step it stopped at, within the caps'), c.rerunListing && b('rerun', 'Re-run listing…', '', 'LISTER again on the QA-approved design'), c.archive && b('archive', 'Archive…', '', 'files move to rerun-archive-*, never deleted')].filter(Boolean).join('');
+    const job = [c.stop && b('stop', '■ Stop job', 'btn-danger', 'aborts this job\'s call in flight; nothing else stops'), c.restart && b('restart', '↻ Resume', 'btn-primary', 'runs on from the step it stopped at, within the caps (confirm the spend first)'), c.rerunListing && b('rerun', 'Re-run listing…', '', 'LISTER again on the QA-approved design'), c.archive && b('archive', 'Archive…', '', 'files move to rerun-archive-*, never deleted')].filter(Boolean).join('');
     return (appr ? '<div class="ctlbox approvalbox"><div class="ctlhead">Approval queue · your decision</div>' + evidenceBanner(j.evidenceLevel) + '<div class="btnrow">' + appr + '</div>'
       + (j.queue ? '<div class="pkg"><span class="m">package</span> <span class="mono" title="' + esc(j.queue.folderAbs || '') + '">data/' + esc(j.queue.folder) + '</span> <button class="btn btn-mini" data-copy="' + esc(j.queue.folderAbs || j.queue.folder) + '">copy path</button></div>' : '')
       + '<div class="srcnote">Approve sends nothing anywhere: the package folder is what you upload to Etsy by hand.</div></div>' : '')
-      + (job ? '<div class="ctlbox"><div class="ctlhead">Job controls</div><div class="btnrow">' + job + '</div>' + (halted() ? '<div class="srcnote">E-STOP is on: Restart and Re-run listing are refused until you resume.</div>' : '') + '</div>' : '');
+      + (job ? '<div class="ctlbox"><div class="ctlhead">Job controls</div><div class="btnrow">' + job + '</div>' + (halted() ? '<div class="srcnote">E-STOP is on: Resume and Re-run listing are refused until you resume the engine.</div>' : '') + '</div>' : '')
+      + steerBox(j);
+  }
+  // L2: steering a job from its panel: the owner's decision on file 1 (ownerFile1), an owner amendment, the set approved or rejected in the
+  // owner's words. Region fixes stay on the command line for now (the command is shown)
+  function steerBox(j) {
+    const c = j.controls || {}; if (!live()) return '';
+    const b = (k, label, cls = '', title = '') => '<button class="btn ' + cls + '" data-jobact="' + k + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</button>';
+    const f1 = c.file1 && j.file1Review ? '<div class="ctlbox file1box"><div class="ctlhead">File 1 of set-v' + esc(c.file1.set) + ' · your decision (ownerFile1)</div>'
+      + (j.file1Review.images.length ? '<div class="design">' + j.file1Review.images.map((im) => '<img src="' + esc(im.url) + '" alt="' + esc(im.file) + '" title="' + esc(im.file) + '">').join('') + '</div>' : '<div class="muted">no review images in set-v' + esc(c.file1.set) + '/review/</div>')
+      + '<div class="btnrow">' + b('file1-approve', 'Approve file 1…', 'btn-ok', 'records your approval of file 1 as the style reference; then Resume draws the rest of the set') + b('file1-reject', 'Reject file 1…', 'btn-danger', 'file 1 is drawn again with your reason') + '</div>'
+      + '<div class="srcnote">QA DESIGN passed it; the job waits for you. Resume after deciding (the spend is confirmed then).</div></div>' : '';
+    const owner = [c.amend && b('amend', 'Amend brief…', '', 'a dated owner amendment: the frozen brief stays as it is; every agent reads the amendment from its next run'),
+      c.setDecision && b('set-approve', 'Approve set-v' + c.setDecision.set + '…', 'btn-ok', 'your approval of the whole set in your words (needs your decision on every file first; originality and build warnings are never overridden)'),
+      c.setDecision && b('set-reject', 'Reject set-v' + c.setDecision.set + '…', 'btn-danger', 'the job ends rejected with your words; nothing is deleted')].filter(Boolean).join('');
+    const fix = c.fixTools ? '<div class="srcnote">Region fixes stay on the command line for now (stop the server first: one engine per data root): <span class="mono">npm run owner -- edit-set ' + esc(j.id) + ' --from &lt;plan.json&gt;</span>, then <span class="mono">npm run owner -- rebuild ' + esc(j.id) + ' --from &lt;args.json&gt;</span> (set-v' + esc(c.fixTools.set) + ').</div>' : '';
+    return f1 + (owner || fix ? '<div class="ctlbox"><div class="ctlhead">Owner steering</div>' + (owner ? '<div class="btnrow">' + owner + '</div>' : '') + fix + '</div>' : '');
+  }
+  // L2: the live status of a job: stage, agent at work, spend so far against its cap, its last 5 events (re-rendered on every event)
+  function liveBox(j, now) {
+    const L = j.liveStatus; if (!L || !(L.running || j.next || (L.events && L.events.length))) return '';
+    const pct = L.capUsd ? Math.min(100, Math.round(100 * (L.spendUsd || 0) / L.capUsd)) : 0;
+    return '<div class="ctlbox livebox"><div class="ctlhead">' + (L.running ? '● Live' : j.next ? 'Next in the queue' : 'Latest') + ' · ' + esc(L.stage || '') + (L.agent ? ' · ' + esc(L.agent) : '') + '</div>'
+      + '<div class="spendbar" title="spend so far against the job cap"><i style="width:' + pct + '%"></i></div><div class="srcnote">USD ' + Number(L.spendUsd || 0).toFixed(4) + ' of the job cap USD ' + Number(L.capUsd || 0).toFixed(2) + (j.next ? ' · ' + esc(j.statusReason || '') : '') + '</div>'
+      + (L.events && L.events.length ? '<div class="events">' + L.events.slice().reverse().map((e) => '<div class="ev" title="' + esc(when(e.at, now) + ' · ' + e.text) + '"><span class="m">' + esc(new Date(e.at).toLocaleTimeString('en-IE', { hour12: false })) + '</span> ' + esc(e.text) + '</div>').join('') + '</div>' : '') + '</div>';
   }
   function wireJob(j) {
     body.querySelectorAll('[data-copy]').forEach((el) => el.addEventListener('click', async () => { try { await navigator.clipboard.writeText(el.dataset.copy); ctl.toast('Package path copied', 'ok'); } catch (_) { ctl.toast(el.dataset.copy, 'ok'); } }));
@@ -111,6 +136,7 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
       + '<div class="sp-head"><div class="ell"><h2 class="ell" title="' + esc(j.title) + '">' + esc(j.title) + synthTag(j) + legacyTag(j) + '</h2><div class="sp-sub mono">' + esc(j.id) + '</div></div><span class="close btn-icon" title="close (Esc)">×</span></div>'
       + '<div class="sp-status">' + (active ? esc(j.stageLabel) + ' · ' + esc(jobStatusLabel[j.status] || j.status) + ' · ' + j.progress + '%' : statusPill(j) + (j.lane ? '' : ' <span class="muted">' + esc(j.stageLabel) + '</span>')) + (j.flag === 'error' ? ' <span class="tag tag-err">error</span>' : '') + '</div>'
       + (j.statusReason ? '<div class="quote" style="margin-top:6px">' + esc(j.statusReason) + '</div>' : '')
+      + liveBox(j, now)
       + jobControls(j)
       + (j.qaPassedGateFailed ? '<div class="srcnote">both QA stages approved; the deterministic package gate blocked it (tracker status_reason)</div>' : '')
       + synthBox(j) + warnBox(j.warnings) + legacyBox(j, now)
@@ -154,14 +180,27 @@ export async function runJobAction(ctl, j, k) {
     const v = await ctl.dialog({ title: 'Stop this job?', intro: t + '<br><br>Aborts this job\'s model or image call in flight and stops it at its current step. Other jobs and routines carry on. Restart it later from the same step.', confirm: 'Stop job', danger: true });
     return !!(v && await ctl.act('/api/jobs/stop', { jobId: j.id, expectedVersion: j.version }, { ok: 'Stopping ' + j.title }));
   }
-  if (k === 'restart') return !!(await ctl.act('/api/jobs/restart', { jobId: j.id, expectedVersion: j.version }, { ok: (x) => 'Restarted ' + j.title + ' at ' + x.step }));
+  if (k === 'restart') return !!(await ctl.spendAct('restart', '/api/jobs/restart', { jobId: j.id, expectedVersion: j.version }, { ok: (x) => 'Resumed ' + j.title + ' at ' + x.step + (x.started ? '' : ': next in the queue') }));
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  // L2 steering: the owner's decisions from the job panel (each sends the version the page loaded; nothing here spends)
+  if (k === 'amend') {
+    const v = await ctl.dialog({ title: 'Owner amendment', intro: t + '<br><br>A dated record in <span class="mono">jobs/' + esc(j.id) + '/amendments/</span>. The frozen brief is never edited: every line agent reads the amendment with it from its next run, and it overrules the brief on the point it names.', fields: [{ name: 'text', label: 'Your words', type: 'textarea', required: true, rows: 4, placeholder: 'e.g. item 4 now reads: a beeswax candle with a lit flame, no glow around it' }, { name: 'date', label: 'Date', type: 'date', required: true, value: today(), max: today() }], confirm: 'Record amendment' });
+    return !!(v && await ctl.act('/api/owner/amend', { jobId: j.id, text: v.text.trim(), date: v.date, expectedVersion: j.version }, { ok: 'Amendment recorded for ' + j.title }));
+  }
+  if (k === 'file1-approve' || k === 'file1-reject') {
+    const ok = k === 'file1-approve', set = j.controls.file1.set;
+    const v = await ctl.dialog({ title: (ok ? 'Approve' : 'Reject') + ' file 1 of set-v' + set, intro: t + '<br><br>' + (ok ? 'File 1 becomes the style reference for the rest of the set.' : 'File 1 is drawn again, with your reason, before any other file.') + ' Then use Resume (the spend is confirmed there).', fields: [{ name: 'reason', label: ok ? 'Your note (optional)' : 'Reason', type: 'textarea', required: !ok, rows: 3, placeholder: ok ? 'e.g. reviewed on white and dark: edges clean' : 'what to change' }], confirm: ok ? 'Approve file 1' : 'Reject file 1', danger: !ok });
+    return !!(v && await ctl.act('/api/owner/style-ref', { jobId: j.id, set, status: ok ? 'approved' : 'rejected', reason: v.reason.trim(), date: today(), expectedVersion: j.version }, { ok: 'File 1 ' + (ok ? 'approved' : 'rejected') + ' for ' + j.title + ': Resume to continue' }));
+  }
+  if (k === 'set-approve' || k === 'set-reject') {
+    const ok = k === 'set-approve', set = j.controls.setDecision.set;
+    const v = await ctl.dialog({ title: (ok ? 'Approve' : 'Reject') + ' set-v' + set, intro: t + '<br><br>' + (ok ? 'Your approval of the whole set in your words, after your decision on every file (recorded with the CLI or earlier). Originality and build warnings are never overridden; the server checks the set again.' : 'The job ends rejected with your words, recorded in the decision log. Nothing is deleted; Archive moves the files later.'), fields: [{ name: 'words', label: 'Your words', type: 'textarea', required: true, rows: 3 }], confirm: ok ? 'Approve set' : 'Reject set', danger: !ok });
+    return !!(v && await ctl.act(ok ? '/api/owner/set-approval' : '/api/owner/set-rejection', { jobId: j.id, set, words: v.words.trim(), date: today(), expectedVersion: j.version }, { ok: 'Set-v' + set + ' ' + (ok ? 'approved' : 'rejected') + ' for ' + j.title }));
+  }
   if (k === 'archive') {
     const v = await ctl.dialog({ title: 'Archive this job?', intro: t + '<br><br>The job leaves the board (it stays under the Archived chip). Its files move to <span class="mono">jobs/' + esc(j.id) + '/rerun-archive-*</span>; nothing is deleted. brief.md stays where it is.', confirm: 'Archive' });
     return !!(v && await ctl.act('/api/jobs/archive', { jobId: j.id, expectedVersion: j.version }, { ok: 'Archived ' + j.title }));
   }
-  if (k === 'rerun') {
-    const v = await ctl.dialog({ title: 'Re-run the listing?', intro: t + '<br><br>The listing, its QA-LISTING records and the package move to <span class="mono">rerun-archive-*</span> (never deleted); LISTER and QA-LISTING run again on the QA-approved design, within the caps.', confirm: 'Re-run listing' });
-    return !!(v && await ctl.act('/api/tasks/rerun-listing', { jobId: j.id, expectedVersion: j.version }, { ok: 'Listing re-run started for ' + j.title }));
-  }
+  if (k === 'rerun') return !!(await ctl.spendAct('rerun-listing', '/api/tasks/rerun-listing', { jobId: j.id, expectedVersion: j.version }, { ok: 'Listing re-run started for ' + j.title, extra: '<div class="dlg-note">' + t + ': the listing, its QA-LISTING records and the package move to <span class="mono">rerun-archive-*</span> (never deleted).</div>' }));
   return false;
 }

@@ -181,16 +181,33 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  // ---- start: one job per line at a time; returns the run promise (or null when it has to wait)
+  // ---- start: one job per line at a time, and (L2) at most engine.maxRunningJobs across every line on an instance started by npm start;
+  // returns the run promise (or null when it has to wait: the job stays queued as "next" and starts when a running job ends)
+  const queuedAt = (j) => (j.data && j.data.queuedAt) || j.updated_at || j.created_at || 0;
   function startJob(id) {
     const job = store.getJob(id); if (!job) throw new Error('no such job: ' + id);
     if (!['queued'].includes(job.state)) throw new Error('job ' + id + ' is ' + job.state + ', not queued');
     if (halt.isHalted()) throw new Error('e-stop is on');
-    const L = lineOf(job.line), cur = active.get(L.id);
-    if (cur && (L.maxConcurrentJobs || 1) <= 1) { setJob(id, { reason: 'waiting: ' + cur.jobId + ' is on the line (one job at a time)', data: { autoStart: true } }); return null; }
-    const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { blocklistOnEnd(id); active.delete(L.id); const next = store.listJobs({ states: ['queued'] }).filter((j) => j.line === L.id && !/^interrupted/.test(j.reason || '') && !(j.data && j.data.waitingFor) && j.id !== id).pop(); if (next && !halt.isHalted() && next.data && next.data.autoStart) startJob(next.id); });
+    const L = lineOf(job.line), cur = active.get(L.id), max = engine.maxRunningJobs || null;
+    if (cur && (L.maxConcurrentJobs || 1) <= 1) { setJob(id, { reason: 'next: waiting for ' + cur.jobId + ' (one job at a time on the line)', data: { autoStart: true, next: true, queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
+    if (max && active.size >= max) { const on = [...active.values()].map((a) => a.jobId); setJob(id, { reason: 'next: waiting for ' + on.join(', ') + ' (at most ' + max + ' job' + (max === 1 ? '' : 's') + ' running at a time)', data: { autoStart: true, next: true, queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
+    if (job.data && job.data.next) store.updateJob(id, { data: { next: false } });
+    const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { blocklistOnEnd(id); active.delete(L.id); startNext(id); });
     active.set(L.id, { jobId: id, promise });
     return promise;
+  }
+  // the queued jobs that start by themselves, oldest first (never one interrupted by a restart or waiting for an agent or the owner)
+  function nextJobs(exceptId = null) {
+    return store.listJobs({ states: ['queued'] }).filter((j) => j.id !== exceptId && !j.legacy && j.data && j.data.autoStart && !j.data.waitingFor && !/^interrupted/.test(j.reason || '') && !isActive(j.id)).sort((a, b) => queuedAt(a) - queuedAt(b));
+  }
+  function startNext(endedId) {
+    if (halt.isHalted()) return;
+    const max = engine.maxRunningJobs || null;
+    for (const j of nextJobs(endedId)) {
+      if (max && active.size >= max) return;
+      if (active.get(j.line)) continue;
+      try { startJob(j.id); } catch (e) { log.warn('next job not started', { jobId: j.id, error: e.message }); }
+    }
   }
 
   async function runJob(id) {
@@ -847,7 +864,21 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       restart: !running && (RESTARTABLE.includes(st) || (j.state === 'queued' && !(j.data && j.data.waitingFor))),
       archive: !running && ARCHIVABLE.includes(st),
       rerunListing: !running && designOk && RERUNNABLE.includes(st) && !(ap && ['approved', 'published'].includes(ap.status)),
-      approve: !!ap && ap.status === 'pending' && j.state === 'approval', reject: !!ap && ap.status === 'pending' && j.state === 'approval', publish: !!ap && ap.status === 'approved'
+      approve: !!ap && ap.status === 'pending' && j.state === 'approval', reject: !!ap && ap.status === 'pending' && j.state === 'approval', publish: !!ap && ap.status === 'approved',
+      // L2, steering from the job panel: an owner amendment (the frozen-inputs record), the owner's decision on file 1 when the job waits
+      // for it (ownerFile1), the owner's set approval or rejection with the owner's words, and where the CLI fix tools apply
+      ...steering(j, st, running)
+    };
+  }
+  function steering(j, st, running) {
+    if (j.kind !== 'line' || running || ['archived', 'approved', 'published'].includes(st)) return {};
+    const aw = j.data && j.data.styleRef && j.data.styleRef.awaiting, n = latestSet(dataRoot, j.id);
+    const stoppedWithSet = n > 0 && ['blocked', 'stopped', 'rejected', 'incomplete'].includes(j.state) && fs.existsSync(path.join(jobDir(j.id), 'qa'));
+    return {
+      amend: j.state !== 'approval' && fs.existsSync(path.join(jobDir(j.id), 'brief.md')),
+      file1: j.state === 'queued' && j.data && j.data.waitingFor === 'owner-style-ref' && aw ? { set: aw.set } : null,
+      setDecision: stoppedWithSet ? { set: n } : null,
+      fixTools: n > 0 && ['blocked', 'stopped', 'rejected', 'incomplete'].includes(j.state) ? { set: n } : null
     };
   }
 
@@ -1221,5 +1252,5 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  return { createJob, saveOwnerBrief, startJob, runJob, createResearchJob, decide, qaOnly, prepareRedraw, redrawOnly, rebuildSet, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
+  return { createJob, saveOwnerBrief, startJob, runJob, nextJobs, createResearchJob, decide, qaOnly, prepareRedraw, redrawOnly, rebuildSet, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
 }

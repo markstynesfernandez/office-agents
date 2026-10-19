@@ -17,6 +17,7 @@ import { loadConfig, demoMarkers } from './config.mjs';
 import { useJail } from './store/active.mjs';
 import { createOwnerActions } from './owner.mjs';
 import { createOrchestrator } from './orchestrator.mjs';
+import { createSpendDesk } from './spend.mjs';
 import { effectiveAgent } from './runtime.mjs';
 import { validSchedule } from './scheduler.mjs';
 import { withScouting, scoutedTerms } from './lib/scouting.mjs';
@@ -62,7 +63,7 @@ export function recover({ store, bus, log, resumeOnRestart = 1 }) {
   return out;
 }
 
-export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false, upscaler = null } = {}) {
+export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false, upscaler = null, limitJobs = false } = {}) {
   J = J || createJail({ dataRoot });
   const unlock = takeLock(J, log);
   useJail(J);   // the ported station modules write through this engine's jail
@@ -83,7 +84,10 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     const rec = recover({ store, bus, log, resumeOnRestart: cfg.engine.runtime.resumeOnRestart });
     const prov = providers || createProviders({ mode: process.env.STATION_PROVIDER || cfg.engine.provider, script, delayMs: mockDelayMs, log, engineCfg: cfg.engine, halt, demo });
     const engine = { J, cfg, store, ledger, bus, halt, guard, providers: prov, log, clock, upscaler, recovered: { charged: recovered, ...rec } };
+    // L2: an instance started by npm start (limitJobs) runs at most runtime.maxRunningJobs jobs at once, across every line; others queue as next
+    engine.maxRunningJobs = limitJobs ? (cfg.engine.runtime.maxRunningJobs ?? 1) : null;
     engine.orchestrator = createOrchestrator(engine, { hooks });
+    engine.spend = createSpendDesk(engine);   // L2: the spend confirmation in front of every page action that can spend
     // E6 b3: a scout job that restart recovery ended (blocked) still puts its notes' names on the scouting blocklist
     for (const j of rec.jobs.filter((x) => x.action === 'blocked')) engine.orchestrator.blocklistOnEnd(j.id);
     engine.owner = createOwnerActions(engine);   // the owner's decisions and owner-started mechanical steps (port batch 17/10/2026)

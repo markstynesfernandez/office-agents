@@ -1870,3 +1870,68 @@ written to Virtual-workers). The owner makes the first live start. Tests: `tests
   lines on the always-on server from the page is the natural next step; not built.
 - The dev `.env` probably still says `STATION_PORT=8790` (the old template's default): the dev instance now refuses that port
   until the owner sets 8792 (the start script sets it anyway).
+
+## L2: drive the live line from the Station page (build record, 19/10/2026)
+
+The owner's L2 brief: start and steer work from the always-on live server's page while it runs, instead of the line scripts with the
+server stopped. Built and tested on the mock provider only ($0, no live call, no `.env` read or written; nothing written to
+Virtual-workers). Everything runs in the server's own engine (one engine per data root). Caps, the e-stop, the originality and IP rules,
+the approval queue and the owner-only decisions are unchanged. Tests: `tests/l2-steer.test.mjs` (10).
+
+1. **Owner brief form** (`lib/owner-brief-form.mjs`, `POST /api/tasks/owner-brief`). The page composes an owner brief in the existing
+   format (front matter `status: owner`, `origin: owner`, `product_type`, `audience_segment`, `ownerFile1: true` only when the owner picks
+   the pause; Niche; Demand evidence "evidence level: owner" with no figure; Design direction with the title idea, the theme and the
+   numbered items; `owner bounds: USD <min>–<max> (owner brief, <date>)`; the AI disclosure note). The form checks only its own fields:
+   a product from products.json, exactly as many items as the spec has files, bounds at or above the product's floor. Then
+   `orchestrator.saveOwnerBrief` applies the same intake checks as `npm run owner-brief` (format, originality of the whole brief in every
+   category, scouting blocklist, image policy, bounds against the floor); a refusal saves nothing and the form reopens with the reasons.
+   The id is the Dublin date plus a slug of the title. Saving spends nothing; **Start line** is the spending step.
+2. **Research this** queues a research job through `orchestrator.startResearch` as before. The pane and the dialog say: "Demand evidence
+   from research is indicative until the Etsy API (E7)".
+3. **Spend confirmation** (`src/engine/spend.mjs`, `POST /api/spend/quote`). The quote shows the line, each agent's model and effort
+   (from the effective tier), the image model, the job cap, the per-run cap, today's spend + the remaining cap of every open job (running,
+   or queued to start by itself) + this action's headroom against the daily cap, the same for the line's day cap, the Anthropic Console's
+   monthly limit and what is left of it when configured, the OpenRouter key limit, and whether the job starts now or waits as next. On
+   the mock it says "mock: $0". A quote with no refusal carries a token: random, single use, bound to the action and its parameters, valid
+   10 minutes (`runtime.confirmTtlMs`), kept in memory (a restart drops it; the page asks again).
+4. **Server-side refusals** on every spending endpoint, in this order, with nothing written: the e-stop (423, `HALTED`); no token, a token
+   for other parameters, a reused or expired token (428, `CONFIRM_REQUIRED`); the daily or line-day cap would be exceeded in the worst case
+   (422, `DAY_CAP`). Spending endpoints: research, start line, resume (restart), re-run listing, QA-only, listing-only, and an agent put
+   back on duty while jobs wait for it (with nothing waiting it spends nothing and needs no token; under the e-stop nothing wakes). The
+   guard still checks every call exactly as before.
+5. **Job limit** (`runtime.maxRunningJobs`: 1). Applies to an engine started by `npm start` (live and dev: `createEngine({ limitJobs: true
+   })`), across every line; demo, dry runs and the line scripts keep the one-job-per-line rule only. A further start waits in `queued` as
+   **next** (`data.next`, reason "next: waiting for <id> (at most 1 job running at a time)") and starts when a running job ends, oldest
+   first. After an e-stop, next jobs stay queued (as before: nothing restarts by itself); Resume starts them.
+6. **Steering from the job panel**: Resume (spend-confirmed); Amend brief (`POST /api/owner/amend` -> `owner.amendJob`, the frozen-inputs
+   amendment record); file 1 Approve/Reject with the review images when the job waits for the owner (`/api/owner/style-ref`, then Resume);
+   Approve set (`/api/owner/set-approval`, unchanged: it still needs the owner's decision on every file first); **Reject set** (new,
+   `POST /api/owner/set-rejection` -> `owner.rejectSet`: appended to `owner-decisions.jsonl` as `set-rejection`, the job ends `rejected`
+   with the owner's words, nothing deleted; refused on a job in the approval queue, where Reject applies); the approval queue's
+   Approve/Reject as before. Region fixes stay CLI; the panel shows `npm run owner -- edit-set ...` and `rebuild ...` and that they need
+   the server stopped.
+7. **Live status**: per job, the stage, the agent at work, spend so far against the job cap and the last 5 engine events (from the bus's
+   ring buffer), re-rendered on every event. The 3D office already follows the engine's runs, so agents sit at their desks while working
+   and go to the lounge when idle on live as on the mock.
+8. **Design card fix**: sets are counted from `set-vN/files/` whatever it holds (a packaged product keeps its zip there, so the autumn job
+   counted 0); a packaged set's thumbnails come from `set-vN/build/` (new image route `.../set-vN/build/<file>` and `.../review/<file>`).
+   The QA pass rate covers every QA DESIGN verdict on disk, set reviews and file-1 checks, of all line jobs, shown with its counts.
+9. **Real-ESRGAN pill: the finding.** The status was **hard-coded** `offline` in `src/server/engine-model.mjs`, with the note "not wired in
+   the engine yet" from before the port batch; the pill was red on every instance whatever the upscaler's state. On live (read-only): the
+   binary, `vcomp140.dll` and both model files match their sha256s in `config/engine.json`, the Vulkan loader
+   (`C:\Windows\System32\vulkan-1.dll`) is present, and the autumn job's set-v4 build record says method realesrgan on GPU 1, NVIDIA
+   GeForce RTX 5060 Laptop GPU. **Fix**: `lib/upscaler-status.mjs` reports the pin check (sha256s, cached on the files' size and time),
+   the Vulkan loader and how the GPU is picked; red only when one fails, with the reason in the tooltip ("why: ...").
+10. **127.0.0.1 only** as before (tested on the source). No auth yet; remote access later with Tailscale.
+
+**Points for the owner:**
+- **Console monthly limit**: `config/engine.json` `outerLimits.anthropicConsoleMonthlyUsd` is `null` (not configured), so the dialog says
+  "not configured". Set it to the Console's limit to see what is left; the figure is that limit less this Dublin month's Anthropic rows in
+  the station ledger (other use of the workspace is not seen). `outerLimits` is information only, never a cap.
+- **The day-cap test is the worst case**: today's spend plus the remaining cap of every open job plus this one. With USD 5.00 a job and
+  USD 10.00 a day, two jobs can be committed at once on a fresh day; a third start is refused until spend settles. Say if you want the
+  estimate from past runs instead.
+- **Enabling a routine** has no spend confirmation (it starts nothing now; each firing is held to the routine's per-run cap, the daily
+  caps and the e-stop, and enabling is your approval as before). Say if you want the dialog there too.
+- **QA pass rate** now counts file-1 checks with set reviews; say if you want them shown apart.
+- **Reject set** is new: it ends the job `rejected` with your words. Approve set is unchanged.

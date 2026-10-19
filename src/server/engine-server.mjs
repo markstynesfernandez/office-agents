@@ -19,6 +19,7 @@ import { send, sendJson, serveStatic } from './index.mjs';
 import { buildEngineSnapshot } from './engine-model.mjs';
 import { loadLegacy } from './legacy-view.mjs';
 import { RESUME_WORD } from '../engine/halt.mjs';
+import { composeOwnerBrief } from '../engine/lib/owner-brief-form.mjs';
 
 const MAX_BODY = 16 * 1024;
 
@@ -43,9 +44,11 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
   const sameOrigin = (req) => { const host = req.headers.host || ''; const o = req.headers.origin; return !!o && (o === 'http://' + host) && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host); };
   function readBody(req) { return new Promise((resolve, reject) => { let n = 0; const parts = []; req.on('data', (c) => { n += c.length; if (n > MAX_BODY) { reject(new Error('body too large')); req.destroy(); } else parts.push(c); }); req.on('end', () => { try { resolve(parts.length ? JSON.parse(Buffer.concat(parts).toString('utf8')) : {}); } catch (e) { reject(new Error('body is not JSON')); } }); req.on('error', reject); }); }
 
-  async function thumb(id, set, file) {
-    const key = id + '/' + set + '/' + file; if (thumbs.has(key)) return thumbs.get(key);
-    const f = path.join(engine.J.dataRoot, 'jobs', id, set, 'files', file);
+  // sub: files (the delivered PNGs), build (a packaged set's built PNGs; L2) or review (file 1 flattened on light and dark for the owner; L2)
+  async function thumb(id, set, file, sub = 'files') {
+    const key = id + '/' + set + '/' + sub + '/' + file; if (thumbs.has(key)) return thumbs.get(key);
+    if (!/^\d{4}-\d{2}-\d{2}--[a-z0-9-]+$/.test(id)) return null;
+    const f = path.join(engine.J.dataRoot, 'jobs', id, set, sub, file);
     if (!fs.existsSync(f)) return null;
     const { default: sharp } = await import('sharp');
     const buf = await sharp(f).resize({ width: 512, height: 512, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
@@ -73,14 +76,27 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
   const stale = (what) => Object.assign(new Error(what + ' changed since you loaded it'), { code: 'STALE' });
   const ver = (b) => (Number.isInteger(b.expectedVersion) ? b.expectedVersion : null);
   const str = (v, n = 200) => String(v == null ? '' : v).slice(0, n);
+  // L2: an action that can spend passes the spend gate first (src/engine/spend.mjs): the e-stop, the confirm token from /api/spend/quote,
+  // the day caps now. It runs only after that; a refusal writes nothing.
+  const spends = (action, fn) => (body, key) => { engine.spend.gate(action, body); return fn(body, key); };
+  // the owner brief from the page's form: composed (lib/owner-brief-form.mjs), then saved through the same intake checks as the CLI
+  function saveFormBrief(body) {
+    const c = composeOwnerBrief({ title: body.title, theme: body.theme, audience: body.audience, items: Array.isArray(body.items) ? body.items.slice(0, 50).map((x) => str(x, 200)) : [], productKey: str(body.productKey, 80), ownerFile1: body.ownerFile1 === true, minUsd: body.minUsd, maxUsd: body.maxUsd }, { products: engine.cfg.products, cfg: engine.cfg.station });
+    if (!c.ok) throw Object.assign(new Error('the owner brief needs: ' + c.problems.join('; ')), { code: 'BAD_REQUEST' });
+    const r = O.saveOwnerBrief({ text: c.text, by: BY });
+    if (!r.ok) throw Object.assign(new Error('the owner brief was refused at intake (nothing saved): ' + r.reasons.join('; ')), { code: 'INTAKE' });
+    return { id: r.id, file: r.id + '.md', saved: r.file, changed: r.changed, warnings: r.warnings };
+  }
   const ACTIONS = {
     // the e-stop: pressing it is never refused for a stale page; resuming needs the typed word and the current state
     'POST /api/engine/halt': (body) => engine.halt.press({ by: 'owner (office button)', reason: str(body.reason) }),
     'POST /api/engine/resume': (body) => { if (ver(body) !== (engine.halt.state.at || 0)) throw stale('the e-stop'); return engine.halt.resume({ by: 'owner (office, typed confirmation)', confirm: body.confirm }); },
     // the task box
-    'POST /api/tasks/research': (body) => O.startResearch(str(body.text, 4000), { by: BY }),
-    'POST /api/tasks/brief': (body, key) => O.startBrief(str(body.file), { by: BY, idempotencyKey: key }),
-    'POST /api/tasks/rerun-listing': (body) => O.rerunListing(str(body.jobId), { expectedVersion: ver(body), by: BY }),
+    'POST /api/tasks/research': spends('research', (body) => O.startResearch(str(body.text, 4000), { by: BY })),
+    'POST /api/tasks/brief': spends('start-line', (body, key) => O.startBrief(str(body.file), { by: BY, idempotencyKey: key })),
+    'POST /api/tasks/rerun-listing': spends('rerun-listing', (body) => O.rerunListing(str(body.jobId), { expectedVersion: ver(body), by: BY })),
+    // L2: an owner brief from the page's form (saving spends nothing; Start line is the spending step)
+    'POST /api/tasks/owner-brief': (body) => saveFormBrief(body),
     // the scheduler (routines are created disabled; enabling is the approval)
     'POST /api/routines/create': (body) => engine.routines.create(body),
     'POST /api/routines/update': (body) => engine.routines.update(str(body.id), body, { expectedVersion: ver(body) }),
@@ -97,14 +113,18 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/owner/fix-listing-text': (body) => engine.owner.fixListingText(str(body.jobId), { ownerWords: str(body.ownerWords, 2000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
     'POST /api/owner/listing-photos': (body) => engine.owner.makeListingPhotos(str(body.jobId), { plan: body.plan && typeof body.plan === 'object' ? body.plan : null, expectedVersion: ver(body) }),
     'POST /api/owner/style-ref': (body) => engine.owner.styleRefDecision(str(body.jobId), { set: Number(body.set), status: str(body.status, 20), reason: str(body.reason, 1000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
-    'POST /api/jobs/qa-only': (body) => O.qaOnly(str(body.jobId), { set: Number(body.set), maxUsd: Number(body.maxUsd), expectedVersion: ver(body), by: BY }),
-    'POST /api/jobs/listing-only': (body) => O.listingOnly(str(body.jobId), { maxUsd: Number(body.maxUsd), expectedVersion: ver(body), by: BY }),
+    // L2: an owner amendment (the frozen-inputs amendment record) and the owner's rejection of a set, from the job panel
+    'POST /api/owner/amend': (body) => engine.owner.amendJob(str(body.jobId), { text: str(body.text, 8000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
+    'POST /api/owner/set-rejection': (body) => engine.owner.rejectSet(str(body.jobId), { set: Number(body.set), words: str(body.words, 2000), date: str(body.date, 10) || undefined, expectedVersion: ver(body) }),
+    'POST /api/jobs/qa-only': spends('qa-only', (body) => O.qaOnly(str(body.jobId), { set: Number(body.set), maxUsd: Number(body.maxUsd), expectedVersion: ver(body), by: BY })),
+    'POST /api/jobs/listing-only': spends('listing-only', (body) => O.listingOnly(str(body.jobId), { maxUsd: Number(body.maxUsd), expectedVersion: ver(body), by: BY })),
     'POST /api/jobs/package': (body) => O.packageJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
     // desk panels: on/off duty, tier, effort (applies at the next run)
-    'POST /api/agents/update': (body) => engine.updateAgent(str(body.agentKey, 60), { enabled: body.enabled, tier: body.tier, effort: body.effort }, { expectedVersion: ver(body) }),
+    // back on duty starts the agent's waiting jobs: that can spend, so it passes the spend gate when there are any (under the e-stop nothing wakes)
+    'POST /api/agents/update': (body) => (body.enabled === true && !engine.halt.isHalted() && engine.spend.gate('agent-on-duty', body), engine.updateAgent(str(body.agentKey, 60), { enabled: body.enabled, tier: body.tier, effort: body.effort }, { expectedVersion: ver(body) })),
     // job panel and board
     'POST /api/jobs/stop': (body) => O.stopJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
-    'POST /api/jobs/restart': (body) => O.restartJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
+    'POST /api/jobs/restart': spends('restart', (body) => O.restartJob(str(body.jobId), { expectedVersion: ver(body), by: BY })),
     'POST /api/jobs/archive': (body) => O.archiveJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
     ...((ext && ext.actions) || {})
   };
@@ -119,7 +139,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     try {
       if (req.method === 'POST') {
         const act = ACTIONS['POST ' + p];
-        if (!act) return sendJson(res, { error: 'unknown action' }, 404);
+        if (!act && p !== '/api/spend/quote') return sendJson(res, { error: 'unknown action' }, 404);
         if (!sameOrigin(req)) return refuse(res, p, 403, 'same-origin requests only', { origin: req.headers.origin || null });
         if (req.headers['x-station-action'] !== token) return refuse(res, p, 403, 'missing or stale action token: reload the page', { token: req.headers['x-station-action'] ? 'wrong' : 'missing' });
         if (!/^application\/json\b/.test(req.headers['content-type'] || '')) return refuse(res, p, 415, 'JSON only');
@@ -128,6 +148,8 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
         let body;
         try { body = await readBody(req); } catch (e) { return refuse(res, p, 400, e.message); }
         if (!body || typeof body !== 'object' || Array.isArray(body)) return refuse(res, p, 400, 'body must be a JSON object');
+        // L2: the spend quote and its confirm token; writes nothing, so it is not kept for idempotency (a token is single use)
+        if (p === '/api/spend/quote') { try { return sendJson(res, { ok: true, result: engine.spend.quote(str(body.action, 40), body.params && typeof body.params === 'object' && !Array.isArray(body.params) ? body.params : {}) }); } catch (e) { return refuse(res, p, 400, e.message, { code: e.code || null }); } }
         const ik = 'action:' + p + ':' + key;
         // a repeat: the same answer again, nothing done twice (in flight, or already recorded)
         if (inFlight.has(ik)) { const prev = await inFlight.get(ik); log.info('action repeat (idempotent)', { path: p, key }); return sendJson(res, { ...prev.body, replayed: true }, prev.status); }
@@ -141,7 +163,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
             log.info('action', { path: p, key, ...who }); audit(true, p, who);
             return { status: 200, body: { ok: true, result: out ?? null } };
           } catch (e) {
-            const status = e.code === 'STALE' ? 409 : e.code === 'HALTED' ? 423 : 400;
+            const status = e.code === 'STALE' ? 409 : e.code === 'HALTED' ? 423 : e.code === 'CONFIRM_REQUIRED' ? 428 : e.code === 'DAY_CAP' ? 422 : 400;
             const error = e.code === 'STALE' ? 'Not saved: ' + e.message.replace(/ \(version .*\)$/, '') + '. The page has been refreshed; check it and try again.' : e.message;
             log.warn('action refused', { path: p, key, status, error: e.message }); audit(false, p, { status, error, code: e.code || null, jobId: body.jobId || null });
             return { status, body: { error, code: e.code || null } };
@@ -171,7 +193,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       let m;
       if ((m = /^\/api\/office\/jobs\/([^/]+)$/.exec(p))) { const job = snapshot().jobs.find((j) => j.id === m[1]); if (!job) return sendJson(res, { error: 'no such job' }, 404); const cost = job.kind === 'research' ? null : job.kind === 'legacy' ? legacyCost(job.id) : engine.orchestrator.costRecord(job.id); return sendJson(res, { ...job, cost: cost && { totalUsd: cost.totalUsd, rows: cost.rows, byKind: cost.byKind, mock: cost.mock } }); }
       if ((m = /^\/api\/office\/agents\/([^/]+)$/.exec(p))) { const s = snapshot(); const a = s.agents.find((x) => x.id === m[1]); if (!a) return sendJson(res, { error: 'no such agent' }, 404); const runs = engine.store.runsOf({ agentKey: a.id, limit: 12 }).map((r) => ({ at: r.ended_at || r.started_at, title: (r.step || '') + ' pass ' + (r.pass || 1) + ' · ' + (r.job_id || ''), reason: r.status === 'done' ? 'done' : r.status, usd: r.usd, tokens: r.tokens_in + r.tokens_out, durationMs: r.ended_at ? r.ended_at - r.started_at : null, failureCode: ['failed', 'cap', 'refused'].includes(r.status) ? r.status : null })); const jobs = a.recentJobs.map((id) => s.jobs.find((j) => j.id === id)).filter(Boolean); return sendJson(res, { ...a, runs, jobs }); }
-      if ((m = /^\/api\/office\/image\/job\/([^/]+)\/(set-v\d+)\/([a-z0-9][a-z0-9._-]*\.(?:png|jpg))$/.exec(p))) { const buf = await thumb(m[1], m[2], m[3]); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=60' }) : send(res, 404, 'no such image', 'text/plain'); }
+      if ((m = /^\/api\/office\/image\/job\/([^/]+)\/(set-v\d+)\/(?:(build|review)\/)?([a-z0-9][a-z0-9._-]*\.(?:png|jpg))$/.exec(p))) { const buf = await thumb(m[1], m[2], m[4], m[3] || 'files'); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=60' }) : send(res, 404, 'no such image', 'text/plain'); }
       if ((m = /^\/api\/office\/image\/legacy\/(\d{4}-\d{2}-\d{2}--[a-z0-9-]+)\/((?:work|package|rejected)\/[a-z0-9][a-z0-9._/-]*\.png)$/.exec(p)) && !m[2].includes('..')) { const buf = await legacyThumb(m[1], m[2]); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=300' }) : send(res, 404, 'no such image', 'text/plain'); }
       if (p.startsWith('/api/')) return sendJson(res, { error: 'unknown route' }, 404);
       return serveStatic(res, p);

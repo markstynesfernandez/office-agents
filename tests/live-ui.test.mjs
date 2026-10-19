@@ -22,6 +22,8 @@ const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 const OVERRIDES = { productsFile: readJson(path.join(FIX, 'products.json')), stationSet: readJson(path.join(FIX, 'station-config-patch.json')).set };
 const briefText = (id) => fs.readFileSync(path.join(FIX, 'briefs', id + '.md'), 'utf8').replace(/\{\{TODAY\}\}/g, dublinDay());
 
+const SPENDING = { '/api/tasks/research': () => 'research', '/api/tasks/brief': () => 'start-line', '/api/tasks/rerun-listing': () => 'rerun-listing', '/api/jobs/restart': () => 'restart', '/api/jobs/qa-only': () => 'qa-only', '/api/jobs/listing-only': () => 'listing-only', '/api/agents/update': (b) => (b.enabled === true ? 'agent-on-duty' : null) };
+
 async function boot(t, { mockDelayMs = 0, startScheduler = false, tag = 'live', wrap = (s) => s } = {}) {
   const r = tempRoot(tag);
   const station = loadConfig({ configDir: path.join(APP_ROOT, 'config'), promptsDir: path.join(APP_ROOT, 'prompts'), overrides: OVERRIDES }).station;
@@ -37,7 +39,16 @@ async function boot(t, { mockDelayMs = 0, startScheduler = false, tag = 'live', 
     q.on('error', rej); if (body != null) q.write(body); q.end();
   });
   // a page's write: same origin, token, JSON, a fresh idempotency key unless given
-  const post = (p, body = {}, { key = crypto.randomUUID(), origin: o = origin, token = es.token, headers = {} } = {}) => raw('POST', p, { headers: { 'content-type': 'application/json', ...(o ? { origin: o } : {}), ...(token ? { 'x-station-action': token } : {}), ...(key ? { 'x-idempotency-key': key } : {}), ...headers }, body: JSON.stringify(body) });
+  const send = (p, body = {}, { key = crypto.randomUUID(), origin: o = origin, token = es.token, headers = {} } = {}) => raw('POST', p, { headers: { 'content-type': 'application/json', ...(o ? { origin: o } : {}), ...(token ? { 'x-station-action': token } : {}), ...(key ? { 'x-idempotency-key': key } : {}), ...headers }, body: JSON.stringify(body) });
+  // L2: an action that can spend goes through the confirm step first, as the page does (tests/l2-steer.test.mjs covers the refusals)
+  const post = async (p, body = {}, opts = {}) => {
+    const action = SPENDING[p] && SPENDING[p](body);
+    if (action && opts.confirm !== false && body.confirmToken === undefined && opts.origin === undefined && opts.token === undefined) {
+      const q = await send('/api/spend/quote', { action, params: body });
+      if (q.status === 200 && q.json.result.token) body = { ...body, confirmToken: q.json.result.token };
+    }
+    return send(p, body, opts);
+  };
   const snap = async () => (await raw('GET', '/api/office/snapshot?fresh')).json;
   const job = (id) => engine.store.getJob(id);
   const settled = (id) => until(() => { const j = job(id); return j && !engine.orchestrator.isActive(id) && !['running'].includes(j.state) && j; }, { timeout: 20000 });

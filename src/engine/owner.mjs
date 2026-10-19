@@ -259,6 +259,19 @@ export function createOwnerActions(engine) {
     return done(id, 'amend', { file: r.file, sha256: r.sha256 });
   }
 
+  // the owner's rejection of a whole set with the owner's words (L2, from the job panel): recorded in the append-only decision log, and the
+  // job ends rejected with that reason. Nothing is deleted; Archive moves the files later. Never on a job in the approval queue (Reject there).
+  function rejectSet(id, { set, words: w, date, expectedVersion } = {}) {
+    const j = ownJob(id, expectedVersion), n = Number(set);
+    if (!Number.isInteger(n) || n < 1 || !fs.existsSync(path.join(jobDir(id), 'set-v' + n))) throw refuse('jobs/' + id + '/set-v' + set + ' does not exist');
+    if (!['blocked', 'stopped', 'rejected', 'queued', 'incomplete'].includes(j.state)) throw refuse('job ' + id + ' is ' + j.state + ': a set is rejected on a job that has stopped (in the approval queue, use Reject there)');
+    const d = dateOf(date), why = words(w, 'the owner\'s words');
+    append(id, { kind: 'set-rejection', set: n, words: why, date: d });
+    store.updateJob(id, { state: 'rejected', reason: 'owner rejected set-v' + n + ' (' + d + '): ' + why, ended_at: Date.now(), data: { waitingFor: null, autoStart: false, next: false } });
+    bus.emit('job.rejected', { jobId: id, data: { state: 'rejected', by: 'owner', set: n } });
+    return done(id, 'set-rejection', { set: n, date: d });
+  }
+
   // what the job panel and MANIFEST show: every override with its file, sha256, stage, pass, date, reason and owner
   function summary(id) {
     const ds = decisions(id), dir = jobDir(id);
@@ -266,10 +279,10 @@ export function createOwnerActions(engine) {
     for (const d of ds.filter((x) => x.kind === 'listing-approval')) overrides.push({ seq: d.seq, file: 'listing (listing.json, listing.md)', sha256: d.listing, stage: 'QA LISTING', qaPass: d.qaListing && d.qaListing.pass, qaSaid: d.qaListing ? d.qaListing.verdict + ': ' + (d.qaListing.reasons || []).join(' | ') : '', ownerReason: d.reason, date: d.date, decidedBy: d.decidedBy });
     const sa = readJsonSafe(path.join(dir, APPROVAL_FILE)), la = readJsonSafe(path.join(dir, LISTING_APPROVAL_FILE));
     return { decisions: ds.length, overrides, fixes: ds.filter((d) => d.kind === 'file' && (d.decision === 'fix' || d.decision === 'replace')).map((d) => ({ set: d.set, file: d.name, fix: d.fix || d.reason, date: d.date })),
-      setApproval: sa.ok ? { set: sa.v.set, date: sa.v.date, counts: sa.v.counts } : null, listingApproval: la.ok ? { date: la.v.date, reason: la.v.ownerReason } : null };
+      setApproval: sa.ok ? { set: sa.v.set, date: sa.v.date, counts: sa.v.counts } : null, setRejection: (ds.filter((d) => d.kind === 'set-rejection').pop() || null), listingApproval: la.ok ? { date: la.v.date, reason: la.v.ownerReason } : null };
   }
 
-  return { recordFileDecision, approveSet, approveListing, editSet, fixListingText, makeListingPhotos, styleRefDecision, amendJob, decisions, reviewFrom, summary };
+  return { recordFileDecision, approveSet, rejectSet, approveListing, editSet, fixListingText, makeListingPhotos, styleRefDecision, amendJob, decisions, reviewFrom, summary };
 }
 
 // the listing photos of a packaged ZIP (legacy make-listing-photos.mjs, freeze exception o): reads the package only, checks every PNG against

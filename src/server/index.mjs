@@ -127,7 +127,7 @@ export async function startEngine({ git = null } = {}) {
   const shutdownFile = path.join(J.dataRoot, SHUTDOWN_FILE);
   if (fs.existsSync(shutdownFile)) { log.warn('a stale shutdown request was removed at start'); J.remove(shutdownFile); }
   let engine;
-  try { engine = createEngine({ J, log }); } catch (e) { log.error('engine did not start', { error: e.message, code: e.code || null }); console.error('engine did not start: ' + e.message); process.exit(2); }
+  try { engine = createEngine({ J, log, limitJobs: true }); } catch (e) { log.error('engine did not start', { error: e.message, code: e.code || null }); console.error('engine did not start: ' + e.message); process.exit(2); }
   engine.instance = { name: inst.name, commit: inst.commit, branch: inst.branch, port };
   if (stampDataRoot(J, inst)) log.info('data root stamped for the ' + inst.name + ' instance', { dataRoot: J.dataRoot });
   const { server, closeAll } = createEngineServer({ engine, log });

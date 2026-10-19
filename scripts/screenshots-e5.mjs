@@ -61,7 +61,9 @@ async function main() {
   const fresh = (p = page) => p.evaluate(() => window.__office.reload());
   try {
     // set-up: job B through the line (the originality gate blocks it) and one enabled research routine
-    let r = await post('/api/tasks/brief', { file: JOB_B + '.md' }); if (r.status !== 200) throw new Error('setup B: ' + JSON.stringify(r.json));
+    // L2: a start goes through the spend confirmation (its token) as the page does
+    const qb = await post('/api/spend/quote', { action: 'start-line', params: { file: JOB_B + '.md' } });
+    let r = await post('/api/tasks/brief', { file: JOB_B + '.md', confirmToken: qb.json.result.token }); if (r.status !== 200) throw new Error('setup B: ' + JSON.stringify(r.json));
     await until(() => job(JOB_B) && job(JOB_B).state === 'blocked');
     r = await post('/api/routines/create', { name: 'Weekday research batch', target: 'line:research', input: 'cosy seasonal sticker niches', schedule: '0 9 * * 1-5' });
     await post('/api/routines/enable', { id: r.json.result.id, enabled: true, expectedVersion: r.json.result.version });

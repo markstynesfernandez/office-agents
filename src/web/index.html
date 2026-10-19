@@ -52,10 +52,12 @@
       <div class="tp-pane" data-pane="research">
         <textarea id="task-research" rows="3" maxlength="2000" placeholder="What should DEMAND-RESEARCHER look into? e.g. cosy autumn sticker niches with steady demand"></textarea>
         <div class="tp-row"><span class="tp-note">a research job on the research line</span><button class="btn btn-primary" data-go="research">Research this</button></div>
+        <div class="tp-note tp-indicative">Demand evidence from research is indicative until the Etsy API (E7).</div>
       </div>
       <div class="tp-pane hidden" data-pane="brief">
         <select id="task-brief"></select>
-        <div class="tp-row"><span class="tp-note" id="task-brief-note">verified briefs in research/briefs/</span><button class="btn btn-primary" data-go="brief">Start line</button></div>
+        <div class="tp-row"><span class="tp-note" id="task-brief-note">verified and owner briefs in research/briefs/</span><button class="btn btn-primary" data-go="brief">Start line</button></div>
+        <div class="tp-row"><select id="task-product" title="the product the new owner brief is for (products.json)"></select><button class="btn" data-go="owner-brief" title="write an owner brief: title, theme, the items, price bounds; saved after the intake checks">New owner brief…</button></div>
       </div>
       <div class="tp-pane hidden" data-pane="rerun">
         <select id="task-rerun"></select>

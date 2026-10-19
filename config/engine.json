@@ -109,7 +109,16 @@
   "runtime": {
     "resumeOnRestart": 1,
     "maxConcurrentJobsPerLine": 1,
+    "$maxRunningJobsComment": "L2 (19/10/2026): at most this many jobs run at once on a Station instance started by npm start (live and dev), across every line; a further start waits in the queue as \"next\" and starts when a running job ends. Demo, dry runs and the line scripts are not limited by it (one job per line still applies everywhere). An engine setting, not a cap.",
+    "maxRunningJobs": 1,
+    "$confirmComment": "L2: every page action that can spend needs a confirm token from POST /api/spend/quote (single use, bound to the action and its parameters, valid confirmTtlMs).",
+    "confirmTtlMs": 600000,
     "maxReadBytes": 200000,
     "promptCaching": true
+  },
+  "outerLimits": {
+    "$comment": "L2: limits the owner sets OUTSIDE the engine, shown in the spend confirmation only; never caps (the engine's caps are under caps). anthropicConsoleMonthlyUsd: the Anthropic Console's monthly workspace limit in USD, null = not configured (the dialog then says so); the remaining figure is that limit less this Dublin month's Anthropic rows in the station ledger (other use of the workspace is not seen). openrouterDailyUsd: the OpenRouter key limit (owner, 17/10/2026).",
+    "anthropicConsoleMonthlyUsd": null,
+    "openrouterDailyUsd": 2
   }
 }
