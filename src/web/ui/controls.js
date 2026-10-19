@@ -111,7 +111,20 @@ const usd = (n, d = 2) => 'USD ' + Number(n || 0).toFixed(d);
 // pure (tests/l2-steer.test.mjs): the dialog body of a spend quote
 export function spendHtml(q) {
   const row = (k, v) => '<div class="spend-row"><span class="m">' + esc(k) + '</span><span>' + v + '</span></div>';
-  const dy = q.day || {}, ln = dy.line || {}, c = q.console || {}, jb = q.job || {};
+  const dy = q.day || {}, ln = dy.line || {}, c = q.console || {}, jb = q.job || {}, rt = q.routine;
+  // L2.1: arming a routine spends nothing now; its worst case per firing, per day and per week instead of this job's figures
+  if (rt) return '<div class="spendbox">'
+    + (q.mock ? '<div class="spend-mock"><b>mock: $0</b> · no model is called and nothing is charged</div>' : '<div class="spend-live"><b>LIVE</b> · each firing makes real model and image calls, charged to the station\'s accounts</div>')
+    + '<div class="spend-what">' + esc(q.what || '') + '</div>'
+    + row('schedule', esc(rt.scheduleWords) + ' <span class="mono">(' + esc(rt.schedule) + ')</span> · at most ' + rt.maxRunsPerDay + ' a day')
+    + row('line', esc(q.lineLabel || q.line) + ' <span class="mono">(' + esc(q.line) + ')</span>')
+    + row('models', (q.agents || []).map((a) => esc(a.name) + ': <span class="mono">' + esc(a.model || '?') + '</span> · ' + esc(a.effort || '')).join('<br>') + (q.imageModel ? '<br>images: <span class="mono">' + esc(q.imageModel) + '</span>' : ''))
+    + row('per-run cap', rt.perRunCapUsd != null ? usd(rt.perRunCapUsd) : 'none set: the job cap ' + usd(rt.jobCapUsd) + ' applies')
+    + row('worst case', usd(rt.worstPerFiringUsd) + ' a firing · ' + usd(rt.worstPerDayUsd) + ' a day (' + rt.firingsPerDayMax + ' firing' + (rt.firingsPerDayMax === 1 ? '' : 's') + ') · ' + usd(rt.worstPerWeekUsd) + ' a week (' + rt.firingsPerWeek + ' firings in the next 7 days)')
+    + row('daily cap', usd(rt.dailyCapUsd) + ' for the station; today ' + usd(dy.spentUsd, 4) + ' spent' + (rt.overDailyCap ? ' <span class="tag tag-warn">its day could reach the cap: the scheduler skips firings once the cap is reached</span>' : ''))
+    + row('Console', c.configured ? usd(c.leftUsd) + ' left of the monthly limit ' + usd(c.limitUsd) + ' <span class="muted">(' + esc(c.note) + ')</span>' : 'monthly limit not configured')
+    + (q.refusals && q.refusals.length ? '<div class="spend-refused">' + q.refusals.map((x) => '<div>✕ ' + esc(x) + '</div>').join('') + '</div>' : '')
+    + '</div>';
   return '<div class="spendbox">'
     + (q.mock ? '<div class="spend-mock"><b>mock: $0</b> · no model is called and nothing is charged</div>' : '<div class="spend-live"><b>LIVE</b> · real model and image calls, charged to the station\'s accounts</div>')
     + '<div class="spend-what">' + esc(q.what || '') + '</div>'

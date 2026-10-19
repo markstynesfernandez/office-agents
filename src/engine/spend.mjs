@@ -11,6 +11,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dublinDay } from './time.mjs';
 import { effectiveAgent } from './runtime.mjs';
+import { nextRuns } from './scheduler.mjs';
+import { cronWords } from '../server/model.mjs';
 
 const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
 const err = (msg, code) => Object.assign(new Error(msg), { code });
@@ -24,7 +26,9 @@ export const SPEND_ACTIONS = {
   'rerun-listing': { label: 'Re-run the listing', params: ['jobId'] },
   'qa-only': { label: 'QA-only run', params: ['jobId', 'set', 'maxUsd'] },
   'listing-only': { label: 'Listing-only run', params: ['jobId', 'maxUsd'] },
-  'agent-on-duty': { label: 'Put the agent back on duty (its waiting jobs start)', params: ['agentKey'] }
+  'agent-on-duty': { label: 'Put the agent back on duty (its waiting jobs start)', params: ['agentKey'] },
+  // L2.1 (owner, 19/10/2026): arming (enabling) a routine; disarming spends nothing and needs no token
+  'routine-arm': { label: 'Arm the routine', params: ['id'] }
 };
 const bind = (action, body) => JSON.stringify([action, ...SPEND_ACTIONS[action].params.map((k) => (body[k] == null ? null : String(body[k])))]);
 
@@ -62,10 +66,27 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       if (!waiting.length) return null;
       return { line: waiting[0].line, jobId: null, headroomUsd: r6(waiting.reduce((s, j) => s + remaining(j), 0)), what: waiting.length + ' waiting job(s) start: ' + waiting.map((j) => j.id).join(', '), jobs: waiting.map((j) => j.id) };
     }
+    if (action === 'routine-arm') return routineTarget(p('id'));
     const j = store.getJob(p('jobId')); if (!j) throw err('no such job: ' + p('jobId'), 'BAD_REQUEST');
     const rest = remaining(j), refuse = rest <= 0 ? ['job cap reached: ' + usd(ledger.spent.job(j.id)) + ' of ' + usd(jobCapOf(j.line)) + ' spent on this job'] : [];
     if (action === 'qa-only' || action === 'listing-only') { const m = Number(body.maxUsd); return { line: j.line, jobId: j.id, headroomUsd: r6(Math.min(rest, m > 0 ? m : rest)), what: SPEND_ACTIONS[action].label + ' on ' + j.id + ' within your cap ' + usd(m), refuse }; }
     return { line: j.line, jobId: j.id, headroomUsd: r6(rest), what: (action === 'restart' ? 'job ' + j.id + ' runs on from ' + (j.step || 'its start') : 'LISTER and QA LISTING again on ' + j.id), refuse };
+  }
+
+  // L2.1: a routine's worst case. Per firing: its per-run cap, never above the line's job cap (no per-run cap: the job cap). Per day: the
+  // firings its schedule has that Dublin day, at most maxRunsPerDay; per week: the next 7 days summed. The scheduler still holds every
+  // firing to the daily caps and the e-stop when it fires; arming spends nothing now, so the day caps are shown, not refused on.
+  function routineTarget(id) {
+    const rt = store.getRoutine(id); if (!rt) throw err('no such routine: ' + id, 'BAD_REQUEST');
+    if (rt.legacy) throw err('an imported legacy routine is read only', 'BAD_REQUEST');
+    const m = /^line:(.+)$/.exec(rt.target || ''), line = m && cfg.lines[m[1]] ? m[1] : null;
+    if (!line) throw err('this routine\'s target cannot run: ' + rt.target, 'BAD_REQUEST');
+    const jobCap = jobCapOf(line), perFiring = r6(rt.per_run_cap_usd != null ? Math.min(rt.per_run_cap_usd, jobCap) : jobCap);
+    const from = now(), until = from + 7 * 86400000, byDay = {};
+    for (const at of nextRuns(rt.schedule, 7 * 24 * 60 + 1, new Date(from))) if (at < until) { const d = dublinDay(at); byDay[d] = (byDay[d] || 0) + 1; }
+    const perDay = Object.values(byDay).map((n) => Math.min(n, rt.max_runs_per_day || 1)), firingsWeek = perDay.reduce((a, b) => a + b, 0), maxDay = perDay.length ? Math.max(...perDay) : 0;
+    return { line, jobId: null, headroomUsd: perFiring, what: 'routine "' + rt.name + '" fires on its own from now on (' + rt.target + ')',
+      routine: { id: rt.id, name: rt.name, schedule: rt.schedule, scheduleWords: cronWords(rt.schedule) + ' (Dublin)', maxRunsPerDay: rt.max_runs_per_day, perRunCapUsd: rt.per_run_cap_usd, jobCapUsd: jobCap, worstPerFiringUsd: perFiring, firingsPerDayMax: maxDay, worstPerDayUsd: r6(maxDay * perFiring), firingsPerWeek: firingsWeek, worstPerWeekUsd: r6(firingsWeek * perFiring), dailyCapUsd: caps.perDayUsd, overDailyCap: maxDay * perFiring > caps.perDayUsd + 1e-9 } };
   }
 
   // the quote (no token): every figure the dialog shows, and why it cannot go ahead (refusals)
@@ -80,8 +101,8 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     const refusals = [...(t.refuse || [])];
     if (halt.isHalted()) refusals.unshift('e-stop is on: nothing starts until you resume');
     if (!g.ledgerOk) refusals.push('the ledger is unreadable: every paid call is refused');
-    if (worst > caps.perDayUsd + 1e-9) refusals.push('the daily cap would be exceeded: spent today ' + usd(spentToday) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(t.headroomUsd) + ' = ' + usd(worst) + ', over ' + usd(caps.perDayUsd));
-    if (lineCap > 0 && lineWorst > lineCap + 1e-9) refusals.push('the ' + t.line + ' line\'s daily cap would be exceeded: ' + usd(lineWorst) + ' worst case, over ' + usd(lineCap));
+    if (!t.routine && worst > caps.perDayUsd + 1e-9) refusals.push('the daily cap would be exceeded: spent today ' + usd(spentToday) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(t.headroomUsd) + ' = ' + usd(worst) + ', over ' + usd(caps.perDayUsd));
+    if (!t.routine && lineCap > 0 && lineWorst > lineCap + 1e-9) refusals.push('the ' + t.line + ' line\'s daily cap would be exceeded: ' + usd(lineWorst) + ' worst case, over ' + usd(lineCap));
     const ol = cfg.engine.outerLimits || {}, month = day.slice(0, 7);
     const consoleUsed = r6(ledger.rows().filter((r) => String(r.provider || '').startsWith('anthropic') && dublinDay(r.ts).slice(0, 7) === month).reduce((s, r) => s + (Number(r.usd) || 0), 0));
     const running = store.listJobs({ states: ['running'] }).map((j) => j.id), max = engine.maxRunningJobs || null;
@@ -92,9 +113,10 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       agents: lineAgents(t.line), imageModel: lineAgents(t.line).some((a) => a.images) ? (mock ? 'mock (' + cfg.engine.image.allowedModels.join(', ') + ')' : cfg.engine.image.allowedModels.join(', ')) : null,
       job: { capUsd: jobCapOf(t.line), spentUsd: t.jobId ? r6(ledger.spent.job(t.jobId)) : 0, headroomUsd: t.headroomUsd, perRunUsd: caps.perRunUsd },
       day: { date: day, spentUsd: spentToday, openJobsUsd: committed, worstUsd: worst, capUsd: caps.perDayUsd, line: { spentUsd: lineSpent, worstUsd: lineWorst, capUsd: lineCap } },
-      console: ol.anthropicConsoleMonthlyUsd > 0 ? { configured: true, month, limitUsd: ol.anthropicConsoleMonthlyUsd, usedUsd: consoleUsed, leftUsd: r6(ol.anthropicConsoleMonthlyUsd - consoleUsed), note: 'the limit set in the Anthropic Console less this month\'s Anthropic rows in the station ledger (other use of the workspace is not seen)' } : { configured: false, month, usedUsd: consoleUsed, note: 'not configured (config/engine.json outerLimits.anthropicConsoleMonthlyUsd)' },
+      console: ol.anthropicConsoleMonthlyUsd > 0 ? { configured: true, month, limitUsd: ol.anthropicConsoleMonthlyUsd, usedUsd: consoleUsed, leftUsd: r6(ol.anthropicConsoleMonthlyUsd - consoleUsed), note: 'estimate from the station ledger; the Console is the authority' } : { configured: false, month, usedUsd: consoleUsed, note: 'not configured (config/engine.json outerLimits.anthropicConsoleMonthlyUsd)' },
       openrouterDailyUsd: ol.openrouterDailyUsd ?? null,
-      queue: { running, maxRunning: max, startsAsNext: waitsAsNext },
+      queue: { running, maxRunning: max, startsAsNext: !t.routine && waitsAsNext },
+      routine: t.routine || null,
       refusals
     };
   }

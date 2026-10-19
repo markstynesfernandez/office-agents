@@ -66,7 +66,8 @@ async function main() {
     let r = await post('/api/tasks/brief', { file: JOB_B + '.md', confirmToken: qb.json.result.token }); if (r.status !== 200) throw new Error('setup B: ' + JSON.stringify(r.json));
     await until(() => job(JOB_B) && job(JOB_B).state === 'blocked');
     r = await post('/api/routines/create', { name: 'Weekday research batch', target: 'line:research', input: 'cosy seasonal sticker niches', schedule: '0 9 * * 1-5' });
-    await post('/api/routines/enable', { id: r.json.result.id, enabled: true, expectedVersion: r.json.result.version });
+    const qr = await post('/api/spend/quote', { action: 'routine-arm', params: { id: r.json.result.id } });   // L2.1: arming is confirmed too
+    await post('/api/routines/enable', { id: r.json.result.id, enabled: true, expectedVersion: r.json.result.version, confirmToken: qr.json.result.token });
 
     await open(page);
     // 01 task box: Research this

@@ -100,7 +100,8 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     // the scheduler (routines are created disabled; enabling is the approval)
     'POST /api/routines/create': (body) => engine.routines.create(body),
     'POST /api/routines/update': (body) => engine.routines.update(str(body.id), body, { expectedVersion: ver(body) }),
-    'POST /api/routines/enable': (body) => engine.routines.enable(str(body.id), body.enabled === true, { expectedVersion: ver(body) }),
+    // L2.1 (owner, 19/10/2026): arming a routine needs the confirm token like every spending action; disarming needs none
+    'POST /api/routines/enable': (body) => (body.enabled === true && engine.spend.gate('routine-arm', body), engine.routines.enable(str(body.id), body.enabled === true, { expectedVersion: ver(body) })),
     'POST /api/routines/delete': (body) => engine.routines.remove(str(body.id), { expectedVersion: ver(body) }),
     // the approval queue: approvals and tracker rows only; nothing is sent anywhere
     'POST /api/approvals/decide': (body) => O.decide(str(body.jobId), { action: str(body.action, 20), reason: str(body.reason, 600), etsyUrl: str(body.etsyUrl, 300), publishedOn: str(body.publishedOn, 10), finalTitle: str(body.finalTitle, 200), finalPriceEur: body.finalPriceEur == null || body.finalPriceEur === '' ? null : Number(body.finalPriceEur), sku: str(body.sku, 40), expectedVersion: ver(body), by: BY }),

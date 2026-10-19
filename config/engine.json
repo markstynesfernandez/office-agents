@@ -117,8 +117,8 @@
     "promptCaching": true
   },
   "outerLimits": {
-    "$comment": "L2: limits the owner sets OUTSIDE the engine, shown in the spend confirmation only; never caps (the engine's caps are under caps). anthropicConsoleMonthlyUsd: the Anthropic Console's monthly workspace limit in USD, null = not configured (the dialog then says so); the remaining figure is that limit less this Dublin month's Anthropic rows in the station ledger (other use of the workspace is not seen). openrouterDailyUsd: the OpenRouter key limit (owner, 17/10/2026).",
-    "anthropicConsoleMonthlyUsd": null,
+    "$comment": "L2: limits the owner sets OUTSIDE the engine, shown in the spend confirmation only; never caps (the engine's caps are under caps). anthropicConsoleMonthlyUsd: the Anthropic Console's monthly limit for the station workspace in USD (owner, 19/10/2026: USD 100, the org limit raised to match), null = not configured; the dialog shows the limit less this Dublin month's Anthropic rows in the station ledger, labelled 'estimate from the station ledger; the Console is the authority'. openrouterDailyUsd: the OpenRouter key limit (owner, 17/10/2026).",
+    "anthropicConsoleMonthlyUsd": 100,
     "openrouterDailyUsd": 2
   }
 }

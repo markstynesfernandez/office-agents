@@ -22,7 +22,7 @@ const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 const OVERRIDES = { productsFile: readJson(path.join(FIX, 'products.json')), stationSet: readJson(path.join(FIX, 'station-config-patch.json')).set };
 const briefText = (id) => fs.readFileSync(path.join(FIX, 'briefs', id + '.md'), 'utf8').replace(/\{\{TODAY\}\}/g, dublinDay());
 
-const SPENDING = { '/api/tasks/research': () => 'research', '/api/tasks/brief': () => 'start-line', '/api/tasks/rerun-listing': () => 'rerun-listing', '/api/jobs/restart': () => 'restart', '/api/jobs/qa-only': () => 'qa-only', '/api/jobs/listing-only': () => 'listing-only', '/api/agents/update': (b) => (b.enabled === true ? 'agent-on-duty' : null) };
+const SPENDING = { '/api/tasks/research': () => 'research', '/api/tasks/brief': () => 'start-line', '/api/tasks/rerun-listing': () => 'rerun-listing', '/api/jobs/restart': () => 'restart', '/api/jobs/qa-only': () => 'qa-only', '/api/jobs/listing-only': () => 'listing-only', '/api/agents/update': (b) => (b.enabled === true ? 'agent-on-duty' : null), '/api/routines/enable': (b) => (b.enabled === true ? 'routine-arm' : null) };
 
 async function boot(t, { mockDelayMs = 0, startScheduler = false, tag = 'live', wrap = (s) => s } = {}) {
   const r = tempRoot(tag);

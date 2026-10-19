@@ -5,7 +5,7 @@
 // E5 (engine mode): the routine list is the scheduler. "New routine" (or a click on a day) creates one, always
 // disabled; Enable is the approval (a confirmation says what will run, when and within which caps); Edit leaves it
 // disabled again; Delete asks first. Imported legacy routines are read only. Caps are set in config only.
-import { esc, hhmm, when, ymd, dmy, MONTHS, DOW, money } from './format.js';
+import { esc, hhmm, when, ymd, dmy, MONTHS, DOW } from './format.js';
 import { PALETTE } from '../config/palette.js';
 
 export function createCalendar({ root, onOpenJob, ctl = null }) {
@@ -110,14 +110,11 @@ export function createCalendar({ root, onOpenJob, ctl = null }) {
     if (k === 'disable') return ctl.act('/api/routines/enable', { id, enabled: false, expectedVersion: r.version }, { ok: 'Disabled: ' + r.name });
     if (k === 'delete') { const ok = await ctl.dialog({ title: 'Delete this routine?', intro: '<b>' + esc(r.name) + '</b><br>' + esc(r.scheduleWords) + '<br><br>Jobs it already started are kept.', confirm: 'Delete', danger: true }); if (ok) await ctl.act('/api/routines/delete', { id, expectedVersion: r.version }, { ok: 'Deleted: ' + r.name }); return; }
     if (k === 'enable') {
-      const caps = s.spend.caps, next = (r.ghostRuns || [])[0];
-      const ok = await ctl.dialog({
-        title: 'Enable this routine?',
-        intro: '<b>' + esc(r.name) + '</b> · ' + esc(r.target) + '<br>' + esc(r.scheduleWords) + (next ? ' · first run ' + esc(when(next, s.generatedAt)) : '') + '<br><br><b>Enabling is your approval.</b> From then on it runs unattended, up to ' + r.maxRunsPerDay + ' time' + (r.maxRunsPerDay === 1 ? '' : 's') + ' a day, within the caps: '
-          + money(caps.perDay) + ' a day for the station, ' + money(r.perRunCapUsd != null ? Math.min(r.perRunCapUsd, caps.perRun) : caps.perRun) + ' a run, ' + money(caps.perJob) + ' a job. It skips (and logs why) while the e-stop is on, a cap is reached, its last run is still going or its agent is off duty.',
-        confirm: 'Enable (approve)'
-      });
-      if (ok) await ctl.act('/api/routines/enable', { id, enabled: true, expectedVersion: r.version }, { ok: 'Enabled: ' + r.name });
+      // L2.1 (owner, 19/10/2026): arming goes through the spend confirmation (schedule, line, models, per-run cap, the daily cap, the worst
+      // case per firing and per week); the server refuses to arm without its token. Disarming needs none.
+      const next = (r.ghostRuns || [])[0];
+      const extra = '<div class="dlg-note"><b>Arming is your approval.</b> From then on it runs unattended' + (next ? ' (first run ' + esc(when(next, s.generatedAt)) + ')' : '') + '. It skips (and logs why) while the e-stop is on, a cap is reached, its last run is still going or its agent is off duty.</div>';
+      await ctl.spendAct('routine-arm', '/api/routines/enable', { id, enabled: true, expectedVersion: r.version }, { ok: 'Armed: ' + r.name, extra });
     }
   }
   function closePopover() { if (state.popover) { state.popover.remove(); state.popover = null; } }

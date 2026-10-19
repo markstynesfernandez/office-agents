@@ -1935,3 +1935,19 @@ the approval queue and the owner-only decisions are unchanged. Tests: `tests/l2-
   caps and the e-stop, and enabling is your approval as before). Say if you want the dialog there too.
 - **QA pass rate** now counts file-1 checks with set reviews; say if you want them shown apart.
 - **Reject set** is new: it ends the job `rejected` with your words. Approve set is unchanged.
+
+## L2.1: Console limit in config, confirm on arming routines (owner decisions, 19/10/2026)
+
+1. **Console limit.** The station workspace's monthly limit in the Anthropic Console is now USD 100 (the org limit raised to match).
+   `config/engine.json` `outerLimits.anthropicConsoleMonthlyUsd` is 100, so the spend dialog shows what is left this month: the limit
+   less this Dublin month's Anthropic rows in the station ledger, labelled "estimate from the station ledger; the Console is the
+   authority". It is information only, never a cap.
+2. **Arming a routine** goes through the spend confirmation. The dialog shows the schedule (in words and as cron), the line, the
+   agents' models, the per-run cap, the station's daily cap and today's spend, and the worst case per firing (the per-run cap, never
+   above the line's job cap; the job cap when no per-run cap is set), per day (the schedule's firings that Dublin day, at most
+   maxRunsPerDay) and per week (the next 7 days). Server-side, `POST /api/routines/enable` with `enabled: true` needs a confirm token
+   (`routine-arm`, bound to the routine's id) like the other spending actions: refused without one or with another routine's (428) and
+   under the e-stop (423). Arming spends nothing at that moment, so a schedule whose day could reach the daily cap is flagged in the
+   dialog, not refused: the scheduler still skips firings once a cap is reached. **Disarming needs no token.** Tests:
+   `tests/l2-steer.test.mjs` "arming a routine (L2.1)".
+3. **The daily-cap check counting the worst case of open jobs** stays as built (L2 item 4).

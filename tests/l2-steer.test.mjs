@@ -115,9 +115,12 @@ test('spend quote: line, models, job cap, today against the daily cap, the Conso
   assert.equal(q.line, 'room1-digital');
   assert.ok(q.agents.some((a) => a.agent === 'designer' && /^mock \(/.test(a.model)));
   assert.deepEqual([q.job.capUsd, q.day.capUsd, q.day.spentUsd, q.day.worstUsd], [REAL.engine.caps.perJobUsd, REAL.engine.caps.perDayUsd, 0, REAL.engine.caps.perJobUsd]);
-  assert.equal(q.console.configured, false); assert.match(q.console.note, /not configured/);
+  // L2.1 (owner, 19/10/2026): the station workspace's Console limit is USD 100, labelled as the station ledger's estimate
+  assert.equal(REAL.engine.outerLimits.anthropicConsoleMonthlyUsd, 100);
+  assert.deepEqual([q.console.configured, q.console.limitUsd, q.console.usedUsd, q.console.leftUsd], [true, 100, 0, 100]);
+  assert.equal(q.console.note, 'estimate from the station ledger; the Console is the authority');
   assert.match(q.token, /^[0-9a-f]{36}$/); assert.deepEqual(q.refusals, []);
-  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /monthly limit not configured/);
+  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /USD 100\.00 left of the monthly limit USD 100\.00 <span class="muted">\(estimate from the station ledger; the Console is the authority\)/);
   // the Console limit when the owner sets it: the limit less this Dublin month's Anthropic rows in the ledger
   engine.cfg.engine.outerLimits = { ...engine.cfg.engine.outerLimits, anthropicConsoleMonthlyUsd: 20 };
   engine.ledger.append({ ts: Date.now(), jobId: null, runId: 'r-test', agentKey: 'lister', line: 'room1-digital', provider: 'anthropic', model: 'claude-haiku-5-5', kind: 'text', count: 1, usd: 1.25 });
@@ -166,6 +169,41 @@ test('every spending endpoint refuses without the confirm step, with a reused or
   const off = await post('/api/agents/update', { agentKey: 'lister', expectedVersion: 0, enabled: false }); assert.equal(off.status, 200);
   const on = await post('/api/agents/update', { agentKey: 'lister', expectedVersion: off.json.result.version, enabled: true }); assert.equal(on.status, 200, 'nothing waits: no confirm needed');
   void confirmed;
+});
+
+test('arming a routine (L2.1): the dialog\'s schedule, line, models, per-run cap, daily cap, worst case per firing and per week; the server needs the token to arm, none to disarm', async (t) => {
+  const { post, quote, engine } = await boot(t, { tag: 'l2arm' });
+  const c = await post('/api/routines/create', { name: 'Weekday research', target: 'line:research', input: 'cosy seasonal sticker niches', schedule: '0 9 * * 1-5', maxRunsPerDay: 1, perRunCapUsd: 0.5 });
+  assert.equal(c.status, 200, c.text); const rt = c.json.result;
+  const q = await quote('routine-arm', { id: rt.id });
+  assert.equal(q.line, 'research'); assert.ok(q.agents.length > 0); assert.equal(q.mock, true);
+  assert.deepEqual([q.routine.schedule, q.routine.maxRunsPerDay, q.routine.perRunCapUsd, q.routine.worstPerFiringUsd, q.routine.firingsPerWeek, q.routine.worstPerWeekUsd, q.routine.worstPerDayUsd, q.routine.dailyCapUsd, q.routine.overDailyCap], ['0 9 * * 1-5', 1, 0.5, 0.5, 5, 2.5, 0.5, REAL.engine.caps.perDayUsd, false]);
+  assert.match(q.routine.scheduleWords, /Dublin/); assert.equal(q.queue.startsAsNext, false); assert.match(q.token, /^[0-9a-f]{36}$/);
+  const html = spendHtml(q);
+  for (const re of [/schedule/, /0 9 \* \* 1-5/, /per-run cap<\/span><span>USD 0\.50/, /USD 0\.50 a firing · USD 0\.50 a day \(1 firing\) · USD 2\.50 a week \(5 firings in the next 7 days\)/, /daily cap<\/span><span>USD 10\.00/]) assert.match(html, re);
+  // no token, or a token for another routine: refused, still disarmed
+  const other = (await post('/api/routines/create', { name: 'Other', target: 'line:research', schedule: '0 8 * * *' })).json.result;
+  const qo = await quote('routine-arm', { id: other.id });
+  assert.equal((await post('/api/routines/enable', { id: rt.id, enabled: true, expectedVersion: rt.version })).status, 428);
+  assert.equal((await post('/api/routines/enable', { id: rt.id, enabled: true, expectedVersion: rt.version, confirmToken: qo.token })).status, 428);
+  assert.equal(engine.store.getRoutine(rt.id).enabled, false);
+  // with its token: armed; disarming needs none
+  const on = await post('/api/routines/enable', { id: rt.id, enabled: true, expectedVersion: rt.version, confirmToken: q.token });
+  assert.equal(on.status, 200, on.text); assert.equal(engine.store.getRoutine(rt.id).enabled, true);
+  const off = await post('/api/routines/enable', { id: rt.id, enabled: false, expectedVersion: on.json.result.version });
+  assert.equal(off.status, 200, off.text); assert.equal(engine.store.getRoutine(rt.id).enabled, false);
+  // a routine with no per-run cap is quoted at the line's job cap; one that could reach the daily cap says so (not refused: the scheduler skips)
+  const busy = (await post('/api/routines/create', { name: 'Busy', target: 'line:room1-digital', schedule: '0 * * * *', maxRunsPerDay: 3 })).json.result;
+  const qb = await quote('routine-arm', { id: busy.id });
+  assert.deepEqual([qb.routine.worstPerFiringUsd, qb.routine.firingsPerDayMax, qb.routine.worstPerDayUsd, qb.routine.overDailyCap], [REAL.engine.caps.perJobUsd, 3, 3 * REAL.engine.caps.perJobUsd, true]);
+  assert.deepEqual(qb.refusals, []);
+  // under the e-stop: no token, and a token taken before is refused (423); disarming still works
+  const qe = await quote('routine-arm', { id: other.id });
+  await post('/api/engine/halt', { reason: 'test' });
+  assert.equal((await quote('routine-arm', { id: other.id })).token, null);
+  assert.equal((await post('/api/routines/enable', { id: other.id, enabled: true, expectedVersion: other.version, confirmToken: qe.token })).status, 423);
+  assert.equal(engine.store.getRoutine(other.id).enabled, false);
+  assert.equal((await post('/api/routines/enable', { id: rt.id, enabled: false, expectedVersion: engine.store.getRoutine(rt.id).version })).status, 200);
 });
 
 // ---- 3. the job limit
