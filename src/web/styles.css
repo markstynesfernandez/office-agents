@@ -373,3 +373,4 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
 .livebox .ev { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .livebox .ev .m { color: var(--muted); font-family: var(--mono); font-size: 10.5px; }
 .file1box .design img { background: repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 12px 12px; }
+.dlg-readonly { background: var(--panel-2); color: var(--muted); font-family: var(--mono); }

@@ -17,7 +17,7 @@ import { buildEngineSnapshot, eventText } from '../src/server/engine-model.mjs';
 import { loadConfig } from '../src/engine/config.mjs';
 import { APP_ROOT } from '../src/engine/store/jail.mjs';
 import { dublinDay } from '../src/engine/time.mjs';
-import { composeOwnerBrief, formProducts, slugOf } from '../src/engine/lib/owner-brief-form.mjs';
+import { composeOwnerBrief, formProducts, slugOf, briefIdOf } from '../src/engine/lib/owner-brief-form.mjs';
 import { checkOwnerBrief } from '../src/engine/lib/owner-brief.mjs';
 import { upscalerStatus } from '../src/engine/lib/upscaler-status.mjs';
 import { spendHtml } from '../src/web/ui/controls.js';
@@ -104,6 +104,27 @@ test('owner brief from the page: saved through the intake checks (no confirm: sa
   assert.equal(low.status, 400); assert.match(low.json.error, /below the floor/);
   const few = await post('/api/tasks/owner-brief', form({ title: 'Too Few Mushrooms', items: ITEMS.slice(0, 4), minUsd: P.floorUsd, maxUsd: P.floorUsd + 3 }));
   assert.equal(few.status, 400); assert.match(few.json.error, /give exactly 5 items/);
+});
+
+test('owner brief id from the title (bug on live 19/10/2026): a long title with capitals and spaces saves under <today>--<slug>, at most 60 characters', async (t) => {
+  const TITLE = 'Cozy Winter Desk Props for PNGTuber and VTuber Streams';
+  // the page shows the id with the same function the server uses
+  const page = await import('../src/web/ui/brief-id.js');
+  assert.equal(page.slugOf, slugOf);
+  assert.equal(briefIdOf(TITLE, '2026-10-19'), '2026-10-19--cozy-winter-desk-props-for-pngtuber-and-vtuber', 'cut at a word boundary to fit');
+  for (const x of [TITLE, 'A'.repeat(90), 'Ünïcödé   Desk -- Props!!', TITLE + ' and Many More Words After That']) { const id = briefIdOf(x, '2026-10-19'); assert.ok(id.length <= 60 && /^2026-10-19--[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id), x + ' -> ' + id); }
+  // through the form's save path on the server: the body carries no id, the server makes it
+  const { post, snap, r } = await boot(t, { tag: 'l2longid' });
+  const P = (await snap()).ownerBriefForm.products.find((p) => p.key === 'dry-run-sticker-pack-5');
+  const res = await post('/api/tasks/owner-brief', form({ title: TITLE, minUsd: P.floorUsd, maxUsd: P.floorUsd + 3 }));
+  assert.equal(res.status, 200, res.text);
+  const id = dublinDay() + '--cozy-winter-desk-props-for-pngtuber-and-vtuber';
+  assert.equal(res.json.result.id, id); assert.ok(id.length <= 60);
+  const saved = fs.readFileSync(path.join(r.dataRoot, 'research', 'briefs', id + '.md'), 'utf8');
+  assert.match(saved, new RegExp('^id: ' + id + '$', 'm')); assert.match(saved, /^Title idea: Cozy Winter Desk Props for PNGTuber and VTuber Streams\.$/m);
+  // an id sent by a page is ignored: the station makes it
+  const spoof = await post('/api/tasks/owner-brief', { ...form({ title: 'Second Winter Props', minUsd: P.floorUsd, maxUsd: P.floorUsd + 3 }), id: 'BAD ID' });
+  assert.equal(spoof.status, 200, spoof.text); assert.equal(spoof.json.result.id, dublinDay() + '--second-winter-props');
 });
 
 // ---- 2. the spend confirmation and its refusals

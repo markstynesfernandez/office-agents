@@ -5,6 +5,7 @@
 // whose counts add up to All, scope toggle, and the task list. Active jobs show a progress %; the others a status pill.
 import { esc, duration, jobStatusLabel, statusPill, synthTag } from './format.js';
 import { intentKey } from './controls.js';
+import { briefIdOf } from './brief-id.js';
 
 // L2: research briefs are indicative until the Etsy Open API is in (E7); shown in the pane and in the spend dialog
 export const RESEARCH_NOTE = 'Demand evidence from research is indicative until the Etsy API (E7): search-result prices and keywords as shown, no measured competitor count.';
@@ -65,14 +66,16 @@ export function createTaskPanel({ root, onOpenJob, ctl = null }) {
     if (!prod) { ctl.toast('No digital product in products.json to brief.', 'err'); return; }
     let vals = { title: '', theme: '', audience: '', minUsd: prod.floorUsd != null ? prod.floorUsd.toFixed(2) : '', maxUsd: '', ownerFile1: 'false' }, why = '';
     for (;;) {
+      // the id is made by the station from today's date and the title (the same function as the server's); shown, never typed
       const fields = [{ name: 'title', label: 'Title', required: true, value: vals.title, placeholder: 'e.g. Cozy Winter Desk Props' },
+        { name: 'briefId', label: 'Brief id (made from the title)', readonly: true, value: briefIdOf(vals.title, F.today), hint: 'the Dublin date and the title in lowercase letters, digits and hyphens; at most 60 characters' },
         { name: 'theme', label: 'Theme', type: 'textarea', required: true, rows: 3, value: vals.theme, placeholder: 'the look and feel: palette, mood, style (no brands, characters or named artists)' },
         { name: 'audience', label: 'Audience', required: true, value: vals.audience, placeholder: 'e.g. PNGTuber and VTuber streamers' },
         ...Array.from({ length: prod.files }, (_, i) => ({ name: 'item' + (i + 1), label: 'Item ' + (i + 1) + (i === 0 && prod.styleReference ? ' (the style reference)' : ''), required: true, value: vals['item' + (i + 1)] || '' })),
         { name: 'minUsd', label: 'Lowest price (USD)', type: 'number', required: true, min: prod.floorUsd ?? 0.2, step: 0.01, value: vals.minUsd, hint: prod.floorUsd != null ? 'at or above the floor USD ' + prod.floorUsd.toFixed(2) : '' },
         { name: 'maxUsd', label: 'Highest price (USD)', type: 'number', required: true, min: prod.floorUsd ?? 0.2, step: 0.01, value: vals.maxUsd },
         ...(prod.styleReference ? [{ name: 'ownerFile1', label: 'File 1 (the style reference)', type: 'select', value: vals.ownerFile1, options: [{ value: 'false', label: 'QA DESIGN’s pass approves file 1; the set follows (default)' }, { value: 'true', label: 'Pause for my decision on file 1 (ownerFile1)' }] }] : [])];
-      const v = await ctl.dialog({ title: 'New owner brief · ' + prod.key, intro: (why ? '<div class="spend-refused">' + esc(why) + '</div>' : '') + 'An owner brief claims no market evidence (the approval card says so). ' + prod.files + ' items, one per file of the product spec. It is saved to <span class="mono">research/briefs/</span> after the same checks as <span class="mono">npm run owner-brief</span>: format, originality of the whole brief, the scouting blocklist, the image policy and your bounds against the floor. Saving spends nothing.', fields, confirm: 'Save brief' });
+      const v = await ctl.dialog({ title: 'New owner brief · ' + prod.key, intro: (why ? '<div class="spend-refused">' + esc(why) + '</div>' : '') + 'An owner brief claims no market evidence (the approval card says so). ' + prod.files + ' items, one per file of the product spec. It is saved to <span class="mono">research/briefs/</span> after the same checks as <span class="mono">npm run owner-brief</span>: format, originality of the whole brief, the scouting blocklist, the image policy and your bounds against the floor. Saving spends nothing.', fields, confirm: 'Save brief', onInput: (fm) => { fm.elements.briefId.value = briefIdOf(fm.elements.title.value, F.today); } });
       if (!v) return;
       vals = v;
       const body = { title: v.title, theme: v.theme, audience: v.audience, productKey: prod.key, items: Array.from({ length: prod.files }, (_, i) => v['item' + (i + 1)]), minUsd: Number(v.minUsd), maxUsd: Number(v.maxUsd), ownerFile1: v.ownerFile1 === 'true' };

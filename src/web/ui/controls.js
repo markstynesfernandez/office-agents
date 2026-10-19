@@ -45,7 +45,8 @@ export function createControls({ root, toastRoot, onRefresh = () => {} }) {
 
   // ---- a modal dialog: fields -> values, or null when cancelled. typed: the confirm button waits for that exact word.
   let open = null;
-  function dialog({ title, intro = '', fields = [], confirm = 'OK', danger = false, typed = null, note = '' }) {
+  // readonly: a field shown but not edited (L2 fix: the owner brief id); onInput(form): called on every edit, to update such a field
+  function dialog({ title, intro = '', fields = [], confirm = 'OK', danger = false, typed = null, note = '', onInput = null }) {
     close(null);
     return new Promise((resolve) => {
       const wrap = document.createElement('div');
@@ -55,7 +56,7 @@ export function createControls({ root, toastRoot, onRefresh = () => {} }) {
         const lab = '<label for="' + id + '">' + esc(x.label) + (x.required ? ' <span class="req">required</span>' : '') + '</label>';
         if (x.type === 'textarea') return lab + '<textarea id="' + id + '" name="' + x.name + '" rows="' + (x.rows || 3) + '" placeholder="' + esc(x.placeholder || '') + '"' + req + '>' + esc(x.value || '') + '</textarea>' + (x.hint ? '<div class="hint">' + esc(x.hint) + '</div>' : '');
         if (x.type === 'select') return lab + '<select id="' + id + '" name="' + x.name + '">' + x.options.map((o) => '<option value="' + esc(o.value) + '"' + (String(o.value) === String(x.value) ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('') + '</select>' + (x.hint ? '<div class="hint">' + esc(x.hint) + '</div>' : '');
-        return lab + '<input id="' + id + '" name="' + x.name + '" type="' + (x.type || 'text') + '" value="' + esc(x.value ?? '') + '" placeholder="' + esc(x.placeholder || '') + '"' + (x.min != null ? ' min="' + x.min + '"' : '') + (x.max != null ? ' max="' + x.max + '"' : '') + (x.step != null ? ' step="' + x.step + '"' : '') + req + ' autocomplete="off">' + (x.hint ? '<div class="hint">' + esc(x.hint) + '</div>' : '');
+        return lab + '<input id="' + id + '" name="' + x.name + '" type="' + (x.type || 'text') + '" value="' + esc(x.value ?? '') + '" placeholder="' + esc(x.placeholder || '') + '"' + (x.min != null ? ' min="' + x.min + '"' : '') + (x.max != null ? ' max="' + x.max + '"' : '') + (x.step != null ? ' step="' + x.step + '"' : '') + req + (x.readonly ? ' readonly tabindex="-1" class="dlg-readonly"' : '') + ' autocomplete="off">' + (x.hint ? '<div class="hint">' + esc(x.hint) + '</div>' : '');
       };
       wrap.innerHTML = '<form class="dlg' + (danger ? ' dlg-danger' : '') + '" novalidate><h3>' + esc(title) + '</h3>' + (intro ? '<div class="dlg-intro">' + intro + '</div>' : '')
         + fields.map(f).join('')
@@ -65,6 +66,7 @@ export function createControls({ root, toastRoot, onRefresh = () => {} }) {
       const form = wrap.querySelector('form'), okBtn = wrap.querySelector('[data-ok]'), err = wrap.querySelector('.dlg-err');
       const finish = (v) => { wrap.remove(); if (open && open.wrap === wrap) open = null; resolve(v); };
       open = { wrap, finish };
+      if (onInput) { form.addEventListener('input', () => onInput(form)); onInput(form); }
       if (typed) { const t = wrap.querySelector('#dlg-typed'); t.addEventListener('input', () => { okBtn.disabled = t.value.trim() !== typed; }); }
       wrap.querySelector('[data-cancel]').addEventListener('click', () => finish(null));
       wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) finish(null); });

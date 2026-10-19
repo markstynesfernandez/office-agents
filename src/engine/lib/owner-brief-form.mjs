@@ -5,10 +5,13 @@
 // policy, owner bounds against the floor). Station code, no model.
 import { briefPriceCheck } from './etsy-fees.mjs';
 import { dublinDay } from '../time.mjs';
+import { isListingId } from './common.mjs';
+// the id comes from the title by the same function the page shows it with (L2 fix: an id is at most 60 characters in all)
+import { slugOf, briefIdOf } from '../../web/ui/brief-id.js';
+export { slugOf, briefIdOf };
 
 const clean = (s, n) => String(s == null ? '' : s).replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim().slice(0, n);
 const oneLine = (s, n) => clean(s, n).replace(/\n+/g, ' ');
-export const slugOf = (title) => String(title || '').toLowerCase().normalize('NFKD').replace(/[^\x00-\x7f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
 const money = (v) => (typeof v === 'number' ? v : Number(String(v == null ? '' : v).trim()));
 
 // what the form needs per product: the file count from the spec, the floor, whether file 1 is a style reference
@@ -35,8 +38,9 @@ export function composeOwnerBrief(form = {}, { products = [], cfg, today = dubli
   if (!(max > 0) || !cents(max)) problems.push('give the highest price in USD (e.g. 9.00)');
   if (min > 0 && max > 0 && min > max) problems.push('the lowest price is above the highest');
   if (prod && prod.floorUsd != null && min > 0 && min < prod.floorUsd - 1e-9) problems.push('the lowest price USD ' + min.toFixed(2) + ' is below the floor USD ' + prod.floorUsd.toFixed(2) + ' for ' + prod.key);
-  const slug = slugOf(title), id = today + '--' + slug;
+  const slug = slugOf(title), id = briefIdOf(title, today);
   if (!slug) problems.push('the title needs letters or digits for the brief id');
+  else if (!isListingId(id)) problems.push('the brief id ' + id + ' is not a valid id (YYYY-MM-DD--slug, at most 60 characters)');
   if (problems.length) return { ok: false, id: slug ? id : null, text: null, problems };
   const file1 = form.ownerFile1 === true || form.ownerFile1 === 'true';
   const text = ['---', 'id: ' + id, 'date: ' + today, 'status: owner', 'origin: owner', 'product_type: ' + prod.key, 'audience_segment: ' + audience, ...(file1 ? ['ownerFile1: true'] : []), '---',

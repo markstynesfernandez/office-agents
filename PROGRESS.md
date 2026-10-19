@@ -32,6 +32,13 @@ Last updated: 19/10/2026 (**L2.1 DONE**: the Console limit USD 100 in config (th
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
 (USD 0.000005, below).
 
+### L2 fix: owner brief id from the title (19/10/2026)
+
+Bug on live (9072aa3): a long title made an id over 60 characters, so saving the form was refused. The id is now made by one shared
+function (`src/web/ui/brief-id.js`, slug at most 48 characters, cut at a word), shown read-only in the form; a refused save keeps every
+field. Test with the reported title through the save path; a headless check of the form confirmed the id field and the kept fields.
+DECISIONS.md "L2 fix: owner brief id from the title".
+
 ### L2.1: Console limit in config, confirm on arming routines (19/10/2026)
 
 Owner decisions (DECISIONS.md "L2.1"), built on the mock provider only ($0, no live call):

@@ -1951,3 +1951,16 @@ the approval queue and the owner-only decisions are unchanged. Tests: `tests/l2-
    dialog, not refused: the scheduler still skips firings once a cap is reached. **Disarming needs no token.** Tests:
    `tests/l2-steer.test.mjs` "arming a routine (L2.1)".
 3. **The daily-cap check counting the worst case of open jobs** stays as built (L2 item 4).
+
+## L2 fix: owner brief id from the title (bug on live, 19/10/2026)
+
+**The bug.** Saving a New owner brief titled "Cozy Winter Desk Props for PNGTuber and VTuber Streams" was refused with "owner brief
+format: id must be YYYY-MM-DD--<slug> (a-z, 0-9, hyphens)". An id is at most 60 characters in all (`lib/common.mjs` `isListingId`), but
+the form's slug was allowed 60 characters on its own; with the 12-character date prefix this title made a 66-character id.
+
+**The fix.** `src/web/ui/brief-id.js` (pure, used by the page and by `lib/owner-brief-form.mjs`, so both always agree): the id is
+`<Dublin date>--<slug>`, the slug lowercase a-z 0-9 with single hyphens, accents dropped, at most 48 characters (60 less the date part),
+cut at a word boundary, no hyphen at either end. The server makes the id itself (any id a page sends is ignored) and refuses an id that
+is still not valid with its own message. The form shows the id read-only, updated as the title is typed; a refused save reopens the
+form with every field as entered and the reasons above it. Test: `tests/l2-steer.test.mjs` "owner brief id from the title" with the
+exact title through the form's save path. For this title the id is `<date>--cozy-winter-desk-props-for-pngtuber-and-vtuber`.
