@@ -14,7 +14,8 @@
 //                 400 that is not a content refusal, 404 (model)
 //       refusal   a content-policy refusal: 403 with moderation metadata, a 400 naming the safety system, or a 200 that came back
 //                 with no image (finish_reason content_filter, or text only); goes back to the DESIGNER as a failed attempt
-//       retryable 408, 429, 5xx, a 200 carrying an error, network and timeouts
+//       retryable 408, 429, 5xx, a 200 carrying an error, network and timeouts (W2: also a connection dropped while the body is
+//                 read; code NETWORK or TIMEOUT with no status = no HTTP response, providers/connection.mjs)
 //   - Cost: usage.cost on the response (OpenRouter credits, USD), reported on every response; null when absent (the toolbox then
 //     settles at the reservation, marked estimated). A refused 200 that reports a cost carries it on the error (usd).
 //   - The returned image is checked here: a data URL only (no download from a host the response names), at most
@@ -24,6 +25,7 @@
 import sharp from 'sharp';
 import { makeRedactor } from './anthropic.mjs';
 import { liveInstanceProblem } from '../instance.mjs';
+import { connectionFailure } from './connection.mjs';
 
 export class ImageProviderError extends Error {
   constructor(message, { code, status = undefined, retryable = false, hardStop = false, refusal = false, retryAfterMs = null, generationId = null, usd = null } = {}) {
@@ -135,7 +137,8 @@ export function createOpenRouterImage({ engineCfg, env = process.env, demo = fal
     let res, json = null;
     try {
       res = await doFetch(img.endpoint, { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: sig });
-      json = await res.json().catch(() => null);
+      // W2: a connection that drops while the body is read is a connection failure (retried), not a response that is not JSON
+      json = await res.json().catch((e) => { if (sig.aborted || connectionFailure(e)) throw e; return null; });
     } catch (e) {
       if (signal && signal.aborted) throw e;   // the caller's e-stop / Stop path settles it
       const timedOut = timeout.aborted;

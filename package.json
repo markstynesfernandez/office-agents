@@ -32,7 +32,8 @@
     "scout:live": "node scripts/scout-live.mjs",
     "line:live": "node scripts/line-live.mjs",
     "owner-brief": "node scripts/owner-brief.mjs",
-    "settle:images": "node scripts/settle-images.mjs"
+    "settle:images": "node scripts/settle-images.mjs",
+    "settle:failed": "node scripts/settle-failed.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

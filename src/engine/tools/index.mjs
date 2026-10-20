@@ -12,7 +12,8 @@
 //   boolean, a wrong type or an unknown argument is an error returned to the agent, one turn); the e-stop is checked before every
 //   call; USD 0.08 (pricing.openrouter) is reserved before EVERY attempt and settled to the cost OpenRouter reports (estimated at the
 //   reservation when none is reported), one ledger row per image with the generation id, model, size and job; 429 / 5xx / network
-//   retry per live.retries, each attempt reserved again; a credit or key-limit error (the key's daily limit) stops the job
+//   retry per live.retries, each attempt reserved again (W2: a call with no HTTP response is settled with the reason "no response
+//   (connection failed)"; after the last retry the runtime ends the run); a credit or key-limit error (the key's daily limit) stops the job
 //   (ImageStop, key-free); a content-policy refusal goes back to the DESIGNER as a failed attempt, counted per file against the
 //   QA loop limit (ctx.imageAttempts). Style reference (ctx.image, set by the orchestrator): a first-file run may draw only
 //   set-vN/raw/01-<subject>.png; a later run draws only its batch's files and the engine sends the owner-approved file 1 with every
@@ -37,6 +38,7 @@ import { GuardRefusal } from '../guard.mjs';
 import { imageSize, visionTokens, visionSettings } from '../lib/vision.mjs';
 import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT, ORIGIN as SCOUT_ORIGIN, RESEARCH_ORIGIN } from '../lib/scout-brief.mjs';
 import { readInputs } from '../lib/job-inputs.mjs';
+import { failedCallReason } from '../providers/connection.mjs';
 
 export const TOOL_NAMES = ['fs_read', 'fs_list', 'fs_write', 'image_generate', 'image_analyze', 'web_search', 'web_fetch', 'submit_verdict', 'report_blocked'];
 export const FORBIDDEN_TOOL_RE = /send|notify|notification|channel|email|mail|sms|message|post|shell|exec|browser|click|mcp|plugin/i;
@@ -230,7 +232,7 @@ export function createToolbox(ctx) {
           // otherwise (network, timeout) the request may have run: charged at its reservation, marked estimated
           if (e && e.usd != null) guard.settle(res, { usd: e.usd, priceSource: 'provider (OpenRouter usage.cost)', generationId: e.generationId || undefined, note: 'no image saved: ' + (e.code || 'error') });
           else if ((e && e.status) || (e && PRE_NETWORK.includes(e.code)) || (e && e.refusal) || !live) guard.release(res, 'image call not billed: ' + ((e && (e.status || e.code)) || 'error'));
-          else guard.settle(res, { usd: res.maxUsd, estimated: true, generationId: (e && e.generationId) || undefined, note: 'image call failed without a cost report; charged at the reserved maximum' });
+          else guard.settle(res, { usd: res.maxUsd, estimated: true, generationId: (e && e.generationId) || undefined, ...(e && e.generationId ? {} : { reason: failedCallReason(e) }), note: 'image call failed without a cost report; charged at the reserved maximum' });
           if (e && e.hardStop) { emitTool('image_generate', { path: rel, stopped: e.code }); throw new ImageStop('image provider: ' + e.message); }
           if (e && e.refusal) {
             const k = att ? att.add(name, e.code || 'refused') : null;
@@ -239,6 +241,7 @@ export function createToolbox(ctx) {
           }
           if (!(e && e.retryable) || attempt >= retries) {
             if (live && e && e.retryable && att) att.add(name, e.code || 'failed');
+            if (e && e.retryable) log.warn('image call failed after the last retry', { status: e.status ?? null, code: e.code || null, attempts: attempt + 1, retries, runId: run.runId, jobId: job ? job.id : null });
             throw e;
           }
           const waitMs = Math.min(retry.backoffMaxMs ?? 30000, e.retryAfterMs != null ? e.retryAfterMs : (retry.backoffMs ?? 2000) * 2 ** attempt);
@@ -331,8 +334,8 @@ export function createToolbox(ctx) {
         // refused before the network (e-stop, model, tool shape, config) or an HTTP error: nothing billed; otherwise
         // (network, timeout) the request may have run, so it is charged at its reservation and counted
         if ((e && e.status) || (e && PRE_NETWORK.includes(e.code))) guard.release(res, 'web call not billed: ' + (e.status || e.code));
-        else { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'web call failed without a usage report; charged at the reserved maximum' }); counters.web += p.maxUses; }
-        if (!(e && e.retryable) || attempt >= retries || counters.web >= limit) throw e;
+        else { guard.settle(res, { usd: res.maxUsd, estimated: true, reason: failedCallReason(e), note: 'web call failed without a usage report; charged at the reserved maximum' }); counters.web += p.maxUses; }
+        if (!(e && e.retryable) || attempt >= retries || counters.web >= limit) { if (e && e.retryable) log && log.warn('web call failed after the last retry', { tool: name, status: e.status ?? null, code: e.code || null, attempts: attempt + 1, retries, runId: run.runId, jobId: job ? job.id : null }); throw e; }
         const waitMs = Math.min(retry.backoffMaxMs ?? 30000, e.retryAfterMs != null ? e.retryAfterMs : (retry.backoffMs ?? 2000) * 2 ** attempt);
         log && log.warn('web call failed; retrying with a new reservation', { tool: name, status: e.status ?? null, code: e.code || null, attempt: attempt + 1, retries, waitMs, runId: run.runId, jobId: job ? job.id : null });
         await abortableSleep(waitMs, halt.signal);

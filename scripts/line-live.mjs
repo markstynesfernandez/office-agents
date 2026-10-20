@@ -12,9 +12,9 @@
 //   npm run line:live -- --plan          the pre-run line only: no engine, no key, no call (any provider setting)
 // - Refuses unless this process's own environment says live (except --plan); refuses on the e-stop; needs the server stopped
 //   (the engine lock); refuses without OPENROUTER_API_KEY (names only, never values). No scheduler, no resumed jobs, no routine.
-// - Caps are the engine's own (config/engine.json): perJob USD 5.00 for the whole job, images included, the per-agent-run cap,
+// - Caps are the engine's own (config/engine.json): perJob USD 6.00 for the whole job, images included (owner, 20/10/2026; was 5.00), the per-agent-run cap,
 //   the daily caps; OpenRouter's own key limit (USD 2 a day) applies outside the engine. This script changes none of them and
-//   refuses to start if the job cap is not USD 5.00. Nothing is published: the line ends in the approval queue.
+//   refuses to start if the job cap is not USD 6.00. Nothing is published: the line ends in the approval queue.
 // - The brief: data/research/briefs/<id>.md, else the engine's legacy import (data/legacy/research/briefs/<id>.md). Intake checks
 //   it as for any job (a refused brief creates no job and spends nothing). An owner brief (npm run owner-brief) runs the same way.
 // - Prints one pre-run line, then a key-free report (stages, QA verdicts, images, cost by stage, model and images, every ledger
@@ -34,7 +34,7 @@ import { listingSpellingProblems } from '../src/engine/lib/spelling.mjs';
 import { screenText, listingFields } from '../src/engine/lib/originality.mjs';
 import { evidenceLevelOf } from '../src/engine/lib/scout-brief.mjs';
 
-const JOB_CAP_USD = 5, LINE = 'room1-digital';
+const JOB_CAP_USD = 6, LINE = 'room1-digital';
 const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? String(process.argv[i + 1] || '') : null; };
 const BRIEF = arg('--brief'), RESUME = arg('--resume'), REDRAW = arg('--redraw'), LISTING = arg('--listing-only'), QAONLY = arg('--qa-only'), PLAN = process.argv.includes('--plan');
 const SET = arg('--set'), MAX_USD = arg('--max-usd');

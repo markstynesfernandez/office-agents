@@ -24,3 +24,6 @@ __pycache__/
 
 # the pinned Real-ESRGAN binary and model (config/engine.json upscale; licences in ASSETS.md): local only, never committed
 /tools/
+
+# Claude Code's local session settings (W2, 20/10/2026): never committed
+.claude/

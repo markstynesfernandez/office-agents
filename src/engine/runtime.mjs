@@ -22,6 +22,7 @@ import { createToolbox, ToolError, PRE_NETWORK } from './tools/index.mjs';
 import { CapError, GuardRefusal } from './guard.mjs';
 import { makeRedactor } from './providers/anthropic.mjs';
 import { urlsIn, pricesIn } from './lib/web-sources.mjs';
+import { isConnectionError, failedCallReason } from './providers/connection.mjs';
 
 export const MAX_NUDGES = 2;
 export const TRANSCRIPT_RESULT_CHARS = 2000;
@@ -50,7 +51,8 @@ export function backoffDelay(retry = {}, attempt = 0, retryAfterMs = null) {
 //   reserve (every cap; the e-stop refuses) -> call with the e-stop's signal -> settle the real cost from the usage.
 // A refused reservation throws before any call. On a retryable provider error (429, 5xx, network: `retryable`), it
 // waits and tries again up to retry.retries times; EVERY attempt reserves again. A provider error with a status is
-// released (not billed); one without a usage report is charged at the reserved maximum, marked estimated.
+// released (not billed); one without a usage report is charged at the reserved maximum, marked estimated, with the reason
+// "no response (connection failed)" for a connection-level failure (W2; the owner settles it: npm run settle:failed).
 export async function guardedTextCall({ guard, halt, providers, call, params, ctx = {}, stopSignal = null, retry = {}, log = null, note = null, sleep = abortableSleep }) {
   const retries = Math.max(0, Math.floor(retry.retries || 0));
   for (let attempt = 0; ; attempt++) {
@@ -63,8 +65,11 @@ export async function guardedTextCall({ guard, halt, providers, call, params, ct
       if (stopSignal && stopSignal.aborted) { guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'stopped by the owner mid-call; charged at the reserved maximum' }); throw new RunStopped('stopped by the owner', e); }
       if (e && e.status) guard.release(res, 'provider error ' + e.status);
       else if (e && PRE_NETWORK.includes(e.code)) guard.release(res, 'refused before the network: ' + e.code);
-      else guard.settle(res, { usd: res.maxUsd, estimated: true, note: 'call failed without a usage report; charged at the reserved maximum' });
-      if (!(e && e.retryable) || attempt >= retries) throw e;
+      else guard.settle(res, { usd: res.maxUsd, estimated: true, reason: failedCallReason(e), note: 'call failed without a usage report; charged at the reserved maximum' });
+      if (!(e && e.retryable) || attempt >= retries) {
+        if (e && e.retryable) log && log.warn('provider call failed after the last retry', { model: call.model, status: e.status ?? null, code: e.code || null, attempts: attempt + 1, retries, runId: call.runId || null, jobId: call.jobId ?? null });
+        throw e;
+      }
       const waitMs = backoffDelay(retry, attempt, e.retryAfterMs);
       log && log.warn('provider call failed; retrying with a new reservation', { model: call.model, status: e.status ?? null, code: e.code || null, attempt: attempt + 1, retries, waitMs, runId: call.runId || null, jobId: call.jobId ?? null });
       try { await sleep(waitMs, signal); } catch (_) { throw new RunStopped(halt.signal.aborted ? 'e-stop' : 'stopped by the owner'); }
@@ -112,7 +117,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
     const { resp, row } = await guardedTextCall({ guard, halt, providers, stopSignal, log, params,
       call: { provider, model, kind: 'text', runId, jobId: job ? job.id : null, agentKey, line, inputTokens, maxOutputTokens, runCapUsd },
       ctx: { agentKey, jobId: job && job.id, job, step, pass, purpose, turn: totals.turns, effort: agent.effort, thinking: agent.thinking || 'default', ...extraCtx },
-      retry: providers.mode === 'live' ? cfg.engine.live || {} : {} });
+      retry: providers.mode === 'live' ? cfg.engine.live || {} : {}, ...(engine.sleep ? { sleep: engine.sleep } : {}) });
     totals.usd += row.usd; totals.tokensIn += resp.usage.input_tokens || 0; totals.tokensOut += resp.usage.output_tokens || 0;
     if (purpose === 'image_analyze') return resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
     return resp;
@@ -187,6 +192,9 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
           if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped) { transcript(resp, uses, results, { ...after, error: e.message }); throw e; }
           if (halt.signal.aborted) throw new RunStopped('e-stop', e);
           if (stopSignal && stopSignal.aborted) throw new RunStopped('stopped by the owner', e);
+          // W2: a tool's provider call that failed with no HTTP response after its last retry ends the run (the job is blocked); it is
+          // never handed back to the agent, whose next call would go into the same dead connection
+          if (isConnectionError(e)) { log.warn('connection failed after the last retry: the run ends', { runId, agent: agentKey, tool: u.name, code: e.code }); transcript(resp, uses, results, { ...after, error: e.message }); throw e; }
           isError = true; out = (e instanceof ToolError ? '' : 'tool failed: ') + e.message;
           log.warn('tool error', { runId, agent: agentKey, tool: u.name, error: e.message });
         }

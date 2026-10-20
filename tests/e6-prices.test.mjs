@@ -43,7 +43,7 @@ test('config: the owner\'s prices, caps and image model; every real price names 
   assert.equal(PRICING.openrouter.models['openai/gpt-5-image-mini'].perImage, 0.08);
   assert.deepEqual(ENGINE.image.allowedModels, ['openai/gpt-5-image-mini']);
   assert.equal(ENGINE.image.opaqueModelApproved, false);
-  assert.deepEqual({ run: CAPS.perRunUsd, job: CAPS.perJobUsd, day: CAPS.perDayUsd, line: CAPS.perLineDayUsd.default, scout: CAPS.perJobUsdByLine['genre-scout'] }, { run: 2, job: 5, day: 10, line: 10, scout: 0.5 });
+  assert.deepEqual({ run: CAPS.perRunUsd, job: CAPS.perJobUsd, day: CAPS.perDayUsd, line: CAPS.perLineDayUsd.default, scout: CAPS.perJobUsdByLine['genre-scout'] }, { run: 2, job: 6, day: 10, line: 10, scout: 0.5 });   // W2 (owner, 20/10/2026): USD 6.00 per job, was 5.00
   for (const [prov, p] of Object.entries(PRICING)) {
     if (prov === 'mock') continue;
     for (const [model, e] of Object.entries(p.models)) {
@@ -123,7 +123,7 @@ test('images: USD 0.08 reserved; settled to the cost OpenRouter reports, or at t
   await assert.rejects(box.call('image_generate', { path: 'set-v1/files/03-mug.png', prompt: 'a mug on a desk', transparent: false }), /opaque images need the owner's image-model decision/);
 });
 
-test('caps: a genre-scout run (one research job) stops at USD 0.50; a Room 1 job has USD 5.00', () => {
+test('caps: a genre-scout run (one research job) stops at USD 0.50; a Room 1 job has USD 6.00 (W2, owner 20/10/2026)', () => {
   const { t, guard, ledger, events } = setup();
   try {
     ledger.append({ jobId: 'scout-job', runId: 'old', line: 'genre-scout', provider: 'anthropic', model: 'claude-haiku-5-5', kind: 'text', usd: 0.48, ts: NOON });
@@ -133,7 +133,9 @@ test('caps: a genre-scout run (one research job) stops at USD 0.50; a Room 1 job
     assert.ok(events.some((e) => e.type === 'cap.hit' && e.data.cap === 'perJob[genre-scout]'));
     guard.release(guard.reserve({ ...next, jobId: 'room1-job' }));
     ledger.append({ jobId: 'room1-job', runId: 'old', line: 'room1-digital', provider: 'anthropic', model: 'claude-sonnet-5-5', kind: 'text', usd: 4.5, ts: NOON });
-    assert.throws(() => guard.reserve({ ...next, jobId: 'room1-job' }), (e) => e.cap === 'perJob' && e.limit === 5);
+    guard.release(guard.reserve({ ...next, jobId: 'room1-job' }));   // 4.98 + 0.03: under USD 6.00 (it was refused at 5.00)
+    ledger.append({ jobId: 'room1-job', runId: 'old', line: 'room1-digital', provider: 'anthropic', model: 'claude-sonnet-5-5', kind: 'text', usd: 1, ts: NOON });
+    assert.throws(() => guard.reserve({ ...next, jobId: 'room1-job' }), (e) => e.cap === 'perJob' && e.limit === 6);
   } finally { t.cleanup(); }
 });
 

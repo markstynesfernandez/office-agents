@@ -137,12 +137,12 @@ test('spend quote: line, models, job cap, today against the daily cap, the Conso
   assert.equal(q.line, 'room1-digital');
   assert.ok(q.agents.some((a) => a.agent === 'designer' && /^mock \(/.test(a.model)));
   assert.deepEqual([q.job.capUsd, q.day.capUsd, q.day.spentUsd, q.day.worstUsd], [REAL.engine.caps.perJobUsd, REAL.engine.caps.perDayUsd, 0, REAL.engine.caps.perJobUsd]);
-  // L2.1 (owner, 19/10/2026): the station workspace's Console limit is USD 100, labelled as the station ledger's estimate
-  assert.equal(REAL.engine.outerLimits.anthropicConsoleMonthlyUsd, 100);
-  assert.deepEqual([q.console.configured, q.console.limitUsd, q.console.usedUsd, q.console.leftUsd], [true, 100, 0, 100]);
+  // L2.1 (owner, 19/10/2026): the station workspace's Console limit, labelled as the station ledger's estimate; W2 (owner, 20/10/2026): USD 200
+  assert.equal(REAL.engine.outerLimits.anthropicConsoleMonthlyUsd, 200);
+  assert.deepEqual([q.console.configured, q.console.limitUsd, q.console.usedUsd, q.console.leftUsd], [true, 200, 0, 200]);
   assert.equal(q.console.note, 'estimate from the station ledger; the Console is the authority');
   assert.match(q.token, /^[0-9a-f]{36}$/); assert.deepEqual(q.refusals, []);
-  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /USD 100\.00 left of the monthly limit USD 100\.00 <span class="muted">\(estimate from the station ledger; the Console is the authority\)/);
+  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /USD 200\.00 left of the monthly limit USD 200\.00 <span class="muted">\(estimate from the station ledger; the Console is the authority\)/);
   // the Console limit when the owner sets it: the limit less this Dublin month's Anthropic rows in the ledger
   engine.cfg.engine.outerLimits = { ...engine.cfg.engine.outerLimits, anthropicConsoleMonthlyUsd: 20 };
   engine.ledger.append({ ts: Date.now(), jobId: null, runId: 'r-test', agentKey: 'lister', line: 'room1-digital', provider: 'anthropic', model: 'claude-haiku-5-5', kind: 'text', count: 1, usd: 1.25 });
@@ -178,7 +178,7 @@ test('every spending endpoint refuses without the confirm step, with a reused or
   // the daily cap: a quote that would take today over it has no token; a token taken before the spend moved is refused (422)
   const qC = await quote('start-line', { file: JOB_A + '.md' });
   engine.ledger.append({ ts: Date.now(), jobId: null, runId: 'r-cap', agentKey: 'designer', line: 'room1-digital', provider: 'openrouter', model: 'openai/gpt-5-image-mini', kind: 'image', count: 1, usd: 6 });
-  const qD = await quote('start-line', { file: JOB_A + '.md' }); assert.equal(qD.token, null); assert.match(qD.refusals.join(), /daily cap would be exceeded: spent today USD 6\.00 \+ open jobs up to USD 0\.00 \+ this up to USD 5\.00 = USD 11\.00, over USD 10\.00/);
+  const qD = await quote('start-line', { file: JOB_A + '.md' }); assert.equal(qD.token, null); assert.match(qD.refusals.join(), /daily cap would be exceeded: spent today USD 6\.00 \+ open jobs up to USD 0\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
   const capped = await post('/api/tasks/brief', { file: JOB_A + '.md', confirmToken: qC.token }); assert.equal(capped.status, 422, capped.text); assert.equal(capped.json.code, 'DAY_CAP');
   assert.equal(engine.store.getJob(JOB_A), undefined, 'nothing started over the cap');
   // resume (restart) and the run modes go through the same gate
@@ -238,6 +238,11 @@ test('at most one job runs at a time on an instance; a second start waits as "ne
   const { confirmed, snap, job, settled, engine, quote } = await boot(t, { tag: 'l2next', mockDelayMs: 60 });
   const a = await confirmed('/api/tasks/brief', 'start-line', { file: JOB_A + '.md' }); assert.equal(a.status, 200, a.text);
   await until(() => job(JOB_A).state === 'running');
+  // W2 (owner, 20/10/2026): at USD 6.00 per job and USD 10.00 per day, a second start while a job is open is refused by the daily cap
+  // (worst case 6 + 6 = 12); the queue itself is tested under a day cap that fits two jobs
+  const q0 = await quote('research', { text: 'woodland niches' }); assert.equal(q0.token, null);
+  assert.match(q0.refusals.join(), /daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
+  engine.cfg.engine.caps.perDayUsd = 12;
   const q = await quote('research', { text: 'woodland niches' }); assert.equal(q.queue.startsAsNext, true); assert.deepEqual(q.queue.running, [JOB_A]);
   assert.equal(q.day.openJobsUsd, REAL.engine.caps.perJobUsd, 'the running job\'s cap counts towards the day');
   const b = await confirmed('/api/tasks/research', 'research', { text: 'woodland niches' }); assert.equal(b.status, 200, b.text);

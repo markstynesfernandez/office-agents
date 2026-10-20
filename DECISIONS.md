@@ -2118,3 +2118,112 @@ As built:
   origin (genre-scout, research) from Start line through intake and the whole design line (one QA DESIGN rework) into the approval
   queue, priced from its cited range, $0; and the 3-price floor at intake on an indicative brief (3 cited prices at or above
   USD 3.50 pass, 2 fail; a EUR row counts at the station rate, one cent under it does not).
+
+## W2: cut design-line waste and finish the winter job (owner decisions, 20/10/2026; built 20/10/2026)
+
+### What W1 found, and two corrections
+
+The W1 report (20/10/2026) on job `2026-10-19--cozy-winter-desk-props-for-pngtuber-and-vtuber`: USD 4.982876 (text 3.084745,
+image 1.898131, 41 images), blocked at QA DESIGN pass 2 by the job cap ("cap: perJob 5.00 reached (spent 4.98, next call up to
+0.03)"). Read again for W2 from the live logs and the live `ledger.jsonl`, read-only (no live file written, `station.db` not opened):
+- **The 16 failed calls total USD 0.624528, not USD 0.594.** USD 0.593985 is the 15 DESIGNER rows of run
+  `run_20261019111207_3fafef` (12 x 0.022443 and 3 x 0.108223); the 16th is QA DESIGN's at 11:53 Irish time on 19/10/2026 (USD 0.030543;
+  its retry went through). All 16 are code NETWORK (no HTTP response), estimated at their reserved maximum.
+- **Dropped connections were already retried**, exactly like a 429 or a 5xx: both providers sort a connection failure as retryable
+  (code NETWORK or TIMEOUT), and every caller retried it (`live.retries` 2: three attempts, 2 s then 4 s, each reserved again and
+  logged). The waste came from where the retries ended: 4 of the 5 groups of three attempts were `image_analyze` calls, a tool. After
+  its last retry a tool's failure went back to DESIGNER as a tool error, so the run carried on into the same dead connection; only the
+  5th group (DESIGNER's own turn) ended the run. One outage cost 15 charged attempts instead of 3.
+- **set-v3 held all 11 files (02–12) when the connection dropped** (the run failed while checking batch 2's images). The restart on
+  20/10/2026 started set-v4 and drew all 11 again (16 images, two DESIGNER runs, USD 1.375571 together).
+
+### The owner's decisions (20/10/2026)
+
+1. **Redraw only what QA flagged:** a DESIGNER pass after a QA DESIGN revise redraws only the files the verdict lists, plus any file a
+   build warning names. Every other file is carried into the new set unchanged (copied, same hashes). Batching applies to the files
+   being redrawn only. The new set's build and QA review still cover all files.
+2. **Resume continues the set in progress:** after a run fails mid-pass, Resume carries on the same set from the first file not yet
+   done; files already finished in that set are kept.
+3. **Retry dropped connections** with the same backoff and retry count as 429/5xx, log each attempt, block the job only after the last
+   retry; never retry a 400 or 401.
+4. **Failed calls in the ledger:** a call with no HTTP response is recorded as estimated at its reserved maximum with the reason
+   "no response (connection failed)"; the owner settles such rows (to USD 0 or another amount) after checking the Anthropic Console,
+   with appended adjustment rows only, each logged with who, when and the amount; dry run by default, `--apply` writes; it must handle
+   the winter job's 16 rows.
+5. **Job cap USD 6.00 for every job** (was 5.00): text is now paid from the Team plan's API credits; image spend stays bounded by the
+   OpenRouter key's USD 2 a day. No other cap changes.
+6. **Small fixes:** Mark published takes Etsy's country links; `outerLimits.anthropicConsoleMonthlyUsd` 100 -> 200 (the station
+   workspace's Console limit; the org limit is USD 350; both raised by the owner on 20/10/2026); `.claude/` in `.gitignore`.
+
+### As built
+
+- **1. Flagged redraw** (`orchestrator.mjs` `restOfSet`, `flaggedPlan`, `carryFlagged`). The station reads the revise record (the
+  job's latest `qa/design-passN.json`) and the reviewed set's `deliverables.json` `buildWarnings`. A file counts as named when its
+  number appears as `NN-subject` (with or without `.png`) in a reason, in `worthThePrice.reason` or in a build warning; a date
+  ("2026-10-19") or a size ("2000x2000") never matches. File 01 is the approved style reference and is never redrawn here (DESIGNER
+  is told QA named it). A file missing from the reviewed set is drawn in any case. The new set gets the carried files copied byte for
+  byte, a `design.md` from the station plan plus the carried files' own sections (as the redraw-only mode does), and
+  `set-vN/rework.json` (the files redrawn with QA's words and the build warning for each, the carried files with their sha256, the
+  reasons that name no file). DESIGNER's input names each file to draw with its findings and the reasons that name no file
+  (`[RUN MODE: REDRAW FLAGGED FILES …]`); the image tool refuses any other number. Prep builds and screens the whole set; QA DESIGN is
+  told which files were redrawn and which carried, and reviews every file. **A verdict that names no file 02–N** (set-wide reasons, or
+  only file 01) redraws the whole set, as before. QA DESIGN's prompt is unchanged (10,440 of its 10,500-character target); its input
+  on every style-reference review now says: "On revise, name each file to redraw by its file name (NN-subject.png) in your reasons:
+  only the files you name, and any file a build warning names, are redrawn; every other file goes into the next set unchanged."
+- **2. Resume** (`designSet` on the job). Before a style-reference DESIGNER pass draws anything, the set is recorded on the job
+  (`data.designSet`: set, mode first-file / rest / flagged, the files planned, status `drawing`). A run that fails or is stopped
+  mid-pass leaves it `drawing`. When the job runs again (Resume, or the engine's own restart recovery) and that set is still the
+  newest and not built, DESIGNER carries it on: the planned files already in its `raw/` are kept, only the rest are drawn, in batches,
+  and the input says which files are kept. A first-file attempt whose file 1 is already drawn goes straight to its check. `drawn` once
+  every batch is done (or the file-1 verdict is recorded). Scope: the style-reference product (the only one on live); the single-run
+  DESIGNER of other products still starts a new set on a Resume.
+- **3. Dropped connections** (`providers/connection.mjs`). Both providers already retried them; added: a socket or DNS error raised
+  outside the SDK's connection class (e.g. a body cut off mid-read: undici's "terminated") is now NETWORK/TIMEOUT too (Anthropic), and a
+  connection dropped while OpenRouter's body is read is a retried connection failure, not "a response that is not JSON". **A connection
+  failure that reaches a tool after its last retry now ends the run** (the job is blocked with the reason) instead of going back to the
+  agent. Each attempt is logged (the provider's line, "retrying with a new reservation"), and the last one says "failed after the last
+  retry". 400 and 401 are not retried (unchanged; tested). The retry count and backoff are unchanged (`live.retries` 2, 2 s then 4 s).
+- **4. Ledger and settle** (`guard.settle` `reason`; `lib/settle-failed.mjs`, `scripts/settle-failed.mjs`, `npm run settle:failed`).
+  A call with no HTTP response is charged at its reserved maximum, `estimated: true`, `reason: "no response (connection failed)"`
+  (text, web and image rows; an image row with a generation id stays with `settle:images`). Another call that failed without a usage
+  report gets "failed without a usage report (<code>)". `npm run settle:failed` lists every such row not yet settled; with `--job` or
+  `--entry`, `--usd` and `--by` it plans the settlement (dry run); `--apply` appends one correction row per row (`settle-<entryId>`,
+  `correctionOf`, the difference in usd, `settledUsd`, `settledBy`, `settledAt`, and a note with the workings), logs each with who,
+  when and the amount, and reports each job's spend before and after. Rows written before W2 have no reason: they are matched by the
+  runtime's and the toolbox's failure notes (no generation id). A row is never settled twice; an amount above a row's charge is
+  refused; the engine lock refuses while the server runs.
+- **5. Job cap** `caps.perJobUsd` 6 (its `$comment`), `scripts/line-live.mjs`'s cap check (it refused unless the cap was exactly the
+  configured one), the README and the tests that expected 5.00. No other cap changed.
+- **6.** `etsyListingUrl` in Mark published (`/ie/`, `/es/` and any two-letter segment; stored as `https://www.etsy.com/listing/<id>/...`,
+  also for a link without `www.`); `anthropicConsoleMonthlyUsd` 200 and its `$comment`; the README line; `.claude/` ignored.
+- Tests: `w2` 11/11 (flagged redraw through the line with a build-warning file and the carried bytes; the whole-set fallback; a mock
+  connection failure mid-batch, then Resume drawing only the remaining 8 files into the same set; the Anthropic and OpenRouter
+  classification, retries, the tool-path stop, 400/401; the settle library on the winter job's 16 rows and the script's dry run and
+  `--apply`; the country links). Changed: `e6-prices` (USD 6.00), `l2-steer` (USD 200; USD 6.00 in the day-cap refusal; see below).
+
+### Points for the owner
+
+- **The daily cap now refuses a second job while one is open.** At USD 6.00 per job and USD 10.00 per day, the spend dialog's worst
+  case for a second start is 6 + 6 = 12, over 10, so Start line / Research this / Resume are refused while another job is open (the
+  "next" queue still works if the day cap fits two jobs; `l2-steer` now asserts the refusal under the real caps and tests the queue with
+  a day cap of 12). The daily cap was not changed (decision 5: no other cap). Say if it should be USD 12.00.
+- **"Named" means by file name.** A verdict that names a file only by its subject ("the sled") does not flag it; if no file is named
+  at all, the whole set is redrawn. A file named in a "checked and fine" line is redrawn too (the station cannot tell praise from a
+  finding): one extra image at most.
+- **Build warnings flag their file**, every kind, including "enlarged over 4x: check it is not soft". At the image model's 1024 px this
+  is rare (the winter job's set-v2 had one warning: the sled's near-white fill).
+- **The retry window is short.** 2 retries at 2 s and 4 s ride out a blip, not an outage like 19/10/2026 (about 90 s). With Resume
+  carrying on the set, a block now costs the failed attempts only. The count is unchanged (not part of W2).
+- **The winter job once deployed:** it is blocked at QA DESIGN (pass 2) with set-v4 built (12 files). Resume (USD 4.982876 spent of
+  6.00, so USD 1.017124 left) runs QA DESIGN on set-v4, all 12 files, and draws nothing. Approved: LISTER, price fill, QA LISTING, the
+  package gate and the package, to the approval queue. Revise: DESIGNER pass 3 (design loop 2 of 2) redraws only the files QA names
+  into set-v5, then QA DESIGN pass 3; a further revise goes to the Rejects Desk. Worst case: the job stops at USD 6.00 recorded (the
+  guard refuses the call that would pass it). For scale: QA DESIGN pass 1 on this job cost USD 0.659491; LISTER and QA LISTING on the
+  autumn job USD 0.153036. Settling the 16 failed rows to USD 0 first (after checking the Console) brings the recorded spend to
+  USD 4.358348 and the headroom to USD 1.641652. Today's spend (USD 1.54 on 20/10/2026) leaves the daily cap clear for it.
+- **Settling the winter job's 16 rows** (live checkout, server stopped; check the 16 calls in the Console first, 19/10/2026 11:53 and
+  12:18–12:20 Irish time (10:53 and 11:18–11:20 UTC), model claude-sonnet-5-5):
+  `cd C:\Users\marks\projects\office-agents-live; npm run settle:failed -- --job 2026-10-19--cozy-winter-desk-props-for-pngtuber-and-vtuber --usd 0 --by "<your name>"`
+  (the dry run: it lists the 16 rows and the job's spend after), then the same with `--apply`. A call the Console shows at another
+  amount: `--entry <entryId> --usd <amount>` instead of `--job`.
+- The `settle:failed` script test writes `logs\settle-failed-<day>.log` in the dev checkout (git-ignored), as the script does.

@@ -130,14 +130,16 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
   // web (live web backend, E6 b0): { searches, fetches, via } as the response reported them; `count` is then the real
   // number of server tool uses (the reservation's count was max_uses), and `tokens` the relay request's usage
   // generationId / size (live images, E6 c0): OpenRouter's generation id and the image's measured pixel size
-  function settle(res, { usd, usage, priceSource, estimated = false, note, requestId, messageId, web, generationId, size } = {}) {
+  // reason (W2): why an estimated row is estimated; "no response (connection failed)" for a call that ended with no HTTP response
+  // (charged at its reserved maximum until the owner settles it: npm run settle:failed)
+  function settle(res, { usd, usage, priceSource, estimated = false, note, reason, requestId, messageId, web, generationId, size } = {}) {
     if (!reserved.has(res.id)) throw new Error('unknown or already settled reservation ' + res.id);
     const cost = usd != null ? r6(usd) : textCost(res.price, usage || {});
     const tier = usd == null && res.price.longPrompt ? priceTier(res.price, promptTokens(usage || {})).tier : null;
     const count = web ? (web.searches || 0) + (web.fetches || 0) : res.count;
     const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, provider: res.provider, model: res.model, kind: res.kind, count, ...(web ? { searches: web.searches || 0, fetches: web.fetches || 0, via: web.via || null } : {}),
       tokens: usage ? { in: usage.input_tokens || 0, out: usage.output_tokens || 0, cacheRead: usage.cache_read_input_tokens || 0, cacheWrite: usage.cache_creation_input_tokens || 0 } : null,
-      usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(requestId ? { requestId } : {}), ...(messageId ? { messageId } : {}), ...(generationId ? { generationId } : {}), ...(size ? { size } : {}), ...(note ? { note } : {}) });
+      usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(requestId ? { requestId } : {}), ...(messageId ? { messageId } : {}), ...(generationId ? { generationId } : {}), ...(size ? { size } : {}), ...(reason ? { reason } : {}), ...(note ? { note } : {}) });
     if (cost > res.maxUsd + EPS) log && log.warn('a call cost more than its reservation', { id: res.id, model: res.model, kind: res.kind, usd: cost, reservedUsd: res.maxUsd, jobId: res.jobId });
     drop(res);
     bus && bus.emit('spend.row', { jobId: res.jobId, agentKey: res.agentKey, data: { entryId: row.entryId, usd: row.usd, kind: row.kind, model: row.model, provider: row.provider } });

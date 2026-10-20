@@ -8,7 +8,9 @@
 //     before any network call. The e-stop and the abort signal are checked before the call.
 //   - One HTTP attempt per create(): the SDK's own retries are off (maxRetries 0). Retries belong to the guarded call
 //     (runtime.mjs guardedTextCall), which reserves again for every attempt. Errors come back as LiveProviderError with
-//     status, type, requestId and `retryable` (429, 5xx, network); 400/401/403 are final.
+//     status, type, requestId and `retryable` (429, 5xx, network); 400/401/403 are final. W2: a connection-level failure (no HTTP
+//     response: reset, timeout, DNS) is code NETWORK or TIMEOUT and retryable, whether the SDK or the socket raised it
+//     (providers/connection.mjs).
 //   - Nothing is added to the request: no tools, no prompt caching, no system prompt. The caller's own tools pass through
 //     (client tools only: a server or MCP tool is refused on create()), and the agent's effort maps to
 //     output_config.effort. E6 c0 (owner D2): an agent whose config says thinking "off" (ctx.thinking) gets the model's
@@ -19,6 +21,7 @@
 //     The usage it returns carries server_tool_use (web_search_requests / web_fetch_requests) for the settle.
 import Anthropic from '@anthropic-ai/sdk';
 import { liveInstanceProblem } from '../instance.mjs';
+import { connectionFailure, timedOut } from './connection.mjs';
 
 export const BASE_URL = 'https://api.anthropic.com';
 // server-side tool types allowed through create() (the agents' door): none. The web tools go through createWithWebTool.
@@ -69,6 +72,11 @@ export function normaliseError(e, redact) {
     const type = e.type || null, requestId = e.requestID || null;
     const msg = 'Anthropic API ' + s + (type ? ' ' + type : '') + ': ' + (HINT[s] || redact(e.message)) + (requestId ? ' (request ' + requestId + ')' : '');
     return new LiveProviderError(msg, { code: 'HTTP_' + s, status: s, type, requestId, retryable, retryAfterMs: Number.isFinite(ra) && ra >= 0 ? ra * 1000 : null });
+  }
+  // W2: a socket or DNS failure raised outside the SDK's connection class (e.g. the body cut off mid-read) is connection-level too
+  if (connectionFailure(e)) {
+    const timeout = timedOut(e);
+    return new LiveProviderError('Anthropic API ' + (timeout ? 'request timed out' : 'connection failed') + ': ' + redact(e && e.message ? e.message : e), { code: timeout ? 'TIMEOUT' : 'NETWORK', retryable: true });
   }
   return new LiveProviderError('Anthropic call failed: ' + redact(e && e.message ? e.message : e), { code: 'UNKNOWN' });
 }
