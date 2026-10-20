@@ -2113,4 +2113,8 @@ As built:
   is refused by this rule, and no job in either root is built on a legacy brief (live's two line jobs are those two owner briefs; the
   rest are research and scout jobs). Read from the files and the live event log only; the live `station.db` was not opened.
 - Tests: `e7a1-legacy` (the reason word for word; refused at intake and at Start line for both kinds, no job, nothing written; the
-  picker label; the routine skips it; indicative briefs of both origins and an owner brief still start from Start line).
+  picker label; the routine skips it; indicative briefs of both origins and an owner brief still start from Start line), and
+  `e7a1-indicative-line`, so the indicative path keeps the coverage the legacy fixtures gave: a verified indicative brief of each
+  origin (genre-scout, research) from Start line through intake and the whole design line (one QA DESIGN rework) into the approval
+  queue, priced from its cited range, $0; and the 3-price floor at intake on an indicative brief (3 cited prices at or above
+  USD 3.50 pass, 2 fail; a EUR row counts at the station rate, one cent under it does not).
