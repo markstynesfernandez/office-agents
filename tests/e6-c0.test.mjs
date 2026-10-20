@@ -389,12 +389,16 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
   // owner correction (17/10/2026): a genre brief passes on 3 cited listings at or above the floor (rows p, p+0.5, ... p+2: row 3 is p+1)
   const scout = (p) => { const b = genreBrief(day, g(p)).replace('status: candidate', 'status: verified') + '\n## Evidence check\n- ok\n'; return checkScoutBrief(b, { products: CFG.products, cfg: st, returned: new Set(urlsIn(b)), today }); };
   assert.equal(scout(2.49).price.ok, false); assert.equal(scout(2.5).price.ok, true);
-  // intake (createJob) refuses the 3.49 brief on price and takes the 3.50 one
+  // intake (createJob): E7a.1 (owner decision 4, 20/10/2026) refuses a brief in the ported Etsy format before any price check; an
+  // owner brief's bounds meet the same floor there (3.49 refused, 3.50 taken)
   const r = tempRoot('c0-floor'); t.after(r.cleanup);
   const engine = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false });
   t.after(() => engine.close());
-  const a = engine.orchestrator.createJob({ briefText: brief('3.49'), by: 'test' }), b = engine.orchestrator.createJob({ briefText: brief('3.50'), by: 'test' });
-  assert.equal(a.ok, false); assert.ok(a.reasons.some((x) => /^price: 0 of 5 top-5 prices at or above the floor USD 3\.5/.test(x)), a.reasons.join('; '));
+  assert.deepEqual(engine.orchestrator.createJob({ briefText: brief('3.50'), by: 'test' }).reasons, ['legacy Etsy-format brief: no Etsy data in the station until Etsy authorises it in writing (owner, 20/10/2026); restate it as an owner brief']);
+  const OB = fs.readFileSync(path.join(APP_ROOT, 'fixtures', 'engine', 'owner-brief.md'), 'utf8').replace(/\r\n/g, '\n');
+  const owned = (min) => OB.replace('owner bounds: USD 3.50–9.00', 'owner bounds: USD ' + min + '–9.00').replace(/2026-10-17--cozy-autumn-desk-props/, '2026-10-17--floor-' + min.replace('.', '-'));
+  const a = engine.orchestrator.createJob({ briefText: owned('3.49'), by: 'test' }), b = engine.orchestrator.createJob({ briefText: owned('3.50'), by: 'test' });
+  assert.equal(a.ok, false); assert.ok(a.reasons.some((x) => /^price: owner bounds USD 3\.49–9\.00: the minimum is BELOW the floor USD 3\.5/.test(x)), a.reasons.join('; '));
   assert.equal(b.ok, true, (b.reasons || []).join('; '));
   // the price fill: proposed = the larger of the floor and the brief high (a minimum, not a target)
   assert.deepEqual(variantLadder(PACK, { min: 3.5, max: 3.5 }, st).map((x) => [x.floorEur, x.proposedEur]), [[3.13, 3.13]]);

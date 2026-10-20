@@ -1,6 +1,7 @@
 // mock-script.mjs — FIXTURE: the scripted replies the mock provider gives each agent in the E3 dry run. No model is
 // called. Each agent's turn is chosen from how many replies it has already given in this run; values the agent would
 // read from a file (the manifest's sha256) are taken from the tool results in the conversation, as a model would.
+// Both fixture briefs are owner briefs (E7a.1, owner decision 4, 20/10/2026: a legacy Etsy-format brief no longer starts a job).
 //   job A (mushroom stickers): DESIGNER set-v1 -> QA-DESIGN revise -> DESIGNER set-v2 -> QA-DESIGN approved -> LISTER
 //                              -> QA-LISTING approved -> package gate -> approval queue
 //   job B (astronaut cats):    DESIGNER names a protected character: the image call is refused and design.md trips the
@@ -64,7 +65,9 @@ export function createDryRunScript({ cfg }) {
         title: 'Cozy Mushroom Stickers, 5 PNG Planner and Journal Stickers, Digital Download',
         tags: ['mushroom stickers', 'planner stickers', 'journal stickers', 'digital stickers', 'png stickers', 'woodland stickers', 'autumn stickers'],
         description: 'Five cozy woodland mushroom stickers as transparent PNG files, 1500 x 1500 px each, for digital planners and journals.\n\n' + d.listingNotice + '\n\n' + d.licences['personal-use'].listingText + '\n\n' + d.aiDisclosure.text,
-        altText: 'Five round woodland mushroom stickers with tiny doors in rust, moss and cream', ownerTodo: ['confirm price', 'upload the preview images in Etsy'] };
+        altText: 'Five round woodland mushroom stickers with tiny doors in rust, moss and cream', ownerTodo: ['confirm price', 'upload the preview images in Etsy'],
+        // the fixture briefs are owner briefs (E7a.1): LISTER proposes a price within the owner bounds
+        priceProposal: { usd: 9.99, reason: 'Five matching stickers in one pack, so the top of the owner bounds.' } };
       return { content: [tool('l3', 'fs_write', { path: 'outbox/listing.json', content: JSON.stringify(listing, null, 2) })] };
     }
     return { content: [text('Listing written.\n\n' + handoff(id, n, 'LISTER'))] };

@@ -20,6 +20,15 @@ const SIDE = { legacy: (j) => j.kind === 'legacy', archived: (j) => j.kind !== '
 // pure (tests/live-ui.test.mjs): does job j show under filter f
 export const matchesFilter = (j, f) => (SIDE[f] ? SIDE[f](j) : Object.values(SIDE).some((x) => x(j)) ? false : f === 'all' ? true : f === 'active' ? ACTIVE.includes(j.status) : j.status === f);
 
+// pure (tests/e7a1-legacy.test.mjs): the "Start line on brief" picker. Verified research briefs and owner briefs (L2: written in the
+// form or with npm run owner-brief) without a job yet; E7a.1 (owner decision 4, 20/10/2026): a legacy Etsy-format brief is listed
+// as "legacy (refused)", disabled, after the ones that can start. -> { startable, html }
+export function briefOptions(list) {
+  const shown = (list || []).filter((b) => (b.status === 'verified' || b.status === 'owner') && !b.jobId), startable = shown.filter((b) => !b.legacy);
+  const html = shown.length ? [...startable, ...shown.filter((b) => b.legacy)].map((b) => '<option value="' + esc(b.file) + '"' + (b.legacy ? ' disabled' : '') + '>' + esc((b.legacy ? 'legacy (refused) · ' : b.status === 'owner' ? 'OWNER · ' : '') + (b.niche || b.id || b.file) + (b.product ? ' · ' + b.product : '')) + '</option>').join('') : '<option value="">no brief waiting</option>';
+  return { startable, html };
+}
+
 // agent · department · stage, leaving out what is unknown (lane jobs show their stage as the pill instead)
 const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(Boolean).join(' · ') || j.id;
 
@@ -48,7 +57,7 @@ export function createTaskPanel({ root, onOpenJob, ctl = null }) {
         const r = await ctl.spendAct('research', '/api/tasks/research', { text }, { key: intentKey('research', text, state.form), ok: (x) => 'Research job ' + x.jobId + ' created', extra: RESEARCH_NOTE_HTML });
         if (r) { research.value = ''; state.form++; }
       } else if (kind === 'brief') {
-        const file = briefSel.value; if (!file) { ctl.toast('No verified brief is waiting.', 'err'); return; }
+        const file = briefSel.value; if (!file || (briefSel.selectedOptions[0] && briefSel.selectedOptions[0].disabled)) { ctl.toast('No verified brief is waiting.', 'err'); return; }
         await ctl.spendAct('start-line', '/api/tasks/brief', { file }, { key: intentKey('brief', file), ok: (x) => 'Job ' + x.jobId + ' created on the line' });
       } else if (kind === 'owner-brief') {
         await ownerBriefForm();
@@ -94,10 +103,9 @@ export function createTaskPanel({ root, onOpenJob, ctl = null }) {
     root.querySelector('#task-mode').textContent = on ? (s.engine && s.engine.halted ? 'E-STOP on: nothing starts' : 'live · ' + (s.engine ? s.engine.provider : '') + ' provider') : 'legacy view · read only';
     root.querySelectorAll('[data-go], #task-research, #task-brief, #task-rerun, #task-product').forEach((el) => { el.disabled = !on || (s.engine && s.engine.halted && el.dataset.go !== undefined); });
     research.placeholder = on ? 'What should DEMAND-RESEARCHER look into? e.g. cosy autumn sticker niches with steady demand' : 'The legacy view is read only: start the engine (npm start) to create tasks';
-    // verified briefs without a job yet
-    // verified research briefs and owner briefs (L2: written in the form or with npm run owner-brief), without a job yet
-    const briefs = (s.briefs || []).filter((b) => (b.status === 'verified' || b.status === 'owner') && !b.jobId), cur = state.pickBrief || briefSel.value;
-    briefSel.innerHTML = briefs.length ? briefs.map((b) => '<option value="' + esc(b.file) + '">' + esc((b.status === 'owner' ? 'OWNER · ' : '') + (b.niche || b.id || b.file) + (b.product ? ' · ' + b.product : '')) + '</option>').join('') : '<option value="">no brief waiting</option>';
+    // verified research briefs and owner briefs without a job yet; a legacy one listed, refused (briefOptions)
+    const { startable: briefs, html } = briefOptions(s.briefs), cur = state.pickBrief || briefSel.value;
+    briefSel.innerHTML = html;
     if (briefs.some((b) => b.file === cur)) { briefSel.value = cur; state.pickBrief = null; }
     const F = s.ownerBriefForm || { products: [] }, curP = productSel.value;
     productSel.innerHTML = F.products.map((p) => '<option value="' + esc(p.key) + '">' + esc(p.key + ' · ' + p.files + ' files' + (p.floorUsd != null ? ' · floor USD ' + p.floorUsd.toFixed(2) : '')) + '</option>').join('');

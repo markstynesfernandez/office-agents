@@ -158,7 +158,7 @@ function bootRun({ J, log, pacing, speed, generation, onPhase }) {
     setPhase('running'); run.startedAt = Date.now();
     log.info('demo day started', { generation, jobA, jobB, speed: clock.speed });
     await clock.wait(pacing.startHoldMs);
-    // job B first: a brief verified in an earlier batch, so its originality trip comes early in the day
+    // job B first: an owner brief (E7a.1: a legacy Etsy-format brief no longer starts a job), so its originality trip comes early in the day
     const b = O.createJob({ briefText: briefB, by: BY, idempotencyKey: 'demo-' + generation + '-B' });
     if (!b.ok) throw new Error('job B intake refused: ' + b.reasons.join('; '));
     const pB = O.startJob(jobB);

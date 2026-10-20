@@ -260,7 +260,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     services, departments, agents, hub, jobs, board, stages: columns.filter((c) => !['brief', 'approval-queue', 'done'].includes(c.key)), columns, routines, events, spend,
     // E5: what the page's controls may offer (the server checks every action again)
     controls: { live: true, haltVersion: halt.state.at || 0, tiers: Object.entries(cfg.engine.tiers).map(([k, t]) => ({ key: k, model: t.model })), effortLevels: cfg.engine.effortLevels || [], routineTargets: (engine.routineTargets || []).map((t) => ({ id: t.id, label: t.label })), perRunCapUsd: caps.perRunUsd, today: day },
-    briefs: engine.orchestrator ? engine.orchestrator.verifiedBriefs().map((b) => ({ file: b.file, id: b.id, niche: b.niche, status: b.status, product: b.product, jobId: b.jobId })) : [],
+    briefs: engine.orchestrator ? engine.orchestrator.verifiedBriefs().map((b) => ({ file: b.file, id: b.id, niche: b.niche, status: b.status, product: b.product, jobId: b.jobId, legacy: b.legacy })) : [],
     // L2: the owner brief form (products.json: the file count from the spec, the floor, whether file 1 is a style reference) and the job limit
     ownerBriefForm: { products: formProducts(cfg.products, cfg.station), today: day },
     jobLimit: { maxRunning: engine.maxRunningJobs || null, running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }

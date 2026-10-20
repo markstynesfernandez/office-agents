@@ -100,8 +100,8 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
       const seed = (cfg.routines || []).find((s) => s.id === routine.id);
       if (rline && rline.kind === 'research') { const r = engine.orchestrator.createResearchJob({ line: rline.id, input: routine.input || undefined, by: 'routine ' + routine.id, ...(seed && seed.productKey !== undefined ? { productKey: seed.productKey } : {}) }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
       if (routine.target === 'line:room1-digital') {
-        // the oldest verified brief that has no job yet (owner Q13: once the owner enables a line routine)
-        const b = engine.orchestrator.verifiedBriefs().find((x) => x.status === 'verified' && x.id && !x.jobId);
+        // the oldest verified brief that has no job yet (owner Q13: once the owner enables a line routine); never a legacy one (E7a.1)
+        const b = engine.orchestrator.verifiedBriefs().find((x) => x.status === 'verified' && x.id && !x.jobId && !x.legacy);
         if (!b) return { skipped: 'no verified brief is waiting' };
         // ownerFile1 (owner, 18/10/2026): a shipped routine may keep the owner's pause after QA DESIGN passes file 1
         const c = engine.orchestrator.createJob({ briefText: fs.readFileSync(path.join(J.dataRoot, 'research', 'briefs', b.file), 'utf8'), by: 'routine ' + routine.id, ownerFile1: !!(seed && seed.ownerFile1 === true) });

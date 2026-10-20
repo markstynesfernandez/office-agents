@@ -28,6 +28,7 @@ import { imagePolicyProblem } from './image-policy.mjs';
 import { screenText, hitLine, SOFT_CATEGORIES } from './originality.mjs';
 import { isListingId } from './common.mjs';
 import { urlsIn, blockedBy } from './web-sources.mjs';
+import { isOwnerBrief } from './owner-brief.mjs';
 
 export const ORIGIN = 'genre-scout', RESEARCH_ORIGIN = 'research';
 export const ORIGINS = [ORIGIN, RESEARCH_ORIGIN];
@@ -47,6 +48,11 @@ const etsyUrlsIn = (t) => urlsIn(t).filter((u) => blockedBy(u, NO_ETSY_DOMAINS))
 const OWN_SHOP_RE = /^own shop:[ \t]*(.*)$/gim, OWN_SHOP_OK = /\S.*\(recorded by owner, \d{4}-\d{2}-\d{2}\)\s*$/;
 export const indicativeOriginOf = (t) => { const m = /^---\n([\s\S]*?)\n---\n/.exec(norm(t)), o = m ? line(m[1], 'origin') : null; return ORIGINS.includes(o) ? o : null; };
 export const isIndicativeBrief = (t) => indicativeOriginOf(t) != null;
+// E7a.1 (owner decision 4, 20/10/2026): a job starts only from an indicative brief (origin genre-scout or research) or an owner
+// brief. Any other brief is a legacy Etsy-format brief (verified before 19/10/2026, or carrying Etsy figures the owner recorded
+// from a browser): refused at Start line and at intake with this reason, and shown as "legacy (refused)" in the brief picker
+export const LEGACY_BRIEF_REASON = 'legacy Etsy-format brief: no Etsy data in the station until Etsy authorises it in writing (owner, 20/10/2026); restate it as an owner brief';
+export const isLegacyBrief = (t) => !isIndicativeBrief(t) && !isOwnerBrief(t);
 const priceRangeText = (pr) => (pr || '').split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
 export const ownerSetsPrice = (pr) => priceRangeText(pr).toLowerCase().startsWith(OWNER_SETS_PRICE);
 const FRONT = ['id', 'date', 'status', 'product_type', 'audience_segment', 'origin'];

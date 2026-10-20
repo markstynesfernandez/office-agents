@@ -43,7 +43,7 @@ import { canonicalDesignFile } from './tools/index.mjs';
 import { COLUMNS as LEGACY_COLUMNS } from '../lib/legacy-readers/tracker.mjs';
 import { dublinDay } from './time.mjs';
 import { validateNotes, blocklistFromNotes, readDayNotes, scoutingBriefProblems, isScoutBrief, notesFile, notesRel, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
-import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine, isIndicativeBrief, ownerSetsPriceOf } from './lib/scout-brief.mjs';
+import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine, isIndicativeBrief, ownerSetsPriceOf, isLegacyBrief, LEGACY_BRIEF_REASON } from './lib/scout-brief.mjs';
 import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-sources.mjs';
 import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.mjs';
 import { briefFileProblems, briefFileList } from './lib/brief-files.mjs';
@@ -161,6 +161,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   function createJob({ briefText, line = 'room1-digital', by = 'owner', idempotencyKey = null, ownerFile1 = false }) {
     if (idempotencyKey) { const prev = store.idem.get('createJob:' + idempotencyKey); if (prev) return prev; }
     const L = lineOf(line), t = String(briefText || '').replace(/\r\n/g, '\n'), id = briefField(t, 'id'), reasons = [];
+    // E7a.1 (owner decision 4, 20/10/2026): only an indicative or an owner brief starts a job; a legacy one is refused with the one reason
+    if (isLegacyBrief(t)) { log.warn('intake refused a brief', { id, reasons: [LEGACY_BRIEF_REASON], by }); return { ok: false, id, reasons: [LEGACY_BRIEF_REASON] }; }
     if (!isListingId(id)) reasons.push('the brief has no valid id (YYYY-MM-DD--slug)');
     const wantStatus = isOwnerBrief(t) ? OWNER_STATUS : 'verified';   // an owner brief is the owner's, never "verified" by the Evidence Checker
     if (briefField(t, 'status') !== wantStatus) reasons.push('the brief status is "' + (briefField(t, 'status') || 'missing') + '", not "' + wantStatus + '"');
@@ -1174,12 +1176,12 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  // verified briefs in research/briefs/ (the research line's output) for "Start line on brief"
+  // verified briefs in research/briefs/ (the research line's output) for "Start line on brief"; legacy: refused at intake (E7a.1)
   function verifiedBriefs() {
     const d = path.join(dataRoot, 'research', 'briefs');
     return (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^[A-Za-z0-9._-]+\.md$/.test(f)).sort() : []).map((file) => {
       const t = fs.readFileSync(path.join(d, file), 'utf8'), id = briefField(t, 'id');
-      return { file, id, niche: niche(t) || null, status: briefField(t, 'status') || null, product: briefField(t, 'product') || null, jobId: id && store.getJob(id) ? id : null };
+      return { file, id, niche: niche(t) || null, status: briefField(t, 'status') || null, product: briefField(t, 'product') || null, jobId: id && store.getJob(id) ? id : null, legacy: isLegacyBrief(t) };
     });
   }
   // owner decision 5 (17/10/2026): an owner brief is saved to research/briefs/<id>.md only when it passes the intake checks (the

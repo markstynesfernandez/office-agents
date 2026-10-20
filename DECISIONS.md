@@ -2005,7 +2005,8 @@ tokenScopes, ping). No Etsy API answer here is from memory.
 
 ### The owner's decisions (19/10/2026)
 
-1. **No Etsy data in the scout until Etsy authorises it in writing** (the owner has emailed developer@etsy.com). etsy.com in
+1. **No Etsy data in the scout until Etsy authorises it in writing** (the owner emailed developer@etsy.com on 19/10/2026
+   requesting written authorisation; no reply yet). etsy.com in
    blocked_domains for web_search and web_fetch for every agent; the engine-side etsy.com refusal kept; TREND-SCOUT,
    DEMAND-RESEARCHER and EVIDENCE-CHECKER: demand evidence from non-Etsy sources (trend articles, editorial roundups, community
    discussion) and the owner's own shop results, "indicative". The floor rule: a brief with no Etsy prices cites price evidence from
@@ -2075,7 +2076,8 @@ tokenScopes, ping). No Etsy API answer here is from memory.
   Quick Start sends JSON; the Authentication guide shows form fields). A failure shows Etsy's error in the dialog; nothing loops.
 - **Owner-recorded Etsy figures** (the ported "recorded by owner" demand evidence, read by you in a browser) are still accepted at
   intake, and briefs verified before 19/10/2026 in the ported format still pass intake (the dry-run and demo fixtures, DESK-PROPS-01).
-  Agents can no longer write that format. Say if decision 1 should refuse those too.
+  Agents can no longer write that format. Say if decision 1 should refuse those too. **Answered 20/10/2026: refuse them (owner
+  decision 4, below).**
 - **Disconnect** deletes the Station's stored token. Removing the app's access on Etsy's side is not covered in the docs read here.
 - **Own-shop data** in E7a is the shop and its listings only (no `transactions_r`, so no buyer data). The token file is in the live
   data root (not in git). Etsy's breach rule (dpo@etsy.com within 24 hours) is recorded above.
@@ -2085,3 +2087,30 @@ tokenScopes, ping). No Etsy API answer here is from memory.
   URLs (it never fetches).
 - **The demo's research brief** is now in the indicative research format (DEMO non-Etsy results); the demo plays as before.
 - Still parked: the hidden-row false positives (scout tuning).
+
+### Owner decision 4 (20/10/2026): legacy Etsy-format briefs are refused (E7a.1)
+
+The answer to the open point above. **A job starts only from an indicative brief (origin `genre-scout` or `research`) or an owner
+brief (origin `owner`).** Any other brief is refused when a job starts, at Start line and at research-to-design intake. That covers
+briefs verified before 19/10/2026 in the ported Etsy format and briefs carrying Etsy figures the owner recorded from a browser
+("recorded by owner"). The refusal reason, word for word: "legacy Etsy-format brief: no Etsy data in the station until Etsy
+authorises it in writing (owner, 20/10/2026); restate it as an owner brief".
+
+As built:
+- `lib/scout-brief.mjs`: `isLegacyBrief` (neither indicative nor an owner brief, judged by the front matter's `origin`) and
+  `LEGACY_BRIEF_REASON`. Intake (`orchestrator.createJob`, used by Start line, the line routine, `npm run line:live` and the demo)
+  refuses such a brief with that one reason before any other check; no job row and nothing under `jobs/` is written. A job that
+  already exists is untouched (the approval queue, published and archived jobs included); no brief file is moved, edited or deleted.
+- **The Start line picker** (`ui/taskpanel.js` `briefOptions`) lists such a brief as "legacy (refused) · <niche>", disabled, after
+  the ones that can start; `GET /api/office/snapshot` carries `legacy` per brief. The **line routine** never picks a legacy brief (it took
+  the oldest verified brief, so one legacy brief would have stopped it for good).
+- **Fixtures restated as owner briefs:** the dry run's two briefs (`fixtures/engine/briefs/`, owner bounds USD 7.50–9.99; the mock
+  LISTER now writes a `priceProposal` of USD 9.99) and the demo's job B brief. The old dry-run brief is kept as
+  `fixtures/engine/legacy-etsy-brief.md` for the refusal tests. The `e6-c0` floor test checks the floor at intake on an owner
+  brief's bounds (3.49 refused, 3.50 taken) and the legacy refusal before any price check.
+- **Read-only check before building (20/10/2026):** no brief in `research/briefs/` of the dev data root (none there) or the live data
+  root (two, both owner briefs: `2026-10-17--cozy-autumn-desk-props`, `2026-10-19--cozy-winter-desk-props-for-pngtuber-and-vtuber`)
+  is refused by this rule, and no job in either root is built on a legacy brief (live's two line jobs are those two owner briefs; the
+  rest are research and scout jobs). Read from the files and the live event log only; the live `station.db` was not opened.
+- Tests: `e7a1-legacy` (the reason word for word; refused at intake and at Start line for both kinds, no job, nothing written; the
+  picker label; the routine skips it; indicative briefs of both origins and an owner brief still start from Start line).
