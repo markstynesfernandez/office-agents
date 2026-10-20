@@ -13,6 +13,13 @@
 // them); the competitor count is "not measured" and the evidence level "indicative" until the Etsy Open API is in place.
 // Keywords and the price range each need at least MIN_CITED_RESULTS distinct cited results, and every URL anywhere in
 // the brief must be one a web call of the job returned (citationProblems; the job transcript keeps them).
+// E7a (owner decision 1, 19/10/2026; DECISIONS.md "E7a"): no Etsy data in either research line until Etsy authorises it
+// in writing. This one schema now serves both lines (origin genre-scout, or research for DEMAND-RESEARCHER's briefs,
+// which have no "## Genre trend evidence"). Demand evidence comes from non-Etsy sources only (trend articles, editorial
+// roundups, community discussion, other marketplaces) plus the owner's own shop results ("own shop: ..." lines, owner
+// only); no etsy.com URL anywhere. A result row's price is as shown or "no price" (an article or a discussion shows
+// none). The floor rule is unchanged for priced rows; a brief whose rows show no price at all says "owner sets price"
+// in its Price range instead of a USD range, and the owner sets the price at approval.
 import { briefField, designDirectionOf, MIN_FLOOR_ROWS } from './brief-check.mjs';
 import { keywordSourceProblems, ownerPrice } from './demand-evidence.mjs';
 import { briefUsdRange } from './gates.mjs';
@@ -20,14 +27,28 @@ import { briefPriceCheck, variantLadder } from './etsy-fees.mjs';
 import { imagePolicyProblem } from './image-policy.mjs';
 import { screenText, hitLine, SOFT_CATEGORIES } from './originality.mjs';
 import { isListingId } from './common.mjs';
-import { urlsIn } from './web-sources.mjs';
+import { urlsIn, blockedBy } from './web-sources.mjs';
 
-export const ORIGIN = 'genre-scout';
+export const ORIGIN = 'genre-scout', RESEARCH_ORIGIN = 'research';
+export const ORIGINS = [ORIGIN, RESEARCH_ORIGIN];
 export const EVIDENCE_LEVEL = 'indicative';
 export const COUNT_NOT_MEASURED = 'not measured';
 export const MIN_CITED_RESULTS = 3, MIN_RESULT_ROWS = 3, MAX_AGE_DAYS = 30;
 export const STATUSES = ['candidate', 'verified', 'rejected'];
 export const HEADINGS = ['# Niche', '## Buyer persona', '## Demand evidence', '## Genre trend evidence', '## Keywords', '## Price range', '## Seasonality', '## Design direction', '## Risks', '## Sources'];
+const headingsFor = (origin) => (origin === RESEARCH_ORIGIN ? HEADINGS.filter((h) => h !== '## Genre trend evidence') : HEADINGS);
+// E7a (owner, 19/10/2026): a result that shows no price (an article, a roundup without prices, a discussion); and the Price
+// range of a brief whose rows show no price at all
+export const NO_PRICE = 'no price', OWNER_SETS_PRICE = 'owner sets price';
+// no Etsy data in a brief until Etsy authorises it in writing (owner decision 1, 19/10/2026)
+export const NO_ETSY_DOMAINS = ['etsy.com'];
+const etsyUrlsIn = (t) => urlsIn(t).filter((u) => blockedBy(u, NO_ETSY_DOMAINS));
+// the owner's own shop results in a Demand evidence ("own shop: <what> (recorded by owner, YYYY-MM-DD)"): owner lines only
+const OWN_SHOP_RE = /^own shop:[ \t]*(.*)$/gim, OWN_SHOP_OK = /\S.*\(recorded by owner, \d{4}-\d{2}-\d{2}\)\s*$/;
+export const indicativeOriginOf = (t) => { const m = /^---\n([\s\S]*?)\n---\n/.exec(norm(t)), o = m ? line(m[1], 'origin') : null; return ORIGINS.includes(o) ? o : null; };
+export const isIndicativeBrief = (t) => indicativeOriginOf(t) != null;
+const priceRangeText = (pr) => (pr || '').split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+export const ownerSetsPrice = (pr) => priceRangeText(pr).toLowerCase().startsWith(OWNER_SETS_PRICE);
 const FRONT = ['id', 'date', 'status', 'product_type', 'audience_segment', 'origin'];
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // a placeholder where a fact should be: never written into a brief (and never put on the blocklist: scouting.mjs)
@@ -60,15 +81,19 @@ export function parsePrice(cell) {
   }
   return { ok: false, problem: 'price must be ' + PRICE_FORMS };
 }
+const isNoPrice = (cell) => String(cell || '').trim().toLowerCase() === NO_PRICE;
 const demandRows = (de) => (de || '').split('\n').filter((l) => /^\s*\|\s*\d+\s*\|/.test(l)).map((l) => l.trim().replace(/^\||\|$/g, '').split('|').map((x) => x.trim()));
 // owner correction, 17/10/2026 (replaces the low-end floor wording): the floor is our minimum listing price, not a rule that
 // the market has no cheaper listings. A genre brief records the full range as shown, cheap rows included, and passes the floor
 // when at least MIN_FLOOR_ROWS cited listings (Demand evidence rows with a result URL, in USD) show a CURRENT price at or above
 // it (a sale counts at its current price; a range counts when its low end clears the floor, i.e. every option it sells does).
 export { MIN_FLOOR_ROWS };   // one rule for both lines (owner, 17/10/2026): defined in brief-check.mjs
-export function floorRows(text, floorUsd) {
-  const rows = demandRows(section(norm(text), '## Demand evidence')).filter((r) => r.length >= 4 && urlsIn(r[3]).length).map((r) => parsePrice(r[2])).filter((p) => p.ok && p.currency === 'USD');
-  const at = rows.filter((p) => p.current >= floorUsd - 1e-9).length;
+// E7a (owner, 19/10/2026: "3+ listings at or above USD 3.50, or the EUR equivalent"): a EUR row counts at fx.usdToEur, to
+// the cent, as on the research line's ported check (brief-check.mjs usdOfRow); another currency is not counted
+const usdOf = (p, cfg) => (p.currency === 'USD' ? p.current : p.currency === 'EUR' && cfg && cfg.fx && cfg.fx.usdToEur ? Math.round((p.current / cfg.fx.usdToEur) * 100) / 100 : null);
+export function floorRows(text, floorUsd, cfg = null) {
+  const rows = demandRows(section(norm(text), '## Demand evidence')).filter((r) => r.length >= 4 && urlsIn(r[3]).length).map((r) => parsePrice(r[2])).filter((p) => p.ok).map((p) => usdOf(p, cfg)).filter((v) => v != null);
+  const at = rows.filter((v) => v >= floorUsd - 1e-9).length;
   return { at, of: rows.length, ok: at >= MIN_FLOOR_ROWS };
 }
 const normQuery = (q) => String(q || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -101,18 +126,19 @@ const line = (sec, name) => { const m = new RegExp('^' + name + ':[ \\t]*(.*)$',
 export const isScoutDraftPath = (rel, draftsDir = 'scout-drafts') => new RegExp('^' + draftsDir + '/\\d{4}-\\d{2}-\\d{2}/[^/]+\\.md$').test(String(rel || '').replace(/\\/g, '/'));
 
 // the format, as the agents are told it on a refused write (prompts/skills/scout-brief-format.md has the full template)
-export const FORMAT_HINT = 'Genre brief format (skills/scout-brief-format.md): front matter id, date, status, product_type, audience_segment and origin: genre-scout, each on its own line; headings ' + HEADINGS.join(', ') + ' (and ## Evidence check once verified or rejected); Demand evidence with "evidence level: indicative", "checked: YYYY-MM-DD", "search queries: ...", "competitor count: not measured" and a | # | listing title | price | result URL | table of at least ' + MIN_RESULT_ROWS + ' search results.';
+export const FORMAT_HINT = 'Brief format (skills/scout-brief-format.md): front matter id, date, status, product_type, audience_segment and origin (genre-scout in scout-drafts/, research in drafts/), each on its own line; headings ' + HEADINGS.join(', ') + ' (## Genre trend evidence for genre-scout briefs only; ## Evidence check once verified or rejected); Demand evidence with "evidence level: indicative", "checked: YYYY-MM-DD", "search queries: ...", "competitor count: not measured" and a | # | result title | price | result URL | table of at least ' + MIN_RESULT_ROWS + ' non-Etsy search results (price as shown, or "no price"); no etsy.com URL anywhere; Price range "USD <low>–<high>" with 3 cited results, or "owner sets price" when no row shows a price.';
 
 // agent: the text comes from an agent's write (the owner's own marker lines are refused then, allowed in an owner's edit)
 // -> { ok, problems: [], id, status, day, cited: [every URL in the brief, canonical] }
 // productKey: the job's product key (owner, 17/10/2026, "product key as data"): product_type must be exactly that key
-export function validateScoutBrief(text, { day = null, file = null, agent = false, productKey = null } = {}) {
+// origin: the origin the brief must declare (genre-scout for scout-drafts/, research for drafts/); null accepts either
+export function validateScoutBrief(text, { day = null, file = null, agent = false, productKey = null, origin = null } = {}) {
   const t = norm(text), problems = [];
   const fm = /^---\n([\s\S]*?)\n---\n/.exec(t);
   if (!fm) problems.push('front matter (--- ... ---) missing at the top');
   const head = fm ? fm[1] : '', f = Object.fromEntries(FRONT.map((k) => [k, line(head, k)]));
   for (const k of FRONT) if (!f[k]) problems.push('front matter: ' + k + ' missing (one "' + k + ': ..." line each)');
-  if (f.origin != null && f.origin !== ORIGIN) problems.push('front matter: origin must be "' + ORIGIN + '"');
+  if (f.origin != null && (origin ? f.origin !== origin : !ORIGINS.includes(f.origin))) problems.push('front matter: origin must be "' + (origin || ORIGINS.join('" or "')) + '"');
   if (productKey && f.product_type && f.product_type !== productKey) problems.push('front matter: product_type must be this run\'s product_key, ' + productKey + ' (got ' + f.product_type + ')');
   if (/\borigin:/i.test(f.audience_segment || '')) problems.push('front matter: origin must be its own line, not part of audience_segment');
   if (f.id && !isListingId(f.id)) problems.push('id must be YYYY-MM-DD--<slug> (a-z, 0-9, hyphens, at most 60 characters): ' + f.id);
@@ -124,26 +150,31 @@ export function validateScoutBrief(text, { day = null, file = null, agent = fals
   if (f.status && f.status !== 'candidate' && section(t, '## Evidence check') === null) problems.push('a ' + f.status + ' brief needs its "## Evidence check" section');
   // a rejected brief records the verdict: only its front matter and Evidence check are required (it never moves on)
   if (f.status === 'rejected') return { ok: problems.length === 0, problems, id: f.id, status: f.status, day: f.date, cited: urlsIn(t) };
-  for (const h of HEADINGS) if (section(t, h) === null) problems.push('heading "' + h + '" missing');
+  const og = ORIGINS.includes(f.origin) ? f.origin : (origin || ORIGIN);
+  for (const h of headingsFor(og)) if (section(t, h) === null) problems.push('heading "' + h + '" missing');
   const ph = placeholderIn(t); if (ph) problems.push('placeholder "' + ph + '": every item must be what a source showed; with no evidence, write no brief (report_blocked)');
   if (agent && /recorded by owner/i.test(t)) problems.push('"recorded by owner" is the owner\'s marker: an agent never writes it');
   if (agent && (/^## Station /m.test(t) || STATION_CITATIONS_RE.test(t))) problems.push('"## Station ..." sections and the citation record are written by the station only');
+  // owner decision 1 (19/10/2026): no Etsy data in a brief until Etsy authorises it in writing
+  const etsy = etsyUrlsIn(t);
+  if (etsy.length) problems.push('etsy.com URL(s): ' + etsy.slice(0, 3).join(', ') + ': no Etsy data in a brief until Etsy authorises it in writing (owner, 19/10/2026); cite non-Etsy sources only');
 
   const de = section(t, '## Demand evidence');
+  let priced = 0;
   if (de !== null) {
-    if ((line(de, 'evidence level') || '').toLowerCase() !== EVIDENCE_LEVEL) problems.push('Demand evidence: "evidence level: ' + EVIDENCE_LEVEL + '" (web search results only, until the Etsy Open API)');
-    if ((line(de, 'competitor count') || '').toLowerCase() !== COUNT_NOT_MEASURED) problems.push('Demand evidence: "competitor count: ' + COUNT_NOT_MEASURED + '" (no Etsy page is opened)');
+    if ((line(de, 'evidence level') || '').toLowerCase() !== EVIDENCE_LEVEL) problems.push('Demand evidence: "evidence level: ' + EVIDENCE_LEVEL + '" (non-Etsy web search results only)');
+    if ((line(de, 'competitor count') || '').toLowerCase() !== COUNT_NOT_MEASURED) problems.push('Demand evidence: "competitor count: ' + COUNT_NOT_MEASURED + '" (no Etsy data)');
     const checked = line(de, 'checked');
     if (!checked || !DAY_RE.test(checked)) problems.push('Demand evidence: "checked: YYYY-MM-DD" missing');
     if (!line(de, 'search queries')) problems.push('Demand evidence: "search queries: ..." (the web searches the rows come from) missing');
+    for (const m of de.matchAll(OWN_SHOP_RE)) if (!OWN_SHOP_OK.test(m[1])) problems.push('Demand evidence: an "own shop:" line is the owner\'s own shop result and ends "(recorded by owner, YYYY-MM-DD)"; only the owner writes it');
     const rows = demandRows(de);
-    if (rows.length < MIN_RESULT_ROWS) problems.push('Demand evidence: ' + rows.length + ' search-result row(s), needs at least ' + MIN_RESULT_ROWS + ' (| # | listing title | price | result URL |)');
+    if (rows.length < MIN_RESULT_ROWS) problems.push('Demand evidence: ' + rows.length + ' search-result row(s), needs at least ' + MIN_RESULT_ROWS + ' (| # | result title | price | result URL |)');
     rows.forEach((r, i) => {
       const [, title, price, url] = r;
-      if (r.length < 4) { problems.push('Demand evidence row ' + (i + 1) + ': needs 4 cells (#, listing title, price, result URL)'); return; }
-      if (!title) problems.push('Demand evidence row ' + (i + 1) + ': listing title missing');
-      const pp = parsePrice(price);
-      if (!pp.ok) problems.push('Demand evidence row ' + (i + 1) + ': ' + pp.problem + ' (got "' + price + '")');
+      if (r.length < 4) { problems.push('Demand evidence row ' + (i + 1) + ': needs 4 cells (#, result title, price, result URL)'); return; }
+      if (!title) problems.push('Demand evidence row ' + (i + 1) + ': result title missing');
+      if (!isNoPrice(price)) { const pp = parsePrice(price); if (!pp.ok) problems.push('Demand evidence row ' + (i + 1) + ': ' + pp.problem + ', or "' + NO_PRICE + '" when the result shows none (got "' + price + '")'); else priced++; }
       if (!urlsIn(url).length) problems.push('Demand evidence row ' + (i + 1) + ': result URL missing');
     });
   }
@@ -154,8 +185,13 @@ export function validateScoutBrief(text, { day = null, file = null, agent = fals
   const kwUrls = new Set(urlsIn(kw.keywords.filter((k) => k.sourced).map((k) => k.source).join('\n')));
   if (section(t, '## Keywords') !== null && kwUrls.size < MIN_CITED_RESULTS) problems.push('Keywords: supported by ' + kwUrls.size + ' distinct cited result(s), needs at least ' + MIN_CITED_RESULTS);
   const pr = section(t, '## Price range');
-  if (pr !== null) {
-    if (!briefUsdRange(t)) problems.push('Price range: "USD <low>–<high>" missing');
+  // owner decision 1 (19/10/2026): with no price in any cited result, the brief says "owner sets price" (no figure of its own)
+  if (pr !== null && ownerSetsPrice(pr)) {
+    if (priced) problems.push('Price range: "' + OWNER_SETS_PRICE + '" is only for a brief whose result rows show no price; ' + priced + ' row(s) show one, so write "USD <low>–<high>" with 3 cited results');
+    const marker = pr.split('\n').map((l) => l.trim()).find(Boolean);
+    if (/\d/.test(marker.replace(/https?:\/\/\S+/g, ''))) problems.push('Price range: the "' + OWNER_SETS_PRICE + '" line carries no price figure (the owner sets the price at approval)');
+  } else if (pr !== null) {
+    if (!briefUsdRange(t)) problems.push('Price range: "USD <low>–<high>" missing (or "' + OWNER_SETS_PRICE + '" when no result row shows a price)');
     const n = urlsIn(pr).length;
     if (n < MIN_CITED_RESULTS) problems.push('Price range: supported by ' + n + ' distinct cited result(s), needs at least ' + MIN_CITED_RESULTS);
     // owner, 17/10/2026: the price range uses the current prices (a range: its low and high ends), never a "was" price
@@ -209,16 +245,20 @@ export function checkScoutBrief(text, { products = [], cfg, returned = null, ret
   if (age < -1) return { ok: false, reasons: ['demand evidence: checked date is in the future'], key, product: prod };
   if (returned) { const c = citationProblems(t, returned); if (c.length) return { ok: false, reasons: c, key, product: prod }; }
   if (returnedPrices) { const c = priceStringProblems(t, returnedPrices); if (c.length) return { ok: false, reasons: c, key, product: prod }; }
-  const evidence = { level: EVIDENCE_LEVEL, competitorCount: COUNT_NOT_MEASURED, checked, cited: v.cited.length };
+  const osp = ownerSetsPrice(section(t, '## Price range'));
+  const evidence = { level: EVIDENCE_LEVEL, competitorCount: COUNT_NOT_MEASURED, checked, cited: v.cited.length, price: osp ? OWNER_SETS_PRICE : 'cited' };
   if (!(prod && prod.digital === true)) return { ok: false, reasons: ['product_type ' + key + ' is not a digital product in products.json'], key, product: prod };
   const og = screenText(designDirectionOf(t), cfg, { ignore: SOFT_CATEGORIES });
   if (og.result === 'hit') return { ok: false, reasons: ['originality: Design direction ' + og.hits.map((h) => hitLine({ field: 'concept', ...h })).join('; ')], key, product: prod, originality: og };
   const policy = imagePolicyProblem(prod, cfg); if (policy) return { ok: false, reasons: [policy], key, product: prod };
   // owner correction, 17/10/2026: the floor passes on MIN_FLOOR_ROWS cited listings at or above it (floorRows), never on the
   // range's low end; the brief must not hide a cheaper result its searches showed (hiddenRowProblems, when the transcript is given)
-  const range = briefUsdRange(t), bp = briefPriceCheck((range || {}).min ?? null, prod, cfg, range), fr = floorRows(t, bp.floorUsd);
+  const range = briefUsdRange(t), bp = briefPriceCheck((range || {}).min ?? null, prod, cfg, range), fr = floorRows(t, bp.floorUsd, cfg);
   if (searches) { const h = hiddenRowProblems(t, searches, bp.floorUsd); if (h.length) return { ok: false, reasons: h, key, product: prod }; }
-  const r = { ...bp, ok: fr.ok, reason: fr.at + ' of ' + fr.of + ' cited listings show a current price at or above the floor USD ' + bp.floorUsd + (fr.ok ? '' : ', needs at least ' + MIN_FLOOR_ROWS + ' (cheaper listings stay in the brief and never fail it)') };
+  // owner decision 1 (19/10/2026): no price in any cited result -> "owner sets price"; the floor has nothing to count and the
+  // owner sets the price at approval (the price fill lists at the no-brief price until then, as for any brief without a range)
+  const r = osp ? { ...bp, ok: true, reason: OWNER_SETS_PRICE + ': no cited result shows a price; the owner sets the price at approval (at or above the floor USD ' + bp.floorUsd + ')' }
+    : { ...bp, ok: fr.ok, reason: fr.at + ' of ' + fr.of + ' cited listings show a current price at or above the floor USD ' + bp.floorUsd + (fr.ok ? '' : ', needs at least ' + MIN_FLOOR_ROWS + ' (cheaper listings stay in the brief and never fail it)') };
   const op = ownerPrice(t);
   if (op && op.problem) { r.ok = false; r.reason = op.problem; }
   else if (op) {
@@ -235,6 +275,8 @@ export function checkScoutBrief(text, { products = [], cfg, returned = null, ret
 export const STATION_CITATIONS_RE = /^- citations: (\d+), all returned by web calls in job (\S+) \(transcript\)$/m;
 export const stationCitationLine = (n, jobId) => '- citations: ' + n + ', all returned by web calls in job ' + jobId + ' (transcript)';
 
-// the evidence level a brief declares in its Demand evidence ("indicative" for genre briefs until the Etsy Open API), or
-// null; the office page shows it on the approval card (owner decision 2, 17/10/2026)
+// the evidence level a brief declares in its Demand evidence ("indicative": non-Etsy sources only), or null; the office
+// page shows it on the approval card (owner decision 2, 17/10/2026)
 export const evidenceLevelOf = (text) => { const v = line(section(norm(text), '## Demand evidence'), 'evidence level'); return v ? v.toLowerCase() : null; };
+// E7a (owner, 19/10/2026): an indicative brief whose Price range says "owner sets price" (also on the approval card)
+export const ownerSetsPriceOf = (text) => isIndicativeBrief(text) && ownerSetsPrice(section(norm(text), '## Price range'));

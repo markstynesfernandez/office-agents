@@ -65,7 +65,7 @@ The scripts set the instance, port and data root themselves and pass on no `STAT
 Every deploy and rollback appends a row (from, to, time, who, result) to `office-agents-live\data\deploys.jsonl`.
 
 **Owner's `.env` steps** (by hand; nothing in this repository writes a `.env`):
-- Live: copy `.env.live.example` to `C:\Users\marks\projects\office-agents-live\.env` and fill in `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY`.
+- Live: copy `.env.live.example` to `C:\Users\marks\projects\office-agents-live\.env` and fill in `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` (and, for the Etsy connection, `ETSY_API_KEY`, `ETSY_SHARED_SECRET` and `ETSY_TOKEN_KEY`: "Connect Etsy" below).
 - Dev (`C:\Users\marks\projects\office-agents\.env`): set `STATION_INSTANCE=dev`, `STATION_PORT=8792`, keep `STATION_PROVIDER=mock`; the two API keys can be removed (dev never reads them). Compare with `.env.example`.
 
 **Notes**
@@ -75,7 +75,7 @@ Every deploy and rollback appends a row (from, to, time, who, result) to `office
 
 **Driving the line from the page** (L2; on live the calls are real, on dev they are mock: $0):
 - **Start line on brief**: pick a brief (verified research briefs and owner briefs, "OWNER · ..."), or **New owner brief…**: title, theme, audience, one item per file of the product spec, price bounds at or above the floor, and whether you approve file 1 yourself. It is saved to `data\research\briefs\` after the same checks as `npm run owner-brief`; saving spends nothing. **Start line** then queues the job.
-- **Research this** queues a research job; its demand evidence is indicative until the Etsy API (E7).
+- **Research this** queues a research job; its demand evidence is indicative: non-Etsy sources only, no Etsy data until Etsy authorises it in writing (E7a). A brief whose results show no price says "owner sets price": you set the price at approval.
 - **Every action that can spend** (start line, research, resume, re-run listing, an agent back on duty with waiting jobs, arming a routine) shows a dialog first: the line, the models, the job cap, today's spend and the worst case of open jobs against the daily cap, the Console's monthly limit (USD 100, `outerLimits.anthropicConsoleMonthlyUsd` in `config\engine.json`; what is left is an estimate from the station ledger, the Console is the authority), and whether it starts now or waits as next. Arming a routine shows its schedule, per-run cap and worst case per firing and per week; disarming needs no confirmation. Only **Confirm** gets the server's one-time token; the server refuses without it (428), under the e-stop (423) and when the daily cap would be exceeded (422).
 - **One job runs at a time** (`runtime.maxRunningJobs`); a further start waits as **next** and starts when the running job ends.
 - **The job panel** shows the live status (stage, agent, spend against the cap, the last 5 events) and the steering: Resume, Amend brief, file 1 Approve/Reject (when the brief set ownerFile1), Approve/Reject set in your words, and the approval queue's Approve/Reject. Region fixes stay on the command line (the panel shows the commands; stop the server first).
@@ -83,6 +83,15 @@ Every deploy and rollback appends a row (from, to, time, who, result) to `office
 - `npm run parity` on dev reads the imported legacy job read-only from the live checkout's `data\legacy\` (dev's scratch data has none); `STATION_PARITY_DATA` overrides.
 - Backups: `C:\Users\marks\projects\office-agents-data-backup-L1` is the copy of `data\` taken before the move on 18/10/2026 (3,211 files, sha256-verified).
 - The pinned Real-ESRGAN binary (`tools\`, git-ignored) is copied into the live checkout by hand; its sha256s are in `config/engine.json` `upscale`.
+
+**Connect Etsy** (E7a, live only; your own shop, read only; DECISIONS.md "E7a"). The Station reads your shop and its active listings to show them with their ids. No listing search, nothing written to Etsy, nothing passed to an agent. Each Etsy call is a ledger row at USD 0.
+1. In the live `.env`, set `ETSY_TOKEN_KEY=` to at least 32 random characters, made once and kept (the Etsy token is stored encrypted with it in `data\etsy\token.enc.json`). One way to make one, in PowerShell: `-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 40 | % {[char]$_})`. `ETSY_API_KEY` and `ETSY_SHARED_SECRET` must already be there.
+2. In your Etsy app's settings (etsy.com/developers/your-apps), register this callback URL exactly: `https://localhost/station/etsy-callback`. If Etsy will not accept it, register an https URL on a domain you control instead and add `ETSY_REDIRECT_URI=<that URL>` to the live `.env`.
+3. Start (or restart) the live Station: it reads the `.env` at start. The top bar shows **Etsy: not connected**.
+4. Click it, then **Connect Etsy**. Open the link to Etsy's permission page (a new tab), sign in as the shop owner if asked, check it asks for `shops_r listings_r` only, and allow access.
+5. Etsy sends that tab to the callback URL. Nothing runs there, so the tab shows an error page: that is expected. Copy the whole address from that tab's address bar, paste it into the Station's dialog, and press **Finish connecting** within 10 minutes.
+6. The dialog shows the shop name, the scopes granted and your live listings with their ids. **Refresh listings** reads them again (one Etsy call, USD 0); **Disconnect** deletes the stored token.
+The notice Etsy's terms require is in the page footer. Dev runs a mock Etsy (FIXTURE shop) and shows no Connect button.
 
 ### The dry run
 

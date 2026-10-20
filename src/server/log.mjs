@@ -5,13 +5,19 @@
 import path from 'node:path';
 import { createJail } from '../engine/store/jail.mjs';
 
-export const SECRET_ENV = ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY'];
+// E7a: the Etsy keys and the token encryption key are secrets too
+export const SECRET_ENV = ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'ETSY_API_KEY', 'ETSY_SHARED_SECRET', 'ETSY_TOKEN_KEY'];
 export function secretsFromEnv(env = process.env) { return SECRET_ENV.map((k) => env[k]).filter((v) => typeof v === 'string' && v.length > 8); }
+// E7a: an Etsy OAuth token is "<numeric user id>.<token>" (developers.etsy.com, Authentication): redacted by shape too, so a
+// token never reaches a log line even before the client has registered it (addSecret)
+const ETSY_TOKEN_RE = /\b\d{3,}\.[A-Za-z0-9_-]{20,}/g;
 
 export function makeLogger({ dir, name = 'station', secret = '', secrets = [], quiet = false, jail = null }) {
   const J = jail || createJail({ dataRoot: dir, extraRoots: [] });
   const all = [...new Set([secret, ...secrets, ...secretsFromEnv()].filter((s) => s && s.length > 8))];
-  const redact = (s) => all.reduce((t, k) => t.split(k).join('<redacted>'), String(s));
+  const redact = (s) => all.reduce((t, k) => t.split(k).join('<redacted>'), String(s)).replace(ETSY_TOKEN_RE, '<redacted-token>');
+  // a secret known only at run time (an OAuth token, a code, a PKCE verifier): redacted from every later line
+  const addSecret = (s) => { if (typeof s === 'string' && s.length > 8 && !all.includes(s)) all.push(s); };
   const day = () => new Date().toISOString().slice(0, 10);
   const counts = { info: 0, warn: 0, error: 0, read: 0, write: 0 };
   function write(level, msg, data) {
@@ -26,7 +32,7 @@ export function makeLogger({ dir, name = 'station', secret = '', secrets = [], q
     }
   }
   return {
-    dir, counts, redact,
+    dir, counts, redact, addSecret,
     info: (m, d) => write('info', m, d),
     warn: (m, d) => write('warn', m, d),
     error: (m, d) => write('error', m, d),

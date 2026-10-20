@@ -43,7 +43,7 @@ import { canonicalDesignFile } from './tools/index.mjs';
 import { COLUMNS as LEGACY_COLUMNS } from '../lib/legacy-readers/tracker.mjs';
 import { dublinDay } from './time.mjs';
 import { validateNotes, blocklistFromNotes, readDayNotes, scoutingBriefProblems, isScoutBrief, notesFile, notesRel, SCOUT_DIR, draftsDirOf, commonWords, commonWordWarnings, commonWordNote, pruneScouting, RETENTION_DAYS } from './lib/scouting.mjs';
-import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine } from './lib/scout-brief.mjs';
+import { checkScoutBrief, validateScoutBrief, priceStringProblems, hiddenRowProblems, briefFloorUsd, STATION_CITATIONS_RE, stationCitationLine, isIndicativeBrief, ownerSetsPriceOf } from './lib/scout-brief.mjs';
 import { returnedUrls, returnedPrices, searchPrices, urlsIn } from './lib/web-sources.mjs';
 import { isOwnerBrief, checkOwnerBrief, OWNER_STATUS } from './lib/owner-brief.mjs';
 import { briefFileProblems, briefFileList } from './lib/brief-files.mjs';
@@ -85,7 +85,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     // screen of the whole brief, the image policy and the owner bounds against the floor (lib/owner-brief.mjs), then the
     // scouting screen below like every brief
     if (isOwnerBrief(t)) c = checkOwnerBrief(t, { products: cfg.products, cfg: cfg.station });
-    else if (isScoutBrief(t)) {
+    // E7a (owner decision 1, 19/10/2026): the research line's briefs (origin research) are indicative too, judged the same way
+    else if (isIndicativeBrief(t)) {
       const jid = citationsJob || ([...t.matchAll(new RegExp(STATION_CITATIONS_RE.source, 'gm'))].pop() || [])[2] || null;   // the last one: brief-check appends it
       const tf = jid && isListingId(jid) ? transcriptOf(jid) : null;
       // owner, 17/10/2026 ("prices as shown"): every price figure must be one the job's web calls returned, too
@@ -721,10 +722,15 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     for (const f of fs.existsSync(drafts) ? fs.readdirSync(drafts).filter((x) => x.endsWith('.md')) : []) {
       const t = fs.readFileSync(path.join(drafts, f), 'utf8'), st = briefField(t, 'status');
       if (st !== 'verified') { out.push(f + ': ' + (st || 'no status') + ' (not moved)'); continue; }
-      const scout = isScoutBrief(t), c = checkBriefAll(t, { citationsJob: scout ? job.id : null, productKey: scout ? job.product_key || null : null });
-      // a verified genre brief carries the station's citation record, so intake can check the citations again later
-      const kept = scout && c.ok ? t.replace(/\s*$/, '\n') + '\n## Station brief check\n' + stationCitationLine(urlsIn(t).length, job.id) + '\n- evidence level: indicative (web search results only; competitor count not measured)\n' : t;
-      if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), kept); out.push(f + ': verified -> briefs/' + (scout ? ' (evidence indicative)' : '') + (c.warnings.length ? ' (common-word warning, not a fail: ' + c.warnings.join('; ') + ')' : '')); }
+      const ind = isIndicativeBrief(t), scout = isScoutBrief(t);
+      // E7a (owner decision 1, 19/10/2026): no Etsy data from an agent: a draft in the ported Etsy demand-evidence format (any
+      // brief that is not indicative) is rejected here, whatever its status says
+      const c = ind ? checkBriefAll(t, { citationsJob: job.id, productKey: scout ? job.product_key || null : null })
+        : { ok: false, reasons: ['not an indicative brief (origin ' + (scout ? 'genre-scout' : 'research') + '): agents write no Etsy demand evidence until Etsy authorises it in writing (owner, 19/10/2026)'], warnings: [] };
+      // a verified indicative brief carries the station's citation record, so intake can check the citations again later
+      const osp = ownerSetsPriceOf(t);
+      const kept = ind && c.ok ? t.replace(/\s*$/, '\n') + '\n## Station brief check\n' + stationCitationLine(urlsIn(t).length, job.id) + '\n- evidence level: indicative (non-Etsy web search results only; competitor count not measured)\n' + (osp ? '- price: owner sets price (no cited result shows a price)\n' : '') : t;
+      if (c.ok) { J.put(path.join(dataRoot, 'research', 'briefs', f), kept); out.push(f + ': verified -> briefs/ (evidence indicative' + (osp ? '; owner sets price' : '') + ')' + (c.warnings.length ? ' (common-word warning, not a fail: ' + c.warnings.join('; ') + ')' : '')); }
       else { J.put(path.join(dataRoot, 'research', 'rejected', f), t + '\n\n## Station brief check\n' + c.reasons.map((r) => '- ' + r).join('\n') + '\n'); out.push(f + ': rejected -> ' + c.reasons.join('; ')); }
     }
     return { end: 'research-done', reason: out.join(' | ') || 'no drafts for ' + day };

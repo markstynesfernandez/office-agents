@@ -26,5 +26,5 @@
   },
   "color": "#7bc88a",
   "enabled": true,
-  "role": "Finds proven Etsy demand for digital products and writes candidate briefs."
+  "role": "Finds demand for digital products in non-Etsy sources (indicative evidence) and writes candidate briefs."
 }

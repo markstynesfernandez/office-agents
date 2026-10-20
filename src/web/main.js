@@ -15,6 +15,7 @@ import { createPresenter } from './ui/presenter.js';
 import { esc, money, dateTime, hhmm, setMoneyHidden, isMoneyHidden, hasMoney, scrubMoney } from './ui/format.js';
 import { PALETTE } from './config/palette.js';
 import { createControls } from './ui/controls.js';
+import { createEtsyPanel } from './ui/etsy.js';
 import { QUALITY_KEY } from './scene/quality.js';
 
 const q = new URLSearchParams(location.search);
@@ -34,6 +35,9 @@ const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob, c
 const board = createBoard({ root: $('#board'), onOpenJob: openJob, ctl });
 const calendar = createCalendar({ root: $('#calendar'), onOpenJob: openJob, ctl });
 const ledger = createLedgerView({ root: $('#ledger') });
+// E7a: the own-shop Etsy connection (top-bar button; the API Terms' notice is in the footer)
+const etsyPanel = createEtsyPanel({ ctl, button: $('#etsy-btn') });
+etsyPanel.refresh().catch(() => {});
 const presenter = createPresenter({ office, root: $('#caption') });
 presenter.setTour(q.get('tour') !== '0');
 let presenterOn = q.get('presenter') === '1' ? true : q.get('presenter') === '0' ? false : null;   // null: decided by the first snapshot

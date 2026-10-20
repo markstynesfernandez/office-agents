@@ -25,21 +25,24 @@ export function createDemoScript({ cfg, draft, jobA, jobB }) {
   const d = cfg.digital;
   const day = jobA.slice(0, 10);
   const draftPath = 'drafts/' + day + '/' + jobA + '.md';
-  const searchUrl = field(draft, 'search URL');
-  const listingUrl = (/\|\s*1\s*\|[^\n]*\|\s*(https:\/\/\S+)\s*\|/.exec(draft) || [])[1] || searchUrl;
+  // E7a (owner decision 1, 19/10/2026): the research brief is indicative (non-Etsy results, origin research); its rows are
+  // the results the simulated search below returns, so the station's citation and price checks pass on the transcript
+  const query = field(draft, 'search queries');
+  const rows = [...draft.matchAll(/^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*(https:\/\/\S+)\s*\|$/gm)].map((m) => ({ title: m[2], price: m[3], url: m[4] }));
+  const listingUrl = rows[0].url, secondUrl = rows[1].url;
   const verified = draft.replace(/^status: candidate$/m, 'status: verified').replace(/## Evidence check[\s\S]*$/, '## Evidence check\n'
-    + '- ' + searchUrl + ' — DEMO: re-opened (simulated), competitor count and rows 1, 2 and 4 match; supports claim: YES\n'
-    + '- keyword sources (5) — DEMO placeholders (simulated); supports claim: YES\n'
+    + '- ' + listingUrl + ' — DEMO: re-opened (simulated), title and price match; supports claim: YES\n'
+    + '- keyword sources (5) — DEMO search results (simulated); supports claim: YES\n'
     + '- originality and Etsy policy: original concept, no protected names\n'
     + '- Verdict: VERIFIED — DEMO brief (simulated data, nothing was opened)\n');
 
   function demandResearcher(ctx, params, t) {
     const steps = [
       [tool('dr1', 'fs_read', { path: 'products.json' }), tool('dr2', 'fs_list', { path: 'drafts' })],
-      [tool('dr3', 'web_search', { query: field(draft, 'search phrase') + ' etsy' })],
-      [tool('dr4', 'web_fetch', { url: searchUrl })],
+      [tool('dr3', 'web_search', { query })],
+      [tool('dr4', 'web_fetch', { url: listingUrl })],
       [tool('dr5', 'fs_write', { path: draftPath, content: draft })],
-      [text(jobA + ' — ' + ((/^# Niche\s*\n([^\n]+)/m.exec(draft) || [])[1] || '') + ' — ' + field(draft, 'product_type') + ' — ' + field(draft, 'competitor count') + ' — ' + field(draft, 'saturation').split(' ')[0])]
+      [text(jobA + ' — ' + ((/^# Niche\s*\n([^\n]+)/m.exec(draft) || [])[1] || '') + ' — ' + field(draft, 'product_type') + ' — evidence ' + field(draft, 'evidence level'))]
     ];
     return { content: steps[Math.min(t, steps.length - 1)] };
   }
@@ -47,8 +50,8 @@ export function createDemoScript({ cfg, draft, jobA, jobB }) {
     const steps = [
       [tool('ec1', 'fs_list', { path: 'drafts/' + day })],
       [tool('ec2', 'fs_read', { path: draftPath })],
-      [tool('ec3', 'web_fetch', { url: searchUrl })],
-      [tool('ec4', 'web_fetch', { url: listingUrl })],
+      [tool('ec3', 'web_fetch', { url: listingUrl })],
+      [tool('ec4', 'web_fetch', { url: secondUrl })],
       [tool('ec5', 'fs_write', { path: draftPath, content: verified })],
       [text(jobA + ' — VERIFIED — demand evidence complete and matching, 5 sourced keywords, original concept (DEMO)')]
     ];
@@ -122,7 +125,7 @@ export function createDemoScript({ cfg, draft, jobA, jobB }) {
   };
   // the researchers' web backend (canned, simulated): never a real page
   script.web = async (name, args) => (name === 'web_search'
-    ? 'DEMO simulated search results for "' + args.query + '": about ' + field(draft, 'competitor count') + ' results; nothing was opened.'
+    ? 'DEMO simulated search results for "' + args.query + '" (no real data; nothing was opened):\nResults:\n' + rows.map((r) => '- ' + r.title + ' | ' + r.url + ' | ' + r.price).join('\n')
     : 'DEMO simulated page for ' + args.url + ': the figures in the brief (simulated data); nothing was opened.');
   return script;
 }

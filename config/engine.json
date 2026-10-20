@@ -102,8 +102,9 @@
   },
   "webSources": {
     "$comment": "OWNER DECISION 17/10/2026 (DECISIONS.md 'E6 readiness' item 1 and 'E6 step b0: owner decisions'): v1 scout sources are trend articles, editorial roundups and community discussion found by web search. Store chart, browse and streaming pages are out: Steam, itch.io, Twitch, YouTube, written as bare domains (the API includes subdomains, e.g. store.steampowered.com, any itch.io page, www.twitch.tv, m.youtube.com, and rejects wildcards such as '*.itch.io'). Sent as blocked_domains on BOTH web_search and web_fetch for every agent with web tools (one shared relay), and the engine refuses a web_fetch to these hosts before anything is reserved or sent (lib/web-sources.mjs). Add nothing without the owner. Twitch and YouTube data come later through their official APIs only.",
-    "blockedDomains": ["steampowered.com", "itch.io", "twitch.tv", "youtube.com"],
-    "$fetchComment": "OWNER DECISION D1, 17/10/2026 (DECISIONS.md 'E6 step b2: owner decisions'): agents never fetch etsy.com pages (Etsy's terms restrict automated reads). The engine refuses a web_fetch to these hosts or any subdomain before anything is reserved or sent, like blockedDomains, but they are NOT sent to the API as blocked_domains, so etsy.com results still come back from web_search (titles, prices and keywords as shown in the results). Until the Etsy Open API is in place (owner applying; terms check first) genre-scout demand evidence is 'indicative' and the competitor count 'not measured'.",
+    "$etsyComment": "OWNER DECISION 1, 19/10/2026 (DECISIONS.md 'E7a'): no Etsy data in the scout or the research line until Etsy authorises it in writing (Etsy API Terms of Use section 5, last updated 18/08/2026: no automated analysis of Etsy listings, and no requests for Etsy content for analytics, without Etsy's written authorisation). etsy.com is in blockedDomains, so it is sent as blocked_domains on web_search AND web_fetch for every agent (no Etsy result comes back) and the engine refuses a fetch to it before anything is reserved or sent; fetchRefusedDomains keeps etsy.com too (the engine-side refusal; owner: keep it).",
+    "blockedDomains": ["steampowered.com", "itch.io", "twitch.tv", "youtube.com", "etsy.com"],
+    "$fetchComment": "OWNER DECISION D1, 17/10/2026 (DECISIONS.md 'E6 step b2: owner decisions'): agents never fetch etsy.com pages (Etsy's terms restrict automated reads). The engine refuses a web_fetch to these hosts or any subdomain before anything is reserved or sent, like blockedDomains, but they are NOT sent to the API as blocked_domains, so their results would still come back from web_search. Since 19/10/2026 etsy.com is in blockedDomains as well (above), so no Etsy result comes back at all; demand evidence is 'indicative' (non-Etsy sources) and the competitor count 'not measured'.",
     "fetchRefusedDomains": ["etsy.com"]
   },
   "runtime": {
@@ -115,6 +116,25 @@
     "confirmTtlMs": 600000,
     "maxReadBytes": 200000,
     "promptCaching": true
+  },
+  "etsy": {
+    "$comment": "E7a (owner decisions 2 and 3, 19/10/2026; DECISIONS.md 'E7a'): the own-shop Etsy connection (providers/etsy.mjs). Seller App use for own-shop management only: OAuth 2.0 authorization code with PKCE (S256) for the owner's shop, READ scopes only, reading only the owner's own shop and its active listings to confirm the connection and list them with their ids on the Station page. No listing search, no other shop, no write. Sources read 19/10/2026: developers.etsy.com (Authentication, Request Standards, Rate Limits, Quick Start) and Etsy's Dev MCP server (getMe, getShop, getListingsByShop, tokenScopes, ping); the API Terms of Use (last updated 18/08/2026) for the cache limits and the notice. getMe needs shops_r; getListingsByShop needs listings_r; getShop needs the API key only. The redirect URI must match the one registered in the Etsy app exactly and start with https://; nothing listens there: after approving, the owner pastes the browser's address into the Station page (ETSY_REDIRECT_URI in .env overrides it). Tokens: access 1 hour, refresh 90 days (docs), stored encrypted (AES-256-GCM, key from ETSY_TOKEN_KEY by scrypt) in <data root>/etsy/. Rate limits: Etsy publishes none by default (each app's are in its Developer Portal), so the client stays at or under perSecond / perDay here, honours Retry-After on a 429 and backs off (backoffMs x 2^attempt, at most backoffMaxMs). Cache (Terms section 5 'Display of Data': listing content at most 6 hours old, other content at most 24 hours, kept no longer than needed): in memory only, listings at most listingsTtlMs, the shop at most shopTtlMs; the client refuses a config above 6 h / 24 h. Engine settings, not caps (USD 0: the API has no charge; one ledger row per call, kind etsy).",
+    "apiBase": "https://api.etsy.com/v3",
+    "authorizeUrl": "https://www.etsy.com/oauth/connect",
+    "tokenUrl": "https://api.etsy.com/v3/public/oauth/token",
+    "redirectUri": "https://localhost/station/etsy-callback",
+    "scopes": ["shops_r", "listings_r"],
+    "perSecond": 2,
+    "perDay": 1000,
+    "retries": 3,
+    "backoffMs": 1000,
+    "backoffMaxMs": 30000,
+    "timeoutMs": 20000,
+    "connectTtlMs": 600000,
+    "listingsTtlMs": 3600000,
+    "shopTtlMs": 21600000,
+    "listingsLimit": 25,
+    "notice": "The term 'Etsy' is a trademark of Etsy, Inc. This Application uses Etsy's API, but is not endorsed or certified by Etsy."
   },
   "outerLimits": {
     "$comment": "L2: limits the owner sets OUTSIDE the engine, shown in the spend confirmation only; never caps (the engine's caps are under caps). anthropicConsoleMonthlyUsd: the Anthropic Console's monthly limit for the station workspace in USD (owner, 19/10/2026: USD 100, the org limit raised to match), null = not configured; the dialog shows the limit less this Dublin month's Anthropic rows in the station ledger, labelled 'estimate from the station ledger; the Console is the authority'. openrouterDailyUsd: the OpenRouter key limit (owner, 17/10/2026).",

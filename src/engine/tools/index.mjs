@@ -31,11 +31,11 @@ import { realResolve } from '../store/jail.mjs';
 import { screenText, hitLine } from '../lib/originality.mjs';
 import { sha256 } from '../lib/common.mjs';
 import { latestSet } from '../lib/digital-prep.mjs';
-import { isScoutPath, notesRel, SCOUT_DIR, SCOUT_DRAFTS_DIR } from '../lib/scouting.mjs';
+import { isScoutPath, notesRel, SCOUT_DIR, SCOUT_DRAFTS_DIR, DRAFTS_DIR } from '../lib/scouting.mjs';
 import { blockedDomains, fetchRefusedDomains, blockedBy, canonicalUrl, urlsIn, returnedUrls } from '../lib/web-sources.mjs';
 import { GuardRefusal } from '../guard.mjs';
 import { imageSize, visionTokens, visionSettings } from '../lib/vision.mjs';
-import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT } from '../lib/scout-brief.mjs';
+import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT, ORIGIN as SCOUT_ORIGIN, RESEARCH_ORIGIN } from '../lib/scout-brief.mjs';
 import { readInputs } from '../lib/job-inputs.mjs';
 
 export const TOOL_NAMES = ['fs_read', 'fs_list', 'fs_write', 'image_generate', 'image_analyze', 'web_search', 'web_fetch', 'submit_verdict', 'report_blocked'];
@@ -161,8 +161,11 @@ export function createToolbox(ctx) {
       if (/\.json$/i.test(rel)) { try { JSON.parse(content); } catch (e) { throw new ToolError(rel + ' is not valid JSON: ' + e.message); } }
       // owner D3: a genre-scout draft is validated against the one brief schema before it is written; an invalid draft is
       // not written and the agent gets the problems back (one turn, within its caps) to fix and write it again
-      if (isScoutDraftPath(rel, SCOUT_DRAFTS_DIR)) {
-        const v = validateScoutBrief(content, { day: rel.split('/')[1], file: rel, agent: true, productKey: (job && job.product_key) || null });
+      // E7a (owner decision 1, 19/10/2026): the research line's drafts (drafts/<day>/) are validated the same way, as
+      // indicative briefs with origin research (no Etsy data; the ported Etsy demand-evidence format is no longer written)
+      const draftOrigin = isScoutDraftPath(rel, SCOUT_DRAFTS_DIR) ? SCOUT_ORIGIN : isScoutDraftPath(rel, DRAFTS_DIR) ? RESEARCH_ORIGIN : null;
+      if (draftOrigin) {
+        const v = validateScoutBrief(content, { day: rel.split('/')[1], file: rel, agent: true, productKey: (draftOrigin === SCOUT_ORIGIN && job && job.product_key) || null, origin: draftOrigin });
         if (!v.ok) { log.warn('genre draft refused by the brief schema', { runId: run.runId, agent: agent.key, path: rel, problems: v.problems.length }); throw new ToolError('brief schema: ' + rel + ' was NOT written. Fix every point and write it again: ' + v.problems.join('; ') + '. ' + FORMAT_HINT); }
       }
       J.put(abs, content);
@@ -273,12 +276,13 @@ export function createToolbox(ctx) {
     async web_search({ query }) { return webCall('web_search', { query }); },
     async web_fetch({ url }) {
       if (!/^https:\/\//.test(String(url))) throw new ToolError('https URLs only');
+      // owner D1: etsy.com pages are never fetched; E7a (owner decision 1, 19/10/2026): and no Etsy data at all until Etsy
+      // authorises it in writing (etsy.com is also a blocked domain now, so its search results no longer come back)
+      const shop = blockedBy(url, fetchRefused);
+      if (shop) throw new ToolError('web_fetch refused: ' + shop + ' pages are never fetched (no Etsy data until Etsy authorises it in writing). Use non-Etsy sources: trend articles, editorial roundups, community discussion and other marketplaces; the evidence level is indicative and the competitor count "not measured".');
       // the owner's v1 source rule (lib/web-sources.mjs): refused before anything is reserved, counted or sent
       const hit = blockedBy(url, blocked);
       if (hit) throw new ToolError('web_fetch refused: ' + hit + ' is a blocked source (store, chart and streaming pages are not used; use trend articles, editorial roundups and community discussion)');
-      // owner D1: etsy.com pages are never fetched (refused here only; its search results still come back from web_search)
-      const shop = blockedBy(url, fetchRefused);
-      if (shop) throw new ToolError('web_fetch refused: ' + shop + ' pages are never fetched (Etsy\'s terms restrict automated reads). Use the listing titles, prices and keywords that web_search results show; the evidence level is indicative and the competitor count "not measured".');
       // owner D1: agents never construct URLs: a fetch must name a URL that a web search in this job returned
       const c = canonicalUrl(url);
       if (!c || !fetchable(c)) throw new ToolError('web_fetch refused: ' + url + ' was not returned by any web search in this job. Never type, build or guess a URL: fetch only a URL that a search result gave you.');

@@ -72,25 +72,27 @@ test('D1: a constructed URL is refused before anything is reserved; a URL a sear
   await assert.rejects(c.b.call('web_fetch', { url: 'https://trends.example.com/genres/made-up' }), /was not returned by any web search/);
 });
 
-test('D1: an etsy.com fetch is refused before anything is reserved, while etsy.com search results still come through; etsy.com is not sent as blocked_domains', async (t) => {
+// E7a (owner decision 1, 19/10/2026): etsy.com is a blocked domain on BOTH web tools (no Etsy result comes back) and the
+// engine-side fetch refusal stays; the FIXTURE search results come from a non-Etsy marketplace
+test('E7a: an etsy.com fetch is refused before anything is reserved; etsy.com is sent as blocked_domains on both tools and kept in the engine refusal', async (t) => {
   const { e, r } = boot(t);
   const { b, reserves } = box(e, r);
   const out = await b.call('web_search', { query: 'cozy farming desk props png' });
-  const etsy = urlsIn(out).filter((u) => /^https:\/\/www\.etsy\.com\/listing\//.test(u));
-  assert.equal(etsy.length, 5, 'the etsy.com results come back from the search');
-  assert.match(out, /FIXTURE listing 1 cozy farming desk props \| https:\/\/www\.etsy\.com\/listing\/\d+ \| USD 8\.95/);
+  assert.equal(urlsIn(out).filter((u) => /etsy\.com/i.test(u)).length, 0, 'no Etsy result in the scout\'s search results');
+  assert.match(out, /FIXTURE listing 1 cozy farming desk props \| https:\/\/market\.example\.com\/listing\/cozy-farming-1 \| USD 8\.95/);
   const before = reserves();
-  for (const url of [etsy[0], 'https://etsy.com/listing/1', 'https://WWW.ETSY.COM/search?q=x', 'https://shop.etsy.com/x']) {
-    await assert.rejects(b.call('web_fetch', { url }), (x) => x instanceof ToolError && /etsy\.com pages are never fetched \(Etsy's terms restrict automated reads\)/.test(x.message), url);
+  for (const url of ['https://www.etsy.com/listing/1', 'https://etsy.com/listing/1', 'https://WWW.ETSY.COM/search?q=x', 'https://shop.etsy.com/x']) {
+    await assert.rejects(b.call('web_fetch', { url }), (x) => x instanceof ToolError && /etsy\.com pages are never fetched \(no Etsy data until Etsy authorises it in writing\)/.test(x.message), url);
   }
   assert.equal(reserves(), before, 'nothing reserved'); assert.equal(b.counters.web, 1, 'only the search counted');
   // a look-alike host is not the etsy rule (it is refused only as a URL no search returned)
   await assert.rejects(b.call('web_fetch', { url: 'https://notetsy.com/x' }), /was not returned by any web search/);
-  // config: the engine-only list, and the API's blocked_domains still the owner's four on both tools
+  // config: the engine-only list keeps etsy.com, and the API's blocked_domains carry it on both tools
   assert.deepEqual(fetchRefusedDomains(ENGINE), ['etsy.com']);
-  assert.deepEqual(blockedDomains(ENGINE), ['steampowered.com', 'itch.io', 'twitch.tv', 'youtube.com']);
+  const list = ['steampowered.com', 'itch.io', 'twitch.tv', 'youtube.com', 'etsy.com'];
+  assert.deepEqual(blockedDomains(ENGINE), list);
   const W = webSettings(ENGINE);
-  for (const name of ['web_search', 'web_fetch']) { const tl = buildRequest(W, name, name === 'web_search' ? { query: 'q' } : { url: 'https://news.example.com/x' }, 1).tools[0]; assert.deepEqual(tl.blocked_domains, ['steampowered.com', 'itch.io', 'twitch.tv', 'youtube.com'], name); assert.ok(!JSON.stringify(tl).includes('etsy'), name); }
+  for (const name of ['web_search', 'web_fetch']) { const tl = buildRequest(W, name, name === 'web_search' ? { query: 'q' } : { url: 'https://news.example.com/x' }, 1).tools[0]; assert.deepEqual(tl.blocked_domains, list, name); }
 });
 
 // ---- D2: report_blocked and the nudge
@@ -211,7 +213,7 @@ test('D3: the schema itself: naming, origin line, indicative evidence, 3+ result
 // ---- D1 at the checker: citations against the transcript; indicative evidence accepted with 3+ results
 
 test('D1: a citation no web call of the job returned is rejected at brief-check; indicative evidence with 3+ supporting results is verified', async (t) => {
-  const day = dublinDay(), made = 'https://www.etsy.com/listing/999999999';
+  const day = dublinDay(), made = 'https://market.example.com/listing/made-up-999';   // E7a: non-Etsy (an etsy.com URL is refused on write)
   const s = scripted({ atDrafts: (p, k, draftsTurn) => {
     if (k !== 0) return null;
     const c = draftsTurn(p).content.map((u) => (u.input && /cozy-farming/.test(u.input.path) ? { ...u, input: { ...u.input, content: u.input.content.replace(/^(- pngtuber props — )\S+$/m, '$1' + made).replace('## Sources\n', '## Sources\n- ' + made + ' — a result (not really returned)\n') } } : u));
@@ -223,7 +225,7 @@ test('D1: a citation no web call of the job returned is rejected at brief-check;
   // EVIDENCE-CHECKER was given the URLs the job's web calls returned (and the made-up one is not among them)
   const input = s.inputs['evidence-checker'][0];
   assert.match(input, /SOURCES RETURNED to this job's web calls so far/); assert.ok(input.includes('https://trends.example.com/genres/cozy-farming')); assert.ok(!input.includes(made));
-  assert.match(job.reason, /--genre-cozy-farming-desk-props\.md: rejected -> citations not returned by any web call in this job: https:\/\/www\.etsy\.com\/listing\/999999999/);
+  assert.match(job.reason, /--genre-cozy-farming-desk-props\.md: rejected -> citations not returned by any web call in this job: https:\/\/market\.example\.com\/listing\/made-up-999/);
   assert.equal((job.reason.match(/verified -> briefs\/ \(evidence indicative\)/g) || []).length, 3);
   assert.ok(fs.existsSync(research(e, 'rejected', day + '--genre-cozy-farming-desk-props.md')));
   // the same rule as a function

@@ -60,11 +60,13 @@ test('decision 1: a research brief passes on 3+ top-5 prices at or above the flo
 
 test('decision 1: the prompts state the 3-price rule for both lines; EVIDENCE-CHECKER stays at most 14,000 chars', async () => {
   const skill = fs.readFileSync(path.join(PROMPTS, 'skills', 'price-rules-brief.md'), 'utf8');
-  assert.match(skill, /A brief passes when at least 3 of its top-5 prices .* are at or above the BRIEF FLOOR/);
+  // E7a (owner decision 1, 19/10/2026): the prices are the cited non-Etsy results' (no Etsy top-5), or "owner sets price"
+  assert.match(skill, /A brief passes when at least 3 of its cited result prices .* are at or above the BRIEF FLOOR/);
   assert.match(skill, /cheaper ones included; never drop, raise or round a price to pass/);
+  assert.match(skill, /OWNER SETS PRICE: when no cited result shows a price/);
   assert.doesNotMatch(skill, /LOWEST price/);
   assert.match(fs.readFileSync(path.join(PROMPTS, 'skills', 'price-floor.md'), 'utf8'), /at least 3 sourced current prices in a brief must be at or above it/);
-  assert.match(fs.readFileSync(path.join(PROMPTS, 'agents', 'demand-researcher.md'), 'utf8'), /PRICE: at least 3 top-5 prices must clear the BRIEF FLOOR/);
+  assert.match(fs.readFileSync(path.join(PROMPTS, 'agents', 'demand-researcher.md'), 'utf8'), /PRICE: at least 3 cited prices must clear the BRIEF FLOOR/);
   const { buildAgentPrompt } = await import('../src/engine/prompts.mjs');
   const ec = buildAgentPrompt(CFG.agents['evidence-checker'], { promptsDir: PROMPTS });
   assert.ok(ec.chars <= 14000, 'evidence-checker is ' + ec.chars + ' chars');

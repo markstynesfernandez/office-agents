@@ -34,6 +34,13 @@ button, select, textarea, input { font: inherit; color: inherit; }
 #hints { grid-area: hints; display: flex; gap: 16px; align-items: center; padding: 0 14px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; }
 #hints b { color: var(--text); font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-right: 4px; }
 #hints #hint-status { margin-left: auto; font-family: var(--mono); }
+/* E7a: the Etsy API Terms' required notice, and the own-shop Etsy dialog */
+#hints .etsy-notice { font-size: 11px; white-space: normal; }
+.etsy-btn { cursor: pointer; }
+.etsy-listings { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+.etsy-listings th, .etsy-listings td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.etsy-steps { padding-left: 18px; font-size: 13px; line-height: 1.45; }
+.etsy-mock { padding: 4px 6px; border: 1px dashed var(--muted); border-radius: 4px; }
 #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .btn-icon { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; flex: none; }

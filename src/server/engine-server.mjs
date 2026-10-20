@@ -23,7 +23,9 @@ import { composeOwnerBrief } from '../engine/lib/owner-brief-form.mjs';
 
 const MAX_BODY = 16 * 1024;
 
-export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = null }) {
+// etsy (E7a): the own-shop Etsy connection (providers/etsy.mjs on live, the mock on dev), or { unavailable: reason }; the
+// page reads GET /api/etsy (status, never a token) and connects, refreshes or disconnects through the POST actions below
+export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = null, etsy = null }) {
   const token = crypto.randomBytes(24).toString('hex');   // per launch; only the page on our own origin can read it
   const hostLabel = 'Node ' + process.version + ' · ' + os.platform() + ' ' + os.release() + ' (station host)';
   let cache = { at: 0, seq: -1, snap: null };
@@ -127,8 +129,20 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/jobs/stop': (body) => O.stopJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
     'POST /api/jobs/restart': spends('restart', (body) => O.restartJob(str(body.jobId), { expectedVersion: ver(body), by: BY })),
     'POST /api/jobs/archive': (body) => O.archiveJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
+    // E7a: the own-shop Etsy connection (read scopes only; nothing is written to Etsy and nothing spends)
+    'POST /api/etsy/connect/start': () => etsyClient().startConnect(),
+    'POST /api/etsy/connect/finish': (body) => etsyClient().finishConnect(str(body.pasted, 4000)),
+    'POST /api/etsy/listings': () => etsyClient().listings({ force: true }).then(() => etsyClient().status()),
+    'POST /api/etsy/disconnect': () => etsyClient().disconnect(),
     ...((ext && ext.actions) || {})
   };
+  function etsyClient() {
+    if (!etsy || etsy.unavailable) throw Object.assign(new Error('Etsy is not available on this Station: ' + ((etsy && etsy.unavailable) || 'no Etsy client')), { code: 'ETSY_UNAVAILABLE' });
+    return etsy;
+  }
+  const etsyStatus = () => (!etsy ? { available: false, reason: 'no Etsy client', notice: (engine.cfg.engine.etsy || {}).notice || null }
+    : etsy.unavailable ? { available: false, reason: etsy.unavailable, notice: (engine.cfg.engine.etsy || {}).notice || null }
+      : { available: true, instance: engine.instance ? engine.instance.name : null, ...etsy.status() });
   // a refusal or a done action: logged, and emitted so every open page refreshes
   const audit = (ok, p, data) => { try { engine.bus.emit(ok ? 'action.done' : 'action.refused', { jobId: data.jobId || null, agentKey: data.agentKey || null, data: { action: p, ...data } }); } catch (_) { /* bus closed */ } };
   const refuse = (res, p, status, error, extra = {}) => { log.warn('write refused', { path: p, status, error, ...extra }); audit(false, p, { status, error, ...extra }); return sendJson(res, { error, code: extra.code || null }, status); };
@@ -196,6 +210,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       if ((m = /^\/api\/office\/agents\/([^/]+)$/.exec(p))) { const s = snapshot(); const a = s.agents.find((x) => x.id === m[1]); if (!a) return sendJson(res, { error: 'no such agent' }, 404); const runs = engine.store.runsOf({ agentKey: a.id, limit: 12 }).map((r) => ({ at: r.ended_at || r.started_at, title: (r.step || '') + ' pass ' + (r.pass || 1) + ' · ' + (r.job_id || ''), reason: r.status === 'done' ? 'done' : r.status, usd: r.usd, tokens: r.tokens_in + r.tokens_out, durationMs: r.ended_at ? r.ended_at - r.started_at : null, failureCode: ['failed', 'cap', 'refused'].includes(r.status) ? r.status : null })); const jobs = a.recentJobs.map((id) => s.jobs.find((j) => j.id === id)).filter(Boolean); return sendJson(res, { ...a, runs, jobs }); }
       if ((m = /^\/api\/office\/image\/job\/([^/]+)\/(set-v\d+)\/(?:(build|review)\/)?([a-z0-9][a-z0-9._-]*\.(?:png|jpg))$/.exec(p))) { const buf = await thumb(m[1], m[2], m[4], m[3] || 'files'); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=60' }) : send(res, 404, 'no such image', 'text/plain'); }
       if ((m = /^\/api\/office\/image\/legacy\/(\d{4}-\d{2}-\d{2}--[a-z0-9-]+)\/((?:work|package|rejected)\/[a-z0-9][a-z0-9._/-]*\.png)$/.exec(p)) && !m[2].includes('..')) { const buf = await legacyThumb(m[1], m[2]); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=300' }) : send(res, 404, 'no such image', 'text/plain'); }
+      if (p === '/api/etsy') return sendJson(res, etsyStatus());
       if (p.startsWith('/api/')) return sendJson(res, { error: 'unknown route' }, 404);
       return serveStatic(res, p);
     } catch (e) {

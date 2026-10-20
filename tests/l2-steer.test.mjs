@@ -7,6 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { Cron } from 'croner';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -198,10 +199,14 @@ test('arming a routine (L2.1): the dialog\'s schedule, line, models, per-run cap
   assert.equal(c.status, 200, c.text); const rt = c.json.result;
   const q = await quote('routine-arm', { id: rt.id });
   assert.equal(q.line, 'research'); assert.ok(q.agents.length > 0); assert.equal(q.mock, true);
-  assert.deepEqual([q.routine.schedule, q.routine.maxRunsPerDay, q.routine.perRunCapUsd, q.routine.worstPerFiringUsd, q.routine.firingsPerWeek, q.routine.worstPerWeekUsd, q.routine.worstPerDayUsd, q.routine.dailyCapUsd, q.routine.overDailyCap], ['0 9 * * 1-5', 1, 0.5, 0.5, 5, 2.5, 0.5, REAL.engine.caps.perDayUsd, false]);
+  // the weekday 09:00 firings in the next 7 x 24 hours, counted here with croner in Dublin time: 5, or 4 when a clock change
+  // in that window moves the last one past it (e.g. a Tuesday after 08:00 before the October change; E7a fix, 20/10/2026)
+  const wk = new Cron('0 9 * * 1-5', { timezone: 'Europe/Dublin' }).nextRuns(10, new Date()).filter((d) => d.getTime() < Date.now() + 7 * 86400000).length;
+  assert.ok(wk === 4 || wk === 5, 'weekday firings in a week: ' + wk);
+  assert.deepEqual([q.routine.schedule, q.routine.maxRunsPerDay, q.routine.perRunCapUsd, q.routine.worstPerFiringUsd, q.routine.firingsPerWeek, q.routine.worstPerWeekUsd, q.routine.worstPerDayUsd, q.routine.dailyCapUsd, q.routine.overDailyCap], ['0 9 * * 1-5', 1, 0.5, 0.5, wk, wk * 0.5, 0.5, REAL.engine.caps.perDayUsd, false]);
   assert.match(q.routine.scheduleWords, /Dublin/); assert.equal(q.queue.startsAsNext, false); assert.match(q.token, /^[0-9a-f]{36}$/);
   const html = spendHtml(q);
-  for (const re of [/schedule/, /0 9 \* \* 1-5/, /per-run cap<\/span><span>USD 0\.50/, /USD 0\.50 a firing · USD 0\.50 a day \(1 firing\) · USD 2\.50 a week \(5 firings in the next 7 days\)/, /daily cap<\/span><span>USD 10\.00/]) assert.match(html, re);
+  for (const re of [/schedule/, /0 9 \* \* 1-5/, /per-run cap<\/span><span>USD 0\.50/, new RegExp('USD 0\\.50 a firing · USD 0\\.50 a day \\(1 firing\\) · USD ' + (wk * 0.5).toFixed(2).replace('.', '\\.') + ' a week \\(' + wk + ' firings in the next 7 days\\)'), /daily cap<\/span><span>USD 10\.00/]) assert.match(html, re);
   // no token, or a token for another routine: refused, still disarmed
   const other = (await post('/api/routines/create', { name: 'Other', target: 'line:research', schedule: '0 8 * * *' })).json.result;
   const qo = await quote('routine-arm', { id: other.id });

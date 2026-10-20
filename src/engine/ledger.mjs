@@ -13,7 +13,8 @@ import crypto from 'node:crypto';
 import { dublinDay } from './time.mjs';
 import { APP_ROOT } from './store/jail.mjs';
 
-export const KINDS = ['text', 'image', 'web'];
+// etsy (E7a): one row per Etsy Open API call, USD 0 (the API has no charge), for the audit trail; never a token in a row
+export const KINDS = ['text', 'image', 'web', 'etsy'];
 const r6 = (n) => Math.round(n * 1e6) / 1e6;
 
 export function emptyTotals() { return { byDay: {}, byJob: {}, byRun: {}, byAgentDay: {}, byLineDay: {}, imagesByDay: {}, webByDay: {}, rows: 0, usd: 0 }; }

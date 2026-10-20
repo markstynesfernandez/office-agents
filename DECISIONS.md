@@ -1964,3 +1964,124 @@ cut at a word boundary, no hyphen at either end. The server makes the id itself 
 is still not valid with its own message. The form shows the id read-only, updated as the title is typed; a refused save reopens the
 form with every field as entered and the reasons above it. Test: `tests/l2-steer.test.mjs` "owner brief id from the title" with the
 exact title through the form's save path. For this title the id is `<date>--cozy-winter-desk-props-for-pngtuber-and-vtuber`.
+
+
+## E7a: own-shop Etsy connection; Etsy data out of the scout (owner decisions, 19/10/2026; built 19–20/10/2026)
+
+### Etsy's terms and docs, as read (19/10/2026)
+
+Sources: the Etsy **API Terms of Use**, https://www.etsy.com/legal/api, "Last updated on Aug 18, 2026". etsy.com refuses automated
+fetches (HTTP 403), so the text was read from the Wayback Machine copy of 12/10/2026
+(https://web.archive.org/web/20261012174138/https://www.etsy.com/legal/api). The developer docs at developers.etsy.com
+(Introduction, Authentication, Request Standards, Rate Limits, Quick Start) and **Etsy's Dev MCP server**
+(https://mcp.api.etsycloud.com/mcp: `learn_etsy_api`, `get_guide`, `get_endpoint` for getMe, getShop, getListingsByShop,
+tokenScopes, ping). No Etsy API answer here is from memory.
+- **Prohibited (Terms section 5):** "Use or promote the use of automated systems or browser extensions to access, analyze, or
+  scrape the Etsy Site, the Etsy API or any Etsy data, including but not limited to Etsy listings, shops, or user profiles, unless
+  expressly authorized in writing by Etsy" and "Use the Etsy API to collect, scan, or otherwise request Etsy content for purposes of
+  analytics, machine learning, training artificial intelligence models, licensing, or content removal, unless expressly authorized
+  in writing by Etsy". Also: request no more than the minimum data needed; no unauthorised copying of members' designs; no
+  diverting sales. **This blocked the planned E7a** (an AI scout searching other sellers' listings for counts and prices); stopped
+  and reported on 19/10/2026.
+- **Seller App (docs, Introduction):** "for your own shop use only"; "You will only be allowed to authenticate your app with your
+  shop"; "It cannot be used to access other sellers' private shop data"; commercial use "Not permitted".
+- **Caching (Terms section 5, "Display of Data"):** listing content not shown more than 6 hours older than on Etsy; other Etsy
+  content not more than 24 hours older; nothing cached or stored "longer than is reasonably necessary".
+- **Rate limits (docs, Rate Limits; Terms section 2):** per API key, QPS then QPD (a sliding 24 hours); no default figures are
+  published (each app's are in its Developer Portal); over the limit: HTTP 429 with `retry-after` in seconds; exponential backoff
+  recommended. One key per application; no extra keys to get round the limit.
+- **Required notice (Terms section 1, "Etsy's Trademarks"):** "The term 'Etsy' is a trademark of Etsy, Inc. This Application uses
+  Etsy's API, but is not endorsed or certified by Etsy." (The docs' Introduction words it slightly differently; the Terms' text is
+  used.)
+- **Credentials and data:** keep API credentials secure (security@etsy.com for a suspected compromise); a breach of Etsy member data:
+  tell dpo@etsy.com and the seller within 24 hours.
+- **OAuth (docs, Authentication):** authorization code grant with **PKCE required** (S256; verifier 43–128 characters of
+  `[A-Za-z0-9._~-]`); `state` recommended (single use); authorize at `https://www.etsy.com/oauth/connect`; token at
+  `https://api.etsy.com/v3/public/oauth/token` (form-encoded; refresh with `grant_type=refresh_token`); access token 1 hour,
+  refresh token 90 days; the token is prefixed with the numeric user id. **The redirect URI must be registered and match exactly, and
+  "must have the https:// prefix"**; the Quick Start's example uses `http://localhost:3003` (a discrepancy in Etsy's own docs).
+  Every v3 request carries `x-api-key: <keystring>:<shared secret>`. Scopes: `shops_r` (getMe), `listings_r` (getListingsByShop);
+  getShop needs the key only.
+
+### The owner's decisions (19/10/2026)
+
+1. **No Etsy data in the scout until Etsy authorises it in writing** (the owner has emailed developer@etsy.com). etsy.com in
+   blocked_domains for web_search and web_fetch for every agent; the engine-side etsy.com refusal kept; TREND-SCOUT,
+   DEMAND-RESEARCHER and EVIDENCE-CHECKER: demand evidence from non-Etsy sources (trend articles, editorial roundups, community
+   discussion) and the owner's own shop results, "indicative". The floor rule: a brief with no Etsy prices cites price evidence from
+   non-Etsy marketplaces or roundups, or is marked "owner sets price" when none exists. Tests to match; IP-rule lines word for word;
+   prompts under their caps.
+2. **E7a cut down to the own shop:** the Etsy client with OAuth 2.0 PKCE for the owner's shop only, read scopes only; the owner
+   pastes the returned code into the Station page (no local https server); tokens encrypted at rest in the live data root
+   (`ETSY_TOKEN_KEY`), refreshed automatically, never logged; a rate limiter honouring Retry-After with backoff; caching within the
+   6 h / 24 h limits; the required notice in the Station footer; read only the owner's shop and its listings, to confirm the
+   connection and list live listings with their ids. No public listing search tool.
+3. **Seller App use only for own-shop management**; anything beyond waits for Etsy's written answer.
+
+### As built
+
+- **Sources (decision 1):** `config/engine.json` `webSources.blockedDomains` gains `etsy.com` (sent as `blocked_domains` on both
+  web tools, refused by the engine before a fetch); `fetchRefusedDomains` keeps `etsy.com` (its refusal message now says "no Etsy
+  data until Etsy authorises it in writing").
+- **One indicative brief schema for both lines** (`lib/scout-brief.mjs`): origin `genre-scout` (scout-drafts/) or `research`
+  (drafts/, no `## Genre trend evidence`). No etsy.com URL anywhere (refused on write, with the reason). A result row's price is as
+  shown or `no price`. Price range `USD <low>–<high>` with 3 cited results, or `owner sets price — no cited result shows a price`
+  (no figure; refused while any row shows a price). The floor rule is unchanged for priced rows (3+ cited current prices at or above
+  the BRIEF FLOOR; a EUR row now counts at the station rate, as on the research line before). `own shop: ... (recorded by owner,
+  YYYY-MM-DD)` lines are the owner's own shop results; agents never write them. The research line's drafts are validated on write
+  like the scout's, EVIDENCE-CHECKER gets the SOURCES/PRICES RETURNED lists (`research.json` `returnedSources`), and brief-check
+  appends the station's citation record; a draft in the ported Etsy demand-evidence format is refused on write, and a
+  non-indicative verified draft is rejected at brief-check.
+- **"Owner sets price":** the price fill treats such a brief as one without a brief price (floor + the no-brief uplift, with the
+  "confirm price" to-do); the approval card says "Price: OWNER SETS PRICE". Brief-check notes it in the brief's station record.
+- **Approval card:** the INDICATIVE banner now reads "demand from non-Etsy web search results only (...); competitor count not
+  measured; no Etsy data."
+- **Prompts:** TREND-SCOUT (orders and step 4), DEMAND-RESEARCHER (rewritten to the indicative format; skills: the brief-format
+  skill replaces `demand-evidence` and `brief-format`), EVIDENCE-CHECKER (one procedure for both lines; `demand-evidence` skill
+  dropped), skills `scout-brief-format` (both lines, no Etsy, `no price`, `owner sets price`, own shop lines), `price-rules-brief`
+  (cited prices, OWNER SETS PRICE), `data-hygiene` (no Etsy data of any kind; the shop-column exception gone). Built sizes:
+  TREND-SCOUT 14,930, DEMAND-RESEARCHER 15,764 (cap 16,000), EVIDENCE-CHECKER 11,599 (cap 14,000); every other agent within its
+  budget (qa-design 10,440 of 10,500). The IP-rule lines are word for word (tested). `demand-researcher.json` role text updated.
+- **The Etsy client (decision 2):** `src/engine/providers/etsy.mjs`. OAuth: authorization code + PKCE (S256), a random single-use
+  `state` kept in this process for `connectTtlMs` (10 minutes); scopes `shops_r listings_r` only, checked with tokenScopes after the
+  exchange (a token with any other scope is deleted at once). **Callback: paste.** The redirect URI is
+  `https://localhost/station/etsy-callback` (config, or `ETSY_REDIRECT_URI` in .env); nothing listens there, so after "Allow" the
+  browser shows an error page whose address carries `code` and `state`; the owner pastes that address into the Station's dialog.
+  The token request is form-encoded without the API key header, per the Authentication guide's example. Tokens: AES-256-GCM, the key
+  from `ETSY_TOKEN_KEY` by scrypt with a random salt per write, in `<data root>/etsy/token.enc.json`; refreshed a minute before
+  expiry and once on a 401; a refused refresh asks for a reconnect (never a loop); Disconnect deletes the file. Every token, code and
+  verifier is registered with the logger's redaction, and the logger also redacts Etsy-token-shaped text; the three Etsy key names
+  join the redacted env list. **Rate limiter:** at most `perSecond` 2 and `perDay` 1,000 (set low because Etsy publishes no default;
+  check your app's figures in the Developer Portal); a 429 holds every call for its Retry-After, then backoff `backoffMs` x
+  2^attempt (at most `backoffMaxMs`), `retries` 3. **Cache:** in memory only; listings 60 minutes (`listingsTtlMs`, refused above
+  6 hours), the shop 6 hours (`shopTtlMs`, refused above 24 hours); the page never shows listings older than their TTL. **Ledger:**
+  one row per HTTP call, kind `etsy`, USD 0, provider `etsy` (live) or `etsy-mock`, the operation and HTTP status; never a token.
+  The real client builds only with `STATION_INSTANCE=live` and the three keys; the dev Station runs the mock Etsy
+  (`etsy-mock.mjs`: FIXTURE shop and listings, PKCE and state checked as Etsy does, injectable 429/5xx/401).
+- **The Station page:** a top-bar **Etsy** button (live: "Connect Etsy" -> the link to Etsy's permission page -> paste the address
+  -> the shop name, scopes granted, live listings with ids and prices; then "Refresh listings" or "Disconnect"); on dev it shows the
+  mock and no Connect button. The Terms' notice is in the footer, word for word. Server: `GET /api/etsy` (status, never a token),
+  `POST /api/etsy/connect/start|connect/finish|listings|disconnect` behind the usual same-origin, action-token, JSON and
+  idempotency checks. Nothing from Etsy reaches an agent; there is no listing search.
+- **Row 21** (the verified genre brief for step c): stays paused, now "no Etsy data until Etsy authorises it in writing; the scout
+  can run on non-Etsy evidence (indicative)". Routines stay disarmed.
+
+### Points for the owner
+
+- **Register the redirect URI** in your Etsy app exactly as `https://localhost/station/etsy-callback` (or set `ETSY_REDIRECT_URI`
+  to the one you register). If Etsy will not accept a localhost URL, register an https URL on a domain **you control** (the code
+  goes to whatever address you register; never one you do not control) and set `ETSY_REDIRECT_URI` to it.
+- **Unconfirmed until the first live connect:** that Etsy accepts the localhost redirect, and the form-encoded token request (the
+  Quick Start sends JSON; the Authentication guide shows form fields). A failure shows Etsy's error in the dialog; nothing loops.
+- **Owner-recorded Etsy figures** (the ported "recorded by owner" demand evidence, read by you in a browser) are still accepted at
+  intake, and briefs verified before 19/10/2026 in the ported format still pass intake (the dry-run and demo fixtures, DESK-PROPS-01).
+  Agents can no longer write that format. Say if decision 1 should refuse those too.
+- **Disconnect** deletes the Station's stored token. Removing the app's access on Etsy's side is not covered in the docs read here.
+- **Own-shop data** in E7a is the shop and its listings only (no `transactions_r`, so no buyer data). The token file is in the live
+  data root (not in git). Etsy's breach rule (dpo@etsy.com within 24 hours) is recorded above.
+- **Changed tests outside E7a:** `l2-steer` "arming a routine" expected 5 weekday firings in the next 7 x 24 hours; on a Tuesday
+  after 08:00 before the October clock change the count is 4 (the window ends at 08:xx the next Tuesday). The test now counts the
+  expected firings with croner; the engine is unchanged. `write-guard`'s outbound-host list allows the mock Etsy's FIXTURE etsy.com
+  URLs (it never fetches).
+- **The demo's research brief** is now in the indicative research format (DEMO non-Etsy results); the demo plays as before.
+- Still parked: the hidden-row false positives (scout tuning).

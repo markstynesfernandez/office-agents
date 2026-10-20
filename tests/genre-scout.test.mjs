@@ -16,7 +16,7 @@ import { dublinDay } from '../src/engine/time.mjs';
 import { screenListing, screenDigitalSet, screenText } from '../src/engine/lib/originality.mjs';
 import { validateNotes, readBlocklist, scoutingBriefProblems, commonWordWarnings, commonWords, SCOUTED, WORDING, DERIVATIVE_WORDING } from '../src/engine/lib/scouting.mjs';
 import { buildEngineSnapshot } from '../src/server/engine-model.mjs';
-import { createScoutScript, genreBrief, researchBrief, FIXTURE_GAMES, COMMON_WORD_GAMES, BAD_BRIEF_GAME } from '../fixtures/engine/scout-script.mjs';
+import { createScoutScript, genreBrief, researchBrief, researchQuery, FIXTURE_GAMES, COMMON_WORD_GAMES, BAD_BRIEF_GAME } from '../fixtures/engine/scout-script.mjs';
 
 const ALL_NAMES = FIXTURE_GAMES.flatMap((g) => [g.game, g.studio, ...g.alsoBlock]);
 const lower = (s) => String(s).toLowerCase();
@@ -339,14 +339,15 @@ test('retention: the first step of a scout run deletes notes more than 90 days o
 
 test('the scout has its own drafts folder: the research line and the scout line run on the same day without touching each other\'s drafts', async (t) => {
   const day = dublinDay(), lofi = { slug: 'lofi-study', genre: 'lofi study', segment: 'students who stream study sessions', props: 'a desk lamp, a stack of notebooks, a mug of tea, a cassette player, a potted fern and a sleeping cat bed', palette: 'dusty rose, cream and teal', price: 9 };
-  const researchDraft = researchBrief(day, lofi);   // the research line keeps the ported Etsy format (E6 b2 changed only genre briefs)
+  const researchDraft = researchBrief(day, lofi);   // E7a (owner, 19/10/2026): the research line writes the indicative format too
   const checkerDirs = [];
   const base = createScoutScript();
   const script = (ctx, params) => {
     if (ctx.agentKey === 'evidence-checker') checkerDirs.push((/Drafts for this batch: (\S+)/.exec(String(params.messages[0].content)) || [])[1]);
     if (ctx.agentKey === 'demand-researcher') {
       const n = params.messages.filter((m) => m.role === 'assistant').length;
-      return n === 0 ? { content: [{ type: 'tool_use', id: 'tu_d', name: 'fs_write', input: { path: 'drafts/' + day + '/' + day + '--genre-lofi-study-desk-props.md', content: researchDraft } }] } : { content: [{ type: 'text', text: 'one draft' }] };
+      return n === 0 ? { content: [{ type: 'tool_use', id: 'tu_s', name: 'web_search', input: { query: researchQuery(lofi) } }] }
+        : n === 1 ? { content: [{ type: 'tool_use', id: 'tu_d', name: 'fs_write', input: { path: 'drafts/' + day + '/' + day + '--genre-lofi-study-desk-props.md', content: researchDraft } }] } : { content: [{ type: 'text', text: 'one draft' }] };
     }
     return base(ctx, params);
   };

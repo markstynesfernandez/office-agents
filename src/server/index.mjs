@@ -130,7 +130,15 @@ export async function startEngine({ git = null } = {}) {
   try { engine = createEngine({ J, log, limitJobs: true }); } catch (e) { log.error('engine did not start', { error: e.message, code: e.code || null }); console.error('engine did not start: ' + e.message); process.exit(2); }
   engine.instance = { name: inst.name, commit: inst.commit, branch: inst.branch, port };
   if (stampDataRoot(J, inst)) log.info('data root stamped for the ' + inst.name + ' instance', { dataRoot: J.dataRoot });
-  const { server, closeAll } = createEngineServer({ engine, log });
+  // E7a: the own-shop Etsy connection. Live: the real client (keys from .env by name; without them Etsy stays unavailable,
+  // the Station still starts). Dev: the mock Etsy only (the real client refuses to build off the live instance)
+  let etsy;
+  try {
+    if (inst.name === 'live') { const { createEtsyClient } = await import('../engine/providers/etsy.mjs'); etsy = createEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log }); }
+    else { const { createMockEtsyClient } = await import('../engine/providers/etsy-mock.mjs'); etsy = createMockEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log }); }
+    log.info('etsy: ' + etsy.mode + ' client ready', { connected: etsy.status().connected });
+  } catch (e) { etsy = { unavailable: e.message }; log.warn('etsy: unavailable', { code: e.code || null, error: e.message }); }
+  const { server, closeAll } = createEngineServer({ engine, log, etsy });
   server.on('error', (e) => { if (e.code === 'EADDRINUSE') { log.error('port ' + port + ' is already in use (is another station running?)'); engine.close(); process.exit(3); } log.error('server error', { error: String(e) }); process.exit(1); });
   server.listen(port, '127.0.0.1', () => { log.info('station engine listening', { url: 'http://127.0.0.1:' + port, instance: inst.name, commit: inst.commit, dataRoot: J.dataRoot, provider: engine.providers.mode }); console.log('station engine (' + inst.name + (inst.commit ? ' ' + inst.commit.slice(0, 7) : '') + '): http://127.0.0.1:' + port + '  (provider ' + engine.providers.mode + ', data ' + J.dataRoot + ')'); });
   let stopping = false;

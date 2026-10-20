@@ -5,7 +5,9 @@
 //   - The engine refuses a web_fetch to a listed host or any of its subdomains before anything is reserved or sent
 //     (tools/index.mjs), on the mock as on the live provider.
 // E6 b2 (owner D1, 17/10/2026): webSources.fetchRefusedDomains (etsy.com) is refused for web_fetch the same way, but is
-// never sent as blocked_domains, so search results from those sites still come back. And agents never construct URLs:
+// never sent as blocked_domains, so search results from those sites still come back. E7a (owner decision 1, 19/10/2026):
+// etsy.com is now in blockedDomains too (sent to the API, so no Etsy result comes back), and stays in fetchRefusedDomains.
+// And agents never construct URLs:
 // a web_fetch must name a URL that a web call of the same job already returned (returnedUrls / urlsIn below; the job
 // transcript keeps every returned URL in full).
 // Domain format follows the API's domain filtering rules (platform docs, server tools, read 17/10/2026): no scheme, ASCII

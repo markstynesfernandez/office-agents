@@ -122,6 +122,10 @@ test('decision 2: the approval card shows the brief\'s evidence level; "indicati
   assert.equal(evidenceBanner(null), '');
   // the panel puts it in the approval box, under its heading, above the decision buttons
   const src = fs.readFileSync(path.join(APP_ROOT, 'src', 'web', 'ui', 'sidepanel.js'), 'utf8');
-  assert.match(src, /Approval queue · your decision<\/div>' \+ evidenceBanner\(j\.evidenceLevel\) \+ '<div class="btnrow">/);
+  assert.match(src, /Approval queue · your decision<\/div>' \+ evidenceBanner\(j\.evidenceLevel, \{ ownerSetsPrice: j\.ownerSetsPrice === true \}\) \+ '<div class="btnrow">/);
+  // E7a (owner, 19/10/2026): non-Etsy evidence, and "owner sets price" when no cited result showed a price
+  assert.match(html, /non-Etsy web search results only/); assert.match(html, /no Etsy data/); assert.doesNotMatch(html, /OWNER SETS PRICE/);
+  assert.equal(snap.ownerSetsPrice, false);
+  assert.match(evidenceBanner('indicative', { ownerSetsPrice: true }), /<strong>Price: OWNER SETS PRICE<\/strong>/);
   assert.match(fs.readFileSync(path.join(APP_ROOT, 'src', 'web', 'styles.css'), 'utf8'), /\.evidence-indicative \{/);
 });

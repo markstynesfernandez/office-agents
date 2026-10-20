@@ -42,16 +42,16 @@ Every ported module starts with a header that names its source, its moment, its 
 | config/station.config.json | config/station.config.json | 5th | copied unchanged |
 | config/products.json | rooms/etsy-digital/products.json | 2nd | copied unchanged; E6 c0: priceFloorUsd (owner D1); E6 c (owner, 18/10/2026): pngtuber-prop-pack's file purposes are format only (the subjects come from the brief), the schema line says so |
 | config/blocklist.txt | rooms/etsy-digital/blocklist.txt | 1st | copied unchanged |
-| prompts/agents/demand-researcher.md | agents/src/demand-researcher.md | 1st | copied unchanged; E6 c (owner decision 1, 17/10/2026): the PRICE line states the 3-price floor rule |
+| prompts/agents/demand-researcher.md | agents/src/demand-researcher.md | 1st | copied unchanged; E6 c (owner decision 1, 17/10/2026): the PRICE line states the 3-price floor rule; E7a (owner decision 1, 19/10/2026; DECISIONS.md "E7a"): rewritten for indicative non-Etsy evidence (the brief-format skill replaces demand-evidence and brief-format; owner sets price); the IP-rule line word for word |
 | prompts/agents/designer.md | agents/src/designer.md | 2nd | copied unchanged; E6 c (owner, 18/10/2026): step 3, the spec is the format, each file's subject comes from the brief |
-| prompts/agents/evidence-checker.md | agents/src/evidence-checker.md | 1st | copied unchanged; E6 b2 (17/10/2026, owner D1/D2) appended one paragraph for genre-scout briefs (indicative evidence, citations against the job's returned sources, report_blocked); the legacy orders above it are unchanged |
+| prompts/agents/evidence-checker.md | agents/src/evidence-checker.md | 1st | copied unchanged; E6 b2 (17/10/2026, owner D1/D2) appended one paragraph for genre-scout briefs (indicative evidence, citations against the job's returned sources, report_blocked); E7a (owner decision 1, 19/10/2026; DECISIONS.md "E7a"): one procedure for both lines (indicative, no Etsy data; the demand-evidence skill dropped) |
 | prompts/agents/lister.md | agents/src/lister.md | 5th | copied unchanged |
 | prompts/agents/overseer.md | agents/src/overseer.md | 1st | copied unchanged |
 | prompts/agents/qa-design.md | agents/src/qa-design.md | 5th | copied unchanged; E6 c (owner, 18/10/2026): step 2, `complete` (the brief's files, by subject) and `matchesSpec` (format only, never subjects) |
 | prompts/agents/qa-listing.md | agents/src/qa-listing.md | 5th | copied unchanged |
 | prompts/agents/rejects-desk.md | agents/src/rejects-desk.md | 1st | copied unchanged |
 | prompts/skills/brief-format.md | skills/brief-format.md | 3rd | copied unchanged |
-| prompts/skills/data-hygiene.md | skills/data-hygiene.md | 1st | copied unchanged |
+| prompts/skills/data-hygiene.md | skills/data-hygiene.md | 1st | copied unchanged; E7a (owner decision 1, 19/10/2026; DECISIONS.md "E7a"): no Etsy data of any kind (the DEMAND EVIDENCE exception and the shop-column exception removed) |
 | prompts/skills/demand-evidence.md | skills/demand-evidence.md | 1st | copied unchanged |
 | prompts/skills/digital-terms.md | skills/digital-terms.md | 2nd | copied unchanged |
 | prompts/skills/etsy-policy.md | skills/etsy-policy.md | 1st | copied unchanged |
@@ -62,7 +62,7 @@ Every ported module starts with a header that names its source, its moment, its 
 | prompts/skills/package-format-qa-listing.md | skills/package-format-qa-listing.md | 5th | copied unchanged |
 | prompts/skills/package-format.md | skills/package-format.md | 1st | copied unchanged |
 | prompts/skills/price-floor.md | skills/price-floor.md | 1st | copied unchanged; E6 c0 (owner D1, 17/10/2026): the owner floor of pngtuber-prop-pack (USD 3.50 / EUR 3.13) written in by hand (the legacy generator is not ported); E6 c (owner decision 1): the BRIEF FLOOR line states the 3-price rule |
-| prompts/skills/price-rules-brief.md | skills/price-rules-brief.md | 1st | copied unchanged; E6 c (owner decision 1, 17/10/2026): the floor is 3+ top-5 prices at or above it, the full range recorded (BRIEF FLOOR, DEMAND RESEARCHER, EVIDENCE CHECKER bullets) |
+| prompts/skills/price-rules-brief.md | skills/price-rules-brief.md | 1st | copied unchanged; E6 c (owner decision 1, 17/10/2026): the floor is 3+ top-5 prices at or above it, the full range recorded (BRIEF FLOOR, DEMAND RESEARCHER, EVIDENCE CHECKER bullets); E7a (owner decision 1, 19/10/2026; DECISIONS.md "E7a"): cited non-Etsy prices, OWNER SETS PRICE |
 | prompts/skills/price-rules-lister.md | skills/price-rules-lister.md | 1st | copied unchanged; E6 c (owner decision 5, 17/10/2026): the OWNER BRIEF paragraph (priceProposal) added |
 | prompts/skills/price-rules-qa-listing.md | skills/price-rules-qa-listing.md | 1st | copied unchanged |
 | prompts/skills/verdict-protocol.md | skills/verdict-protocol.md | 1st | copied unchanged |

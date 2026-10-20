@@ -9,7 +9,7 @@ import { cronWords } from './model.mjs';
 import { latestSet } from '../engine/lib/digital-prep.mjs';
 import { loadLegacy, legacyJobView, legacyMemory } from './legacy-view.mjs';
 import { roleLabel } from '../web/ui/role.js';
-import { evidenceLevelOf } from '../engine/lib/scout-brief.mjs';
+import { evidenceLevelOf, ownerSetsPriceOf } from '../engine/lib/scout-brief.mjs';
 import { upscalerStatus } from '../engine/lib/upscaler-status.mjs';
 import { formProducts } from '../engine/lib/owner-brief-form.mjs';
 
@@ -87,6 +87,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     out.niche = (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || null;
     out.briefStatus = (/^status:\s*(\S+)/m.exec(brief) || [])[1] || null;
     out.evidenceLevel = evidenceLevelOf(brief);   // owner decision 2 (17/10/2026): shown on the approval card ("indicative": genre briefs)
+    out.ownerSetsPrice = ownerSetsPriceOf(brief);   // E7a (owner, 19/10/2026): "owner sets price" on the approval card
     if (j.state === 'running') out.status = 'in_progress';
     else if (j.state === 'queued') { out.status = 'backlog'; out.stage = j.step === 'intake' || !def.column ? 'brief' : def.column; }
     else if (j.state === 'approval') {
@@ -240,7 +241,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     { id: 'openrouter', label: 'OpenRouter', kind: 'image', status: mock ? 'offline' : 'configured', detail: mock ? 'locked until E6' : 'image generation: ' + cfg.engine.image.allowedModels.join(', '), source: 'config/engine.json image' },
     // L2: from the pin, the Vulkan loader and the GPU pick (lib/upscaler-status.mjs); the reason is in the tooltip when it is red
     (() => { const u = upscalerStatus({ ...(cfg.engine.upscale || {}), gpuId: ((cfg.station && cfg.station.upscale) || {}).gpuId ?? null }); return { id: 'realesrgan', label: 'Real-ESRGAN', kind: 'local', status: u.status, detail: u.detail, reason: u.reason, source: 'config/engine.json upscale (pinned)' }; })(),
-    { id: 'etsy', label: 'Etsy', kind: 'market', status: 'manual', detail: 'no API key; the owner publishes approved packages by hand', source: 'ENGINE-PLAN.md §5.3' }
+    { id: 'etsy', label: 'Etsy', kind: 'market', status: 'manual', detail: 'own shop, read only (E7a): connect and list the live listings from the Etsy button; the owner publishes approved packages by hand', source: 'ENGINE-PLAN.md §5.3; DECISIONS.md E7a' }
   ];
 
   const lastRow = rows[rows.length - 1];
