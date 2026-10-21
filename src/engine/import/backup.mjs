@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 const SKIP_TOP = /^(\.backups|\.import-staging-.*|\.import-old-.*|\.lock|station\.db(-wal|-shm|-journal)?)$/;
 const LINK_TOP = new Set(['legacy']);
 
-export function backupData({ J, store, stamp, log }) {
+export function backupData({ J, store, stamp, log, note = 'taken before an import-legacy run (ENGINE-PLAN.md §7.3); never deleted automatically' }) {
   const dir = path.join(J.dataRoot, '.backups', stamp);
   if (fs.existsSync(dir)) throw new Error('backup folder already exists: ' + dir);
   J.makeDir(dir);
@@ -40,7 +40,7 @@ export function backupData({ J, store, stamp, log }) {
     walk(path.join(J.dataRoot, e.name), path.join(dir, e.name));
     items.push(stat);
   }
-  const record = { stamp, takenAt: new Date().toISOString(), dataRoot: J.dataRoot, items, restore: 'stop the engine, then swap this folder\'s contents back into the data root (station.db, ledger/, events/, import/, jobs/, research/, legacy/)', note: 'taken before an import-legacy run (ENGINE-PLAN.md §7.3); never deleted automatically' };
+  const record = { stamp, takenAt: new Date().toISOString(), dataRoot: J.dataRoot, items, restore: 'stop the engine, then swap this folder\'s contents back into the data root (station.db, ledger/, events/, import/, jobs/, research/, legacy/)', note };
   record.sha256 = crypto.createHash('sha256').update(JSON.stringify(items)).digest('hex');
   J.put(path.join(dir, 'BACKUP.json'), JSON.stringify(record, null, 2) + '\n');
   log && log.info('backup taken', { dir, items: items.map((i) => i.path + ':' + i.files) });

@@ -7,8 +7,12 @@
 //   config/lines/<id>.json        the written line specs
 //   config/office.json            the office layout (departments and desks)
 //   config/routines.json          routines the station ships with (seeded once per data root, always disabled)
+//   config/businesses/<id>.json   B0: the businesses of the building (one floor each; _template.json is never loaded), checked
+//                                 against the lines, agents and office departments: a bad business stops the engine
+//   config/building.json          B0: the building rules' data (foreignDataMarkers: another company's data never enters the Station)
 import fs from 'node:fs';
 import path from 'node:path';
+import { readBusinesses, validateBusinesses, withDefaults } from './business.mjs';
 
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 const readDir = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => n.endsWith('.json')).sort().map((n) => readJson(path.join(d, n))) : []);
@@ -50,5 +54,7 @@ export function loadConfig({ configDir, promptsDir, overrides = null }) {
   const bl = path.join(configDir, 'blocklist.txt');
   const blocklist = fs.existsSync(bl) ? fs.readFileSync(bl, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
   const routines = opt('routines.json');
-  return { configDir, promptsDir, engine, blocklist, routines: (routines && routines.routines) || [], station: overrides && overrides.stationSet ? applySet(opt('station.config.json') || {}, overrides.stationSet) : (opt('station.config.json') || {}), overridden: !!overrides, products: (products && products.products) || [], productsFile: products, agents, lines, office: opt('office.json') || { departments: [] } };
+  const office = opt('office.json') || { departments: [] }, businesses = readBusinesses(configDir);
+  const bb = validateBusinesses({ businesses, engine, lines, agents, office }); if (bb.length) throw new Error('config/businesses: ' + bb.join('; '));
+  return { configDir, promptsDir, engine, blocklist, routines: (routines && routines.routines) || [], station: overrides && overrides.stationSet ? applySet(opt('station.config.json') || {}, overrides.stationSet) : (opt('station.config.json') || {}), overridden: !!overrides, products: (products && products.products) || [], productsFile: products, agents, lines, office, businesses: businesses.map(({ file, ...b }) => withDefaults(b)), building: opt('building.json') || { foreignDataMarkers: [] } };
 }

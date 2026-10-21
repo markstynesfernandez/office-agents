@@ -132,7 +132,7 @@ export function parseCallback(pasted, redirectUri) {
 }
 
 // ---- the client. mode: live (the real client) or mock (dev). keys: { apiKey, sharedSecret, tokenKey }
-export function makeEtsyClient({ mode, settings, keys, J, ledger, log, fetchImpl, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tokenFile = null }) {
+export function makeEtsyClient({ mode, settings, keys, J, ledger, log, fetchImpl, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tokenFile = null, businessId = null }) {
   const S = settings, secret = (s) => { if (log && log.addSecret) log.addSecret(s); };
   for (const k of [keys.apiKey, keys.sharedSecret, keys.tokenKey]) secret(k);
   const store = createTokenStore({ J, file: tokenFile || path.join(J.dataRoot, TOKEN_DIR, mode === 'live' ? 'token.enc.json' : 'token-mock.enc.json'), secret: keys.tokenKey });
@@ -146,7 +146,7 @@ export function makeEtsyClient({ mode, settings, keys, J, ledger, log, fetchImpl
   const scrub = (t) => { let s = String(t == null ? '' : t); for (const k of [keys.apiKey, keys.sharedSecret, keys.tokenKey, tok && tok.access, tok && tok.refresh]) if (k && k.length > 8) s = s.split(k).join('<redacted>'); return s.replace(/\b\d{3,}\.[A-Za-z0-9_-]{20,}/g, '<redacted-token>').slice(0, 300); };
 
   function ledgerRow(op, status, attempt) {
-    try { ledger.append({ jobId: null, runId: null, agentKey: null, line: null, kind: 'etsy', provider: mode === 'live' ? 'etsy' : 'etsy-mock', model: op, usd: 0, count: 1, httpStatus: status, attempt, priceSource: 'Etsy Open API: no charge (E7a, own shop read only)' }); }
+    try { ledger.append({ jobId: null, runId: null, agentKey: null, line: null, ...(businessId ? { businessId } : {}), kind: 'etsy', provider: mode === 'live' ? 'etsy' : 'etsy-mock', model: op, usd: 0, count: 1, httpStatus: status, attempt, priceSource: 'Etsy Open API: no charge (E7a, own shop read only)' }); }
     catch (e) { log && log.error('etsy: ledger row refused', { op, error: e.message }); throw new EtsyError('the ledger refused the Etsy call record: ' + e.message, { code: 'LEDGER' }); }
   }
 
@@ -290,10 +290,10 @@ export function makeEtsyClient({ mode, settings, keys, J, ledger, log, fetchImpl
 }
 
 // the real client: live instance only, the three keys from the environment (names only; values never logged)
-export function createEtsyClient({ engineCfg, env = process.env, J, ledger, log, fetchImpl = globalThis.fetch, now, sleep, tokenFile } = {}) {
+export function createEtsyClient({ engineCfg, env = process.env, J, ledger, log, fetchImpl = globalThis.fetch, now, sleep, tokenFile, businessId = null } = {}) {
   const live = liveInstanceProblem(env);
   if (live) throw new EtsyError('the real Etsy client ' + live.replace('the live provider runs', 'runs'), { code: 'NOT_LIVE' });
   const missing = ['ETSY_API_KEY', 'ETSY_SHARED_SECRET', 'ETSY_TOKEN_KEY'].filter((k) => !env[k]);
   if (missing.length) throw new EtsyError('not set in the .env: ' + missing.join(', ') + ' (Etsy stays disconnected; no call was made)', { code: 'NO_KEY' });
-  return makeEtsyClient({ mode: 'live', settings: etsySettings(engineCfg, env), keys: { apiKey: env.ETSY_API_KEY, sharedSecret: env.ETSY_SHARED_SECRET, tokenKey: env.ETSY_TOKEN_KEY }, J, ledger, log, fetchImpl, now, sleep, tokenFile });
+  return makeEtsyClient({ mode: 'live', settings: etsySettings(engineCfg, env), keys: { apiKey: env.ETSY_API_KEY, sharedSecret: env.ETSY_SHARED_SECRET, tokenKey: env.ETSY_TOKEN_KEY }, J, ledger, log, fetchImpl, now, sleep, tokenFile, businessId });
 }

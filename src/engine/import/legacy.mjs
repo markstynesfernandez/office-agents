@@ -24,6 +24,7 @@ import { createJail, realResolve, defaultLegacyRoot, APP_ROOT } from '../store/j
 import { openStore } from '../store/db.mjs';
 import { takeLock } from '../engine.mjs';
 import { loadConfig } from '../config.mjs';
+import { building, DEFAULT_BUSINESS } from '../business.mjs';
 import { dublinDay } from '../time.mjs';
 import { backupData } from './backup.mjs';
 import { readTracker, isListingId, nameKey } from '../../lib/legacy-readers/index.mjs';
@@ -295,6 +296,8 @@ export async function runImport({ from = DEFAULT_FROM, dataRoot, configDir, prom
   try {
     store = openStore({ J, log });
     const cfg = loadConfig({ configDir: configDir || path.join(APP_ROOT, 'config'), promptsDir: promptsDir || path.join(APP_ROOT, 'prompts') });
+    // B0 (owner, 21/10/2026): the legacy history is the Etsy shop's: an imported job or routine belongs to its line's business, else etsy-shop
+    const B = building(cfg); store.setBusinessResolver((rec) => (rec && (rec.business_id || rec.businessId)) || (rec && rec.line && B.ofLine(rec.line)) || DEFAULT_BUSINESS);
     // 1. the backup, before anything changes
     const backup = backupData({ J, store, stamp, log });
 

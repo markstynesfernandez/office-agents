@@ -40,7 +40,9 @@ const CLOSET = { pitch: 0.8, margin: 0.3, w: 1.5, inset: 0.1, slots: 5 };
 const kindOf = (key) => (SLOT_KINDS.includes(key) ? key : 'office');
 
 // departments: [{ key, agents: [agentId, ...] }] (desk order); services: [{ id }]
-export function computeLayout(departments, services = []) {
+// B0 (owner, 21/10/2026): opts.lounge false draws a business floor: the lounge has moved to floor 0 (the shared floor), so its corner is
+// open floor with no furniture and no seats, and every agent stays at its desk (no paths)
+export function computeLayout(departments, services = [], { lounge: withLounge = true } = {}) {
   const depts = departments.slice(0, 3);             // three corners; extra departments are not drawn (flagged in the result)
   const rooms = depts.map((d, i) => {
     const kind = kindOf(d.key), n = d.agents.length, cols = Math.min(2, Math.max(1, n)), rows = Math.max(1, Math.ceil(n / cols)), p = PAD[kind];
@@ -94,7 +96,7 @@ export function computeLayout(departments, services = []) {
   // lounge: an L of two three-seat sofas on its back sides (facing the camera), two armchairs at the front, a coffee table
   // in the middle; two gaps (gates) at its left and right corners. yaw: 0 faces -z, PI faces +z, -PI/2 faces +x, PI/2 faces -x.
   const lc = { x: lounge.cx, z: lounge.cz }, L = (lx, lz) => ({ x: lc.x + lx, z: lc.z + lz });
-  lounge.furniture = {
+  lounge.furniture = !withLounge ? null : {
     sofaA: { ...L(0.3, -2.55), len: SOFA.len, yaw: Math.PI },     // along the back (-z) side, facing +z
     sofaB: { ...L(-2.55, 0.3), len: SOFA.len, yaw: -Math.PI / 2 },// along the left (-x) side, facing +x
     chair1: { ...L(2.75, 0.55), yaw: Math.PI / 2 },               // front right, facing -x
@@ -102,7 +104,7 @@ export function computeLayout(departments, services = []) {
     table: { ...L(0.35, 0.35), w: 1.5, d: 1.1 },
     lamp: L(-2.75, -2.75), plants: [L(3.25, 3.25), L(-3.3, 1.9), L(4.15, -3.6)], rug: { x0: lc.x - 3.4, x1: lc.x + 3.4, z0: lc.z - 3.4, z1: lc.z + 3.4 }
   };
-  const gates = { right: { at: L(3.05, -1.45), out: { x: lc.x + 3.05, z: lounge.z0 - 0.7 } }, left: { at: L(-1.45, 3.05), out: { x: lounge.x0 - 0.7, z: lc.z + 3.05 } } };
+  const gates = !withLounge ? {} : { right: { at: L(3.05, -1.45), out: { x: lc.x + 3.05, z: lounge.z0 - 0.7 } }, left: { at: L(-1.45, 3.05), out: { x: lounge.x0 - 0.7, z: lc.z + 3.05 } } };
   // seats sit on the cushion centres (hips at HIP_Z), facing the way the furniture faces. cushion: the seat's top
   // rectangle in world x/z (every piece is turned by a multiple of 90 degrees) and its height
   const seats = [], F = lounge.furniture;
@@ -112,10 +114,10 @@ export function computeLayout(departments, services = []) {
     seats.push({ ...onFrame(o, lx, HIP_Z), yaw: o.yaw, approach: onFrame(o, lx, -1.0), gate, cushion });
   };
   const cw = (SOFA.len - 2 * SOFA.arm) / SOFA.cushions;
-  for (const o of [F.sofaA, F.sofaB]) for (let i = 0; i < SOFA.cushions; i++) seat(o, -SOFA.len / 2 + SOFA.arm + cw * (i + 0.5), cw - 0.03, SOFA.cushionD, SOFA.cushionZ, SOFA.top, o === F.sofaA ? 'right' : 'left');
-  seat(F.chair1, 0, ARMCHAIR.cushionW, ARMCHAIR.cushionD, ARMCHAIR.cushionZ, ARMCHAIR.top, 'right');
-  seat(F.chair2, 0, ARMCHAIR.cushionW, ARMCHAIR.cushionD, ARMCHAIR.cushionZ, ARMCHAIR.top, 'left');
-  lounge.seats = seats; lounge.gates = gates;
+  if (F) for (const o of [F.sofaA, F.sofaB]) for (let i = 0; i < SOFA.cushions; i++) seat(o, -SOFA.len / 2 + SOFA.arm + cw * (i + 0.5), cw - 0.03, SOFA.cushionD, SOFA.cushionZ, SOFA.top, o === F.sofaA ? 'right' : 'left');
+  if (F) seat(F.chair1, 0, ARMCHAIR.cushionW, ARMCHAIR.cushionD, ARMCHAIR.cushionZ, ARMCHAIR.top, 'right');
+  if (F) seat(F.chair2, 0, ARMCHAIR.cushionW, ARMCHAIR.cushionD, ARMCHAIR.cushionZ, ARMCHAIR.top, 'left');
+  lounge.seats = seats; lounge.gates = gates; lounge.open = !withLounge;
 
   // plants and props come before the paths, so a straight line to the lounge can be checked against them
   const plants = [], props = [];
@@ -124,7 +126,7 @@ export function computeLayout(departments, services = []) {
     else if (r.kind === 'design') plants.push({ x: r.x1 - 0.7, z: r.z0 + 0.95, kind: 'tall' }, { x: r.x0 + 0.75, z: r.z1 - 0.7, kind: 'small' });
     else plants.push({ x: r.x0 + 0.75, z: r.z1 - 0.7, kind: 'tall' }, { x: r.x1 - 0.7, z: r.z0 + 0.95, kind: 'small' });
   }
-  for (const p of lounge.furniture.plants) plants.push({ ...p, kind: 'tall' });
+  for (const p of F ? F.plants : []) plants.push({ ...p, kind: 'tall' });
   // a prop: kind, centre, yaw (as above), footprint w x d in its own frame; rect: the footprint in world x/z
   const prop = (kind, x, z, yaw, w, d) => { const q = Math.abs(Math.sin(yaw)) > 0.9, hw = (q ? d : w) / 2, hd = (q ? w : d) / 2; props.push({ kind, x, z, yaw, w, d, rect: { x0: x - hw, x1: x + hw, z0: z - hd, z1: z + hd } }); };
   {
@@ -243,6 +245,8 @@ const q4 = (v) => Math.round(v * 1e4) / 1e4;
 const rectIn = (o, r) => ({ x0: q4(r.x0 - o.x0), x1: q4(r.x1 - o.x0), z0: q4(r.z0 - o.z0), z1: q4(r.z1 - o.z0) });
 function loungeSpec(L) {
   const g = L.lounge, f = g.furniture, loc = (p) => ({ x: q4(p.x - g.x0), z: q4(p.z - g.z0) });
+  // B0: a business floor's lounge corner is open floor (the lounge is on floor 0)
+  if (!f) return { key: 'lounge', kind: 'lounge', w: q4(g.w), d: q4(g.d), floor: FLOOR, open: true, seats: [], plants: [] };
   const item = (o, extra = {}) => ({ ...loc(o), yaw: q4(o.yaw || 0), ...extra });
   return {
     key: 'lounge', kind: 'lounge', w: q4(g.w), d: q4(g.d), floor: FLOOR, sofa: { ...SOFA }, armchair: { ...ARMCHAIR },

@@ -309,17 +309,17 @@
       "lightmaps": {
         "day": {
           "file": "lightmap-office-day.webp",
-          "scale": 4.68018,
-          "coverage": 0.8819,
-          "p995": 4.30577,
-          "max": 6.6805
+          "scale": 4.707256,
+          "coverage": 0.8802,
+          "p995": 4.33068,
+          "max": 6.6863
         },
         "evening": {
           "file": "lightmap-office-evening.webp",
-          "scale": 2.440219,
-          "coverage": 0.8819,
-          "p995": 2.245,
-          "max": 68.0276
+          "scale": 2.534908,
+          "coverage": 0.8802,
+          "p995": 2.33212,
+          "max": 68.5819
         }
       },
       "high": {
@@ -346,24 +346,24 @@
       ],
       "atlas": {
         "size": 3072,
-        "density": 132.4,
-        "surface": 343.89,
-        "uvCoverage": 0.6388
+        "density": 136.42,
+        "surface": 331.67,
+        "uvCoverage": 0.6541
       },
       "build": {
-        "at": "2026-10-17T17:30:05.579Z",
+        "at": "2026-10-21T14:06:12.782Z",
         "blender": "Blender 5.2.1 LTS",
         "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
-        "samples": 512,
-        "blenderSeconds": 338.5,
-        "seconds": 353.1,
+        "samples": 1024,
+        "blenderSeconds": 571.2,
+        "seconds": 590.5,
         "phases": {
           "model": 0.08,
-          "textures": 1.2,
-          "uv": 5.12,
-          "bake_day": 164.62,
-          "bake_evening": 152.19,
-          "export": 0.5
+          "textures": 1.99,
+          "uv": 14.03,
+          "bake_day": 266.63,
+          "bake_evening": 255.44,
+          "export": 2.12
         }
       }
     },
@@ -376,17 +376,17 @@
       "lightmaps": {
         "day": {
           "file": "lightmap-atrium-day.webp",
-          "scale": 1.148319,
-          "coverage": 0.8494,
-          "p995": 1.05645,
-          "max": 1.4296
+          "scale": 1.13968,
+          "coverage": 0.7201,
+          "p995": 1.04851,
+          "max": 1.5067
         },
         "evening": {
           "file": "lightmap-atrium-evening.webp",
-          "scale": 0.804412,
-          "coverage": 0.8494,
-          "p995": 0.74006,
-          "max": 45.0487
+          "scale": 0.837407,
+          "coverage": 0.7201,
+          "p995": 0.77041,
+          "max": 46.4004
         }
       },
       "materials": [
@@ -394,8 +394,6 @@
         "leaf",
         "oak",
         "floor",
-        "upholstery",
-        "rug",
         "decal",
         "concrete",
         "cap",
@@ -410,25 +408,25 @@
         "led"
       ],
       "atlas": {
-        "size": 2944,
-        "density": 104.13,
-        "surface": 558.19,
-        "uvCoverage": 0.6983
+        "size": 2624,
+        "density": 100.15,
+        "surface": 420.65,
+        "uvCoverage": 0.6127
       },
       "build": {
-        "at": "2026-10-17T13:08:36.891Z",
+        "at": "2026-10-21T14:07:25.761Z",
         "blender": "Blender 5.2.1 LTS",
         "device": "OPTIX: NVIDIA GeForce RTX 5060 Laptop GPU",
         "samples": 1024,
-        "blenderSeconds": 63.9,
-        "seconds": 66.7,
+        "blenderSeconds": 48.6,
+        "seconds": 50.9,
         "phases": {
-          "model": 0.06,
-          "textures": 0.33,
-          "uv": 5.38,
-          "bake_day": 30.62,
-          "bake_evening": 21.25,
-          "export": 0.44
+          "model": 0.04,
+          "textures": 1.26,
+          "uv": 5.27,
+          "bake_day": 20.8,
+          "bake_evening": 15.28,
+          "export": 0.45
         }
       }
     }
@@ -848,15 +846,6 @@
               "x": 3.05,
               "z": 6.88
             }
-          },
-          {
-            "x": 6.85,
-            "z": 5.9,
-            "lshape": false,
-            "chair": {
-              "x": 6.85,
-              "z": 6.88
-            }
           }
         ],
         "plants": [
@@ -1011,7 +1000,7 @@
           "kind": "shelf"
         }
       ],
-      "triangles": 11273
+      "triangles": 9731
     },
     "lounge": {
       "unit": "atrium",
@@ -1021,240 +1010,14 @@
         "w": 9.7,
         "d": 8.7,
         "floor": 0.46,
-        "sofa": {
-          "len": 3.3,
-          "depth": 0.92,
-          "arm": 0.17,
-          "cushions": 3,
-          "cushionD": 0.68,
-          "cushionZ": -0.06,
-          "top": 0.915
-        },
-        "armchair": {
-          "w": 0.9,
-          "cushionW": 0.66,
-          "cushionD": 0.66,
-          "cushionZ": -0.05,
-          "top": 0.91
-        },
-        "furniture": {
-          "sofaA": {
-            "x": 5.15,
-            "z": 1.8,
-            "yaw": 3.1416,
-            "len": 3.3
-          },
-          "sofaB": {
-            "x": 2.3,
-            "z": 4.65,
-            "yaw": -1.5708,
-            "len": 3.3
-          },
-          "chair1": {
-            "x": 7.6,
-            "z": 4.9,
-            "yaw": 1.5708
-          },
-          "chair2": {
-            "x": 5.4,
-            "z": 7.1,
-            "yaw": 0
-          },
-          "table": {
-            "x": 5.2,
-            "z": 4.7,
-            "w": 1.5,
-            "d": 1.1
-          },
-          "lamp": {
-            "x": 2.1,
-            "z": 1.6
-          },
-          "rug": {
-            "x0": 1.45,
-            "x1": 8.25,
-            "z0": 0.95,
-            "z1": 7.75
-          }
-        },
-        "seats": [
-          {
-            "x": 6.1367,
-            "z": 1.76,
-            "yaw": 3.1416,
-            "cushion": {
-              "x0": 5.6583,
-              "x1": 6.615,
-              "z0": 1.52,
-              "z1": 2.2,
-              "top": 0.915
-            }
-          },
-          {
-            "x": 5.15,
-            "z": 1.76,
-            "yaw": 3.1416,
-            "cushion": {
-              "x0": 4.6717,
-              "x1": 5.6283,
-              "z0": 1.52,
-              "z1": 2.2,
-              "top": 0.915
-            }
-          },
-          {
-            "x": 4.1633,
-            "z": 1.76,
-            "yaw": 3.1416,
-            "cushion": {
-              "x0": 3.685,
-              "x1": 4.6417,
-              "z0": 1.52,
-              "z1": 2.2,
-              "top": 0.915
-            }
-          },
-          {
-            "x": 2.26,
-            "z": 3.6633,
-            "yaw": -1.5708,
-            "cushion": {
-              "x0": 2.02,
-              "x1": 2.7,
-              "z0": 3.185,
-              "z1": 4.1417,
-              "top": 0.915
-            }
-          },
-          {
-            "x": 2.26,
-            "z": 4.65,
-            "yaw": -1.5708,
-            "cushion": {
-              "x0": 2.02,
-              "x1": 2.7,
-              "z0": 4.1717,
-              "z1": 5.1283,
-              "top": 0.915
-            }
-          },
-          {
-            "x": 2.26,
-            "z": 5.6367,
-            "yaw": -1.5708,
-            "cushion": {
-              "x0": 2.02,
-              "x1": 2.7,
-              "z0": 5.1583,
-              "z1": 6.115,
-              "top": 0.915
-            }
-          },
-          {
-            "x": 7.64,
-            "z": 4.9,
-            "yaw": 1.5708,
-            "cushion": {
-              "x0": 7.22,
-              "x1": 7.88,
-              "z0": 4.57,
-              "z1": 5.23,
-              "top": 0.91
-            }
-          },
-          {
-            "x": 5.4,
-            "z": 7.14,
-            "yaw": 0,
-            "cushion": {
-              "x0": 5.07,
-              "x1": 5.73,
-              "z0": 6.72,
-              "z1": 7.38,
-              "top": 0.91
-            }
-          }
-        ],
-        "plants": [
-          {
-            "x": 8.1,
-            "z": 7.6,
-            "kind": "tall"
-          },
-          {
-            "x": 1.55,
-            "z": 6.25,
-            "kind": "tall"
-          },
-          {
-            "x": 9,
-            "z": 0.75,
-            "kind": "tall"
-          }
-        ]
+        "open": true,
+        "seats": [],
+        "plants": []
       },
       "node": "room_lounge",
-      "leds": "leds_lounge",
+      "leds": null,
       "strips": [],
-      "cushions": [
-        {
-          "x0": 5.6583,
-          "x1": 6.615,
-          "z0": 1.52,
-          "z1": 2.2,
-          "top": 0.915
-        },
-        {
-          "x0": 4.6717,
-          "x1": 5.6283,
-          "z0": 1.52,
-          "z1": 2.2,
-          "top": 0.915
-        },
-        {
-          "x0": 3.685,
-          "x1": 4.6417,
-          "z0": 1.52,
-          "z1": 2.2,
-          "top": 0.915
-        },
-        {
-          "x0": 2.02,
-          "x1": 2.7,
-          "z0": 3.185,
-          "z1": 4.1417,
-          "top": 0.915
-        },
-        {
-          "x0": 2.02,
-          "x1": 2.7,
-          "z0": 4.1717,
-          "z1": 5.1283,
-          "top": 0.915
-        },
-        {
-          "x0": 2.02,
-          "x1": 2.7,
-          "z0": 5.1583,
-          "z1": 6.115,
-          "top": 0.915
-        },
-        {
-          "x0": 7.22,
-          "x1": 7.88,
-          "z0": 4.57,
-          "z1": 5.23,
-          "top": 0.91
-        },
-        {
-          "x0": 5.07,
-          "x1": 5.73,
-          "z0": 6.72,
-          "z1": 7.38,
-          "top": 0.91
-        }
-      ],
-      "triangles": 3096
+      "triangles": 6
     },
     "atrium": {
       "unit": "atrium",
@@ -1509,7 +1272,6 @@
       "tile",
       "wall_warm",
       "window",
-      "upholstery",
       "concrete",
       "closet_floor",
       "closet_wall",
@@ -1571,11 +1333,11 @@
     "library": "scripts/blender/office_lib.py",
     "last": {
       "units": [
-        "office"
+        "atrium"
       ],
       "full": false,
-      "at": "2026-10-17T17:30:05.590Z",
-      "seconds": 353.1,
+      "at": "2026-10-21T14:07:25.769Z",
+      "seconds": 50.9,
       "blender": "Blender 5.2.1 LTS"
     },
     "blender": "Blender 5.2.1 LTS",
@@ -1592,13 +1354,13 @@
   },
   "sizes": {
     "total": {
-      "bytes": 11550869
+      "bytes": 9870736
     },
     "defaultTier": {
-      "bytes": 8143195
+      "bytes": 7036676
     },
     "highTierOnly": {
-      "bytes": 3407674
+      "bytes": 2834060
     },
     "budgetBytes": 10000000
   }

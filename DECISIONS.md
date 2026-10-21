@@ -2441,3 +2441,111 @@ Built in the dev checkout only (mock provider, `STATION_INSTANCE=dev`, port 8792
 5. Listing-only (LISTER + QA LISTING, about USD 0.15), server stopped: `npm run line:live -- --listing-only <id> --max-usd 0.30` with
    `STATION_PROVIDER=live` for that process; then the package step (`npm run owner -- package <id>`, server stopped, $0), which puts
    the job in the approval queue.
+
+## B0: businesses as floors (owner vision, 21/10/2026; built 21/10/2026)
+
+Built in the dev checkout only (mock provider, `STATION_INSTANCE=dev`, port 8792), $0, no real API call. Not deployed. The live data
+was read once, read only, to copy `station.db` (with its -wal and -shm), `ledger/` and `events/` into a scratch folder outside both
+checkouts for the migration dry run; nothing under the live checkout was written.
+
+### The owner's vision
+
+The Station is one building that runs several businesses. Each business is a floor with its own departments, lines, agents, budget,
+data and rules; shared services sit on a shared floor. Today there is one business. This phase bakes the structure in and adds no new
+business behaviour.
+
+### As built
+
+1. **A business is a config object**: `config/businesses/<id>.json` with id, name, floor, departments, lines, agents, monthlyBudgetUsd,
+   dailyCapUsd (optional, at most the station's day cap), allowedOutbound (default [] = none), dataDir and ownerApprovalRequired
+   (default true). `_template.json` documents every field and is never loaded (a file whose name starts with "_" is skipped).
+   Today's Etsy work is **etsy-shop** ("TheStationShopFinds", floor 1): the lines research, genre-scout and room1-digital, the eight
+   line agents, the departments Research, Design and Office, USD 200 a month, no day cap of its own (the station's USD 10.00 applies),
+   dataDir "." (today's layout). `src/engine/business.mjs` checks the building when the config loads and stops the engine with the
+   reason when it does not hold: an id that is not the file name, a floor below 1 or taken, a department, line or agent in two places
+   or in none, a line agent the business does not list, a day cap above the station's, an outbound action the Station does not know,
+   ownerApprovalRequired false, a dataDir other than `businesses/<id>/` (only one business may keep "."). The station's caps stay the
+   outer limit. The agents list is a field of its own (the owner's list said "with today's lines, agents and departments").
+2. **business_id on every record.** SQLite: jobs, runs, routines, approvals and the ledger's mirror have a `business_id` column (a new
+   data root has it from the start). The engine sets it on every insert through one resolver: a job by its line's business, a run by
+   its job (else its agent's business), a routine by its target line, an approval by its job, a ledger row by its job, line or agent
+   (an own-shop Etsy call: the business that owns that outbound action), else "shared" (the shared floor, and station-wide records
+   such as the engine's start). New ledger rows and events carry `businessId` in their JSONL. **The engine refuses a data root with a
+   record that has no business** (code MIGRATE, with the command to run): `npm run migrate:businesses` is a dry run by default (what
+   would be set, per table and business, and anything it cannot map); `--apply` takes a full backup first
+   (`data/.backups/businesses-<stamp>/`, the database by SQLite's VACUUM INTO, nothing deleted), then adds the columns and sets every
+   empty value in one transaction, logs every change (table, id, business), and checks nothing is left; a second run changes nothing
+   and takes no backup; it holds the engine lock, so it refuses while the server runs on that data root; it refuses to apply while
+   any record cannot be mapped. **Not rewritten: the ledger (`ledger/ledger.jsonl`) and the event log (`events/*.jsonl`)**, which are
+   append-only records (ENGINE-PLAN.md §1.2: a row is never edited); their rows from before B0 get their business when they are read,
+   by the same resolver, and the migration reports them. This is the one place the owner's "every ledger row and event carries
+   business_id" is met by resolution rather than by a stored field.
+3. **Spend guards at the business level.** The guard checks a call against its business's monthly budget (`businessMonth[<id>]`, the
+   Dublin month, every reservation of that business in flight counted) and, when the business sets one below the station's, its day
+   cap (`businessDay[<id>]`), as well as every station cap; the lowest limit wins. The shared floor has the station's caps only. The
+   spend check of a start (`spend.startCheck`: the dialog, the server-side gate, a routine's firing) refuses a start whose worst case
+   (this month + the business's open jobs + this one) would pass the budget, and the dialog shows a "business" line (name, floor, this
+   month against the budget, its own day cap if set). The top bar on a business floor leads with that business's spend.
+4. **Data.** etsy-shop's files stay where they are ("." is today's layout: the data root minus `businesses/`). A new business keeps its
+   files in `businesses/<id>/`. An agent's file tools are jailed to its business's data on top of its run folder: a run whose folder is
+   outside its business's data is refused before any tool runs, and every path is checked against the business's area (a link into
+   another business's data is refused). Shared config stays read only (products.json, as before). The shared floor's agents serve
+   every business (their area is the data root). Not built: the orchestrator still places every job folder under `jobs/` and the
+   research folder under `research/`, so a second business's jobs would be refused by its own jail until those paths take the
+   business (fail closed; there is no second business yet).
+5. **Shared services, floor 0**: Finance (the ledger and budgets view), Compliance (originality, platform terms, privacy rules) and
+   OVERSEER (`config/office.json` `shared`; OVERSEER's desk moved there). No new agents. The lounge is on floor 0.
+6. **The building in 3D**: the page draws one floor at a time. Floor 1 (etsy-shop) is today's office with its lounge corner left as
+   open floor; every agent stays at its desk (nobody walks to a lounge on that floor). Floor 0 has the Finance, Compliance and OVERSEER
+   rooms, the services closet and the lounge, drawn procedurally (no bake). A floor switcher in the top bar (Building, 0, 1, …; `[`
+   and `]`; `?floor=N`), each floor with its own task list, routines, board, calendar and spend; the whole-building view (G) lists
+   every floor's totals; a business with no lines yet shows as an empty, labelled floor. The Office and atrium/lounge bake units were
+   re-baked for floor 1 (`npm run build-office -- --room office`, `--room atrium`), so floor 1 stays fully baked. FPS: see "Measured".
+7. **Building rules**: below.
+8. README "The building" and "Adding a business".
+
+### B0: building rules
+
+Every business inherits these. What code can enforce is enforced; the rest is the owner's rule for every agent, prompt and decision.
+
+1. **No outbound action** unless the business lists it in `allowedOutbound` **and** the owner approves that action each time.
+   Enforced: the Station knows one outbound action, `etsy:read-own-shop` (E7a); the Etsy client is built only for a business that
+   lists it (etsy-shop) and is unavailable otherwise, every Etsy call is the owner's click, and an unknown action in a business file
+   stops the engine. Agents have no messaging, posting or publishing tool (as before). Model and image calls and the research line's
+   web search are the Station's own work, not outbound actions.
+2. **Spend caps per run, job, business and station** (guard.mjs): the lowest limit wins; caps change in config only, by the owner.
+3. **Every agent output is a draft until the owner approves it.** Enforced: `ownerApprovalRequired` cannot be false; the approval
+   queue is the only way out; nothing auto-publishes.
+4. **Originality and IP rules for anything published**: the originality screens, the blocklist and the package gate, unchanged, for
+   every business.
+5. **Personal data only as the business strictly needs it**, and **never another company's data in the Station** (for example
+   Stellar's). Enforced where code can see it: `config/building.json` `foreignDataMarkers` (the names of companies whose data must never
+   enter); an agent's file write or a brief (owner or research) that holds one is refused with the reason. A new business that needs
+   personal data is the owner's decision first (GDPR: what, why, how long), recorded before it is built.
+
+### Measured
+
+- **The migration dry run on a scratch copy of the live data** (21/10/2026; `station.db` with its -wal and -shm, `ledger/` and
+  `events/` copied, read only, to a scratch folder outside both checkouts; `STATION_DATA_ROOT=<copy> npm run migrate:businesses`;
+  nothing applied): jobs 32 (all etsy-shop, the legacy jobs included), runs 47 (etsy-shop), routines 4 (etsy-shop), approvals 1
+  (etsy-shop), ledger mirror 509 (508 etsy-shop, 1 shared: the station-level smoke-test call of 17/10, USD 0.000005), every table
+  without the column today; the ledger file's 509 rows resolve the same way (the 5 own-shop Etsy calls of 20/10 to etsy-shop); the
+  event log, 6 files and 1,148 events, resolves 1,050 to etsy-shop and 98 to shared (engine starts, e-stop and other station-wide
+  events). **Nothing could not be mapped.**
+- **Frame rate** (`node scripts/screenshots-b0.mjs --headed --channel chromium --expect-gpu intel`, the default tier, 1600x1000, the
+  page's own bench, 3 s per reading, Intel UHD Graphics (ANGLE D3D11) on this laptop; the target is 60): floor 1 (etsy-shop, every
+  area baked) light 156 moving / 162.9 full, dark 161.7 / 163.7; floor 0 (shared, procedural) light 148.6 / 145.9, dark 152.4 /
+  156.6; an empty floor (a capture-only second business) 156.8 / 151.6; floor 0 with OVERSEER walking to the lounge 150.9 (dark) and
+  154.6 (light). The whole-building view is an HTML overlay: the 3D scene is paused under it (no frames drawn). Readings taken while
+  the window was covered (the bench's throttled flag, about 1 fps) were measured again; the floor-0 light reading is from the run
+  where it was not throttled.
+- **Checks**: npm test 512/512 (new: `b0` 11/11; changed: `baked-room` for the floor-1 bake, `write-guard` for the capture script's
+  jail); `npm run dry-run`, `dry-run:scout`, `parity -- --rebuild` (26/26) and port drift (69 files, no drift) pass.
+
+### Before B0 reaches live (the owner's steps)
+
+1. Deploy with `npm run deploy:live -- --no-start` (a deploy that starts live would fail its health check): **the live Station
+   refuses to start until its data root is migrated** (MIGRATE: by design, no record without its business).
+2. In the live checkout, server stopped: `npm run migrate:businesses` (the dry run; it should match the scratch copy's summary above,
+   plus whatever live has done since), then `npm run migrate:businesses -- --apply` (the backup is taken first), then start live.
+3. The dev checkout's own `data/` (scratch) needs the same before `npm start` on dev.

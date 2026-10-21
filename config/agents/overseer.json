@@ -2,7 +2,7 @@
   "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/overseer.md (+ the skills its front-matter names). tier: config/engine.json tiers. The page may change enabled, tier and effort only.",
   "key": "overseer",
   "name": "STATION-OVERSEER",
-  "department": "OFFICE",
+  "department": "OVERSEER",
   "tier": "strong",
   "effort": "low",
   "thinking": "off",

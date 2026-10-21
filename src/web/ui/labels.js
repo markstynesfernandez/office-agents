@@ -40,7 +40,8 @@ export function createLabels({ container, office, onDept, onHub, onService }) {
     const rack = document.createElement('div'); rack.className = 'lbl rack-lbl';
     rack.innerHTML = '<span class="lbl-name">SERVICES ' + s.services.map((sv) => '<i title="' + esc(sv.label + ': ' + sv.status) + '" style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i>').join('') + '</span>';
     rack.title = s.services.map((sv) => sv.label + ': ' + sv.status + (sv.reason ? ' (why: ' + sv.reason + ')' : '') + ' — ' + sv.detail).join('\n');
-    container.appendChild(rack); els.rack = rack;
+    // B0: the services sit on the shared floor (0); a business floor's closet is empty, so it has no rack label
+    if (s.services.length) { container.appendChild(rack); els.rack = rack; } else els.rack = null;
     for (const sv of s.services) {
       const el = document.createElement('div'); el.className = 'lbl svc-lbl';
       el.innerHTML = '<span class="lbl-name"><i style="background:' + (PALETTE.serviceStatus[sv.status] || PALETTE.serviceStatus.unknown) + '"></i>' + esc(sv.label) + '<small>' + esc(sv.status) + '</small></span>';
@@ -70,7 +71,7 @@ export function createLabels({ container, office, onDept, onHub, onService }) {
     }
     // 2. services rack: one compact label at overview, a tag per terminal when zoomed in
     const perTerminal = zoom >= RACK_LABEL_ZOOM;
-    const rr = tag(els.rack, office.project(office.anchors.rack), !perTerminal); if (rr) placed.push(rr);
+    const rr = els.rack ? tag(els.rack, office.project(office.anchors.rack), !perTerminal) : null; if (rr) placed.push(rr);
     for (const [id, el] of Object.entries(els.services)) { const r = tag(el, office.project(office.anchors.services[id]), perTerminal); if (r) placed.push(r); }
     // 3. cards: above the far edge of the platform, nudged until clear of desks, labels and other cards
     const cards = snap.departments.map((d) => ({ key: 'dept:' + d.key, el: els.depts[d.key], anchor: office.anchors.deptCorners[d.key] })).filter((c) => c.el && c.anchor);

@@ -106,10 +106,11 @@ def lounge(k):
     two leather armchairs, the coffee table, an arc floor lamp and three figs. The seats are built from the layout's
     SOFA and ARMCHAIR numbers, so every cushion stays where the walkers sit (the seat-bounds test reads them back)"""
     S, F, PT, W, D = k.S, k.FLOOR, k.PT, k.W, k.D
-    f = S['furniture']
     k.room.face([(0, PT, D), (W, PT, D), (W, PT, 0), (0, PT, 0)], 'floor', uvoff=(0.37, 0.19))
     k.room.face([(0, F, D), (W, F, D), (W, PT, D), (0, PT, D)], 'skirting')                 # floor edge, front
     k.room.face([(W, F, D), (W, F, 0), (W, PT, 0), (W, PT, D)], 'skirting')                 # floor edge, right
+    if S.get('open'): return                                                                 # B0: a business floor: open floor, the lounge is on floor 0
+    f = S['furniture']
     r = f['rug']; lib.rug(k, r['x0'], r['x1'], r['z0'], r['z1'])
     lib.sofa(k, f['sofaA'], S['sofa']); lib.sofa(k, f['sofaB'], S['sofa'])
     lib.armchair(k, f['chair1'], S['armchair']); lib.armchair(k, f['chair2'], S['armchair'])

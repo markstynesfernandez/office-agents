@@ -20,6 +20,8 @@
     <span id="demo-badge" class="badge badge-demo hidden" title="Demo mode: the real engine on the mock provider, with a scripted day on its own data root (data-demo/). Nothing here is real station data; no model is called and nothing is charged.">DEMO · simulated data</span>
     <button id="demo-ctl" class="badge badge-muted demo-ctl hidden" title="demo: Space pause/resume · 1 2 4 speed · R restart"></button>
     <span class="tb-sep"></span>
+    <span id="floors" class="tb-floors hidden" role="tablist" aria-label="floors of the building"></span>
+    <span class="tb-sep"></span>
     <span id="services" class="tb-services"></span>
     <button id="etsy-btn" class="badge badge-muted etsy-btn" title="Etsy: your own shop, read only (connect, live listings with their ids)">Etsy</button>
     <span class="tb-fill"></span>
@@ -35,6 +37,7 @@
   <main id="stage">
     <canvas id="scene"></canvas>
     <div id="labels"></div>
+    <div id="floor-caption" class="floor-caption hidden"></div>
     <div id="scene-controls">
       <button id="zoom-in" class="btn-icon" title="zoom in (+)">+</button>
       <button id="zoom-out" class="btn-icon" title="zoom out (−)">−</button>
@@ -76,6 +79,7 @@
 
   <section id="board" class="overlay hidden"><div class="overlay-head"><h2>Board</h2><span class="muted">jobs by stage · Esc to close</span></div><div id="board-body"></div></section>
   <section id="calendar" class="overlay hidden"><div id="calendar-body"></div></section>
+  <section id="building" class="overlay hidden"><div class="overlay-head"><h2>Whole building</h2><span class="muted">every floor's totals · click a floor to go there · Esc to close</span></div><div id="building-body"></div></section>
   <section id="ledger" class="overlay hidden"><div class="overlay-head"><h2>Station memory</h2><span class="muted">notebooks + ledger · Esc to close</span></div><div id="ledger-body"></div></section>
 
   <footer id="hints"><span><b>B</b> board</span><span><b>C</b> calendar</span><span><b>T</b> today</span><span><b>←↑↓→</b> move</span><span><b>+ −</b> zoom</span><span id="hint-reset"><b>R</b> reset</span><span id="hint-demo" class="hidden"><b>Space</b> pause <b>1 2 4</b> speed <b>R</b> restart</span><span><b>P</b> presenter</span><span><b>D</b> dark</span><span><b>F</b> fps</span><span><b>Esc</b> close</span><span id="hint-status" class="muted"></span><span id="etsy-notice" class="muted etsy-notice">The term 'Etsy' is a trademark of Etsy, Inc. This Application uses Etsy's API, but is not endorsed or certified by Etsy.</span></footer>

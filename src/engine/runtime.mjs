@@ -23,6 +23,7 @@ import { CapError, GuardRefusal } from './guard.mjs';
 import { makeRedactor } from './providers/anthropic.mjs';
 import { urlsIn, pricesIn } from './lib/web-sources.mjs';
 import { isConnectionError, failedCallReason } from './providers/connection.mjs';
+import { businessDataArea } from './business.mjs';
 
 export const MAX_NUDGES = 2;
 export const TRANSCRIPT_RESULT_CHARS = 2000;
@@ -99,12 +100,16 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
     count: (name) => (((store.getJob(job.id) || {}).data || {}).imageAttempts || {})[name] ? store.getJob(job.id).data.imageAttempts[name].length : 0,
     add: (name, why) => { const cur = (((store.getJob(job.id) || {}).data || {}).imageAttempts) || {}; const list = [...(cur[name] || []), { at: Date.now(), why: String(why || '') }]; store.updateJob(job.id, { data: { imageAttempts: { ...cur, [name]: list } } }); return list.length; }
   } : null;
-  const ctx = { J: engine.J, folder, agent, job, model, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, verdictFiles, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
+  // B0 (owner, 21/10/2026): the business the run works for (its job's, else its line's or agent's) and its data area: the file tools are
+  // jailed to it (a business agent never reaches another business's dataDir; the shared floor's agents serve every business: the data root)
+  const businessId = engine.businessOf ? engine.businessOf({ jobId: job ? job.id : null, line, agentKey }) : null, bRec = businessId && engine.building ? engine.building.get(businessId) : null;
+  const businessArea = bRec ? businessDataArea(engine.J.dataRoot, bRec) : null;
+  const ctx = { J: engine.J, folder, agent, job, model, businessId, businessArea, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, verdictFiles, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
   const box = createToolbox(ctx);
   const wrapper = engineWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, isQa: !!agent.verdict, loopNote });
   const system = [{ type: 'text', text: prompt.soul + '\n' + prompt.text, ...(cfg.engine.runtime.promptCaching ? { cache_control: { type: 'ephemeral' } } : {}) }, { type: 'text', text: wrapper }];
   const promptSha256 = crypto.createHash('sha256').update(JSON.stringify(system)).digest('hex');
-  store.insertRun({ runId, jobId: job ? job.id : null, agentKey, step, pass, model, provider, promptSha256 });
+  store.insertRun({ runId, jobId: job ? job.id : null, agentKey, step, pass, model, provider, promptSha256, ...(businessId ? { businessId } : {}) });
   bus.emit('run.start', { jobId: job ? job.id : null, agentKey, data: { runId, step, pass, model, provider, effort: agent.effort, thinking: agent.thinking || 'default', ...(image && image.mode ? { imageMode: image.mode } : {}) } });
   log.info('run start', { runId, agent: agentKey, jobId: job && job.id, step, pass, model, provider, effort: agent.effort, thinking: agent.thinking || 'default', ...(image && image.mode ? { imageMode: image.mode, set: image.set, from: image.from, to: image.to } : {}), ...(verdictKind ? { verdictKind } : {}), promptSha256, promptChars: prompt.chars });
   if (hooks.onRunStart) { try { await hooks.onRunStart({ runId, agentKey, job, step, pass }); } catch (e) { log.warn('hook failed (ignored)', { hook: 'onRunStart', runId, error: e.message }); } }

@@ -17,6 +17,8 @@ import { PALETTE } from './config/palette.js';
 import { createControls } from './ui/controls.js';
 import { createEtsyPanel } from './ui/etsy.js';
 import { QUALITY_KEY } from './scene/quality.js';
+import { floorsOf, pickFloor, floorSnapshot } from './ui/floors.js';
+import { createBuildingView } from './ui/building.js';
 
 const q = new URLSearchParams(location.search);
 const $ = (s) => document.querySelector(s);
@@ -35,6 +37,10 @@ const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob, c
 const board = createBoard({ root: $('#board'), onOpenJob: openJob, ctl });
 const calendar = createCalendar({ root: $('#calendar'), onOpenJob: openJob, ctl });
 const ledger = createLedgerView({ root: $('#ledger') });
+// B0 (owner, 21/10/2026): the building's floors. The page shows one floor at a time (its office, task list, routines, board, calendar
+// and spend); the whole-building view lists every floor's totals. ?floor=N for this page only, else the remembered floor
+const building = createBuildingView({ root: $('#building'), onFloor: (n) => setFloor(n) });
+let floorChoice = q.get('floor') != null ? q.get('floor') : store.get('office-floor'), curFloor = null, view = null;
 // E7a: the own-shop Etsy connection (top-bar button; the API Terms' notice is in the footer)
 const etsyPanel = createEtsyPanel({ ctl, button: $('#etsy-btn') });
 etsyPanel.refresh().catch(() => {});
@@ -61,11 +67,37 @@ function openAgent(id, zoom) {
 function openJob(id) { office.setSelected(null); labelsDirty = true; sidepanel.showJob(id); }
 function focusDept(key, zoom = 1.7) { const a = office.anchors.depts[key]; if (a) office.focus(a, zoom); taskpanel.setDept(key); }
 // the 3D scene is paused (no renders, no animation) while an overlay covers the stage
-function syncPause() { office.setPaused(board.isOpen() || calendar.isOpen() || ledger.isOpen()); }
-function closeOverlays() { board.hide(); calendar.hide(); ledger.hide(); syncPause(); }
+function syncPause() { office.setPaused(board.isOpen() || calendar.isOpen() || ledger.isOpen() || building.isOpen()); }
+function closeOverlays() { board.hide(); calendar.hide(); ledger.hide(); building.hide(); syncPause(); }
 function openLedger() { closeOverlays(); ledger.render(snap); ledger.show(); syncPause(); }
-function openBoard() { closeOverlays(); board.render(snap); board.show(); syncPause(); }
-function openCalendar() { closeOverlays(); calendar.render(snap); calendar.show(); syncPause(); }
+function openBoard() { closeOverlays(); board.render(view || snap); board.show(); syncPause(); }
+function openCalendar() { closeOverlays(); calendar.render(view || snap); calendar.show(); syncPause(); }
+function openBuilding() { closeOverlays(); building.render(snap); building.show(); syncPause(); renderFloors(snap); }
+// B0: switch floor: the page shows that floor's office, task list, routines and spend (the snapshot is not fetched again)
+function setFloor(n) {
+  floorChoice = String(n); if (!q.has('floor')) store.set('office-floor', floorChoice);
+  closeOverlays(); if (sidepanel.isOpen()) sidepanel.close();
+  if (snap) { applyView(); office.resetView(); }
+}
+function applyView() {
+  curFloor = pickFloor(snap, floorChoice);
+  view = curFloor == null ? snap : floorSnapshot(snap, curFloor);
+  office.setData(view); labels.build(view); taskpanel.setSnapshot(view); renderTopbar(snap); renderFloors(snap);
+  if (board.isOpen()) board.render(view); if (calendar.isOpen()) calendar.render(view); if (building.isOpen()) building.render(snap);
+  labelsDirty = true;
+}
+// the floor switcher (top bar): Building, then each floor from 0 up; the stage caption names the floor shown
+function renderFloors(s) {
+  const fl = floorsOf(s), el = $('#floors'), cap = $('#floor-caption');
+  el.classList.toggle('hidden', !fl.length); cap.classList.toggle('hidden', !fl.length || building.isOpen());
+  if (!fl.length) return;
+  const btn = (k, label, sel, title) => '<button role="tab" data-fl="' + k + '" aria-selected="' + (sel ? 'true' : 'false') + '" title="' + esc(title) + '">' + label + '</button>';
+  el.innerHTML = btn('all', 'Building', building.isOpen(), 'the whole building: every floor\'s totals (G)') + fl.map((f) => btn(f.floor, '<span class="fl-n">' + f.floor + '</span>' + esc(f.shared ? 'Shared' : f.name), !building.isOpen() && f.floor === curFloor, 'floor ' + f.floor + ': ' + f.name + (f.shared ? ' (Finance, Compliance, OVERSEER and the lounge)' : '') + (f.empty ? ' · no lines yet' : '') + ' ([ and ] change floor)')).join('');
+  el.querySelectorAll('[data-fl]').forEach((b) => b.addEventListener('click', () => (b.dataset.fl === 'all' ? openBuilding() : setFloor(Number(b.dataset.fl)))));
+  const cur = fl.find((f) => f.floor === curFloor);
+  if (cur) cap.innerHTML = '<b>Floor ' + cur.floor + '</b> · ' + esc(cur.name) + (cur.shared ? '<span class="muted">shared services · lounge</span>' : '') + (cur.empty ? '<span class="muted">empty floor: no lines yet</span>' : '');
+}
+function stepFloor(d) { const fl = floorsOf(snap).map((f) => f.floor).sort((a, b) => a - b), i = fl.indexOf(curFloor); if (i >= 0 && fl[i + d] != null) setFloor(fl[i + d]); }
 function setTheme(t) { theme = t; document.body.dataset.theme = t; store.set('office-theme', t); office.setTheme(t); labelsDirty = true; }
 
 // services in the top bar (R2): a small glyph and a short name, then the status dot. The glyphs are plain generic
@@ -105,7 +137,9 @@ function renderTopbar(s) {
   // spend: calendar day, from the ledger, against the caps (live in engine mode: a meter, and a warning chip from 80%)
   const sp = s.spend.today, cap = s.spend.caps && s.spend.caps.perDay, cs = s.spend.capStatus || [];
   const day = cs.find((c) => c.cap === 'perDay'), worst = cs.filter((c) => c.level !== 'ok').sort((a, b) => b.pct - a.pct)[0];
-  $('#spend-today').innerHTML = 'Today <b>' + money(sp.usd) + '</b>' + (cap ? ' / ' + money(cap) + ' cap' : '') + (day ? '<span class="meter meter-' + day.level + '"><i style="width:' + Math.min(100, day.pct) + '%"></i></span>' : '') + ' · ' + sp.runs + ' runs';
+  // B0: on a business floor the top bar leads with that business's spend (today, this month against its budget), then the station's
+  const fs = view && view.floorView && view.floorView.spend && !view.floorView.shared ? view.floorView.spend : null;
+  $('#spend-today').innerHTML = (fs ? 'Floor ' + fs.floor + ' today <b>' + money(fs.todayUsd) + '</b> · month ' + money(fs.monthUsd) + (fs.budgetUsd ? ' / ' + money(fs.budgetUsd) : '') + ' · station ' : 'Today <b>') + money(sp.usd) + (fs ? '' : '</b>') + (cap ? ' / ' + money(cap) + ' cap' : '') + (day ? '<span class="meter meter-' + day.level + '"><i style="width:' + Math.min(100, day.pct) + '%"></i></span>' : '') + ' · ' + sp.runs + ' runs';
   $('#spend-today').title = sp.label + ' · source: ' + sp.source + (s.spend.caps ? ' · caps: ' + s.spend.caps.source : '') + (cs.length ? '\n' + cs.map((c) => c.label + ': ' + money(c.used) + ' of ' + money(c.limit) + ' (' + c.pct + '%)').join('\n') : '') + (s.spend.reservedNow ? '\nreserved for calls in flight: ' + money(s.spend.reservedNow) : '');
   const cw = $('#cap-warn');
   cw.classList.toggle('hidden', !worst);
@@ -120,8 +154,7 @@ async function load(fresh = false) {
   if (presenterOn == null) setPresenter(!!snap.demo, false);
   renderEstop(snap); renderDemo(snap);
   if (snap.source.mode === 'engine' && !live) connectLive();
-  office.setData(snap); labels.build(snap); taskpanel.setSnapshot(snap); renderTopbar(snap);
-  if (board.isOpen()) board.render(snap); if (calendar.isOpen()) calendar.render(snap);
+  applyView();
   sidepanel.refresh();
   presenter.onSnapshot(snap);
   labelsDirty = true; ready = true;
@@ -131,8 +164,7 @@ async function load(fresh = false) {
 function setPresenter(v, rerender = true) {
   presenterOn = !!v; setMoneyHidden(presenterOn); presenter.setOn(presenterOn);
   if (!rerender || !snap) return;
-  renderTopbar(snap); office.setData(snap);
-  if (board.isOpen()) board.render(snap); if (calendar.isOpen()) calendar.render(snap); if (ledger.isOpen()) ledger.render(snap);
+  applyView(); if (ledger.isOpen()) ledger.render(snap);
   const cur = sidepanel.isOpen() && sidepanel.current(); if (cur) (cur.kind === 'job' ? sidepanel.showJob(cur.id) : sidepanel.showAgent(cur.id));
   scrubSoon();
 }
@@ -194,7 +226,9 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault(); return;
   }
   if (k === 'p' || k === 'P') { setPresenter(!presenterOn); e.preventDefault(); return; }
-  if (k === 'Escape') { if (calendar.hasPopover()) calendar.closePopover(); else if (sidepanel.isOpen()) sidepanel.close(); else closeOverlays(); }
+  if (k === 'Escape') { if (calendar.hasPopover()) calendar.closePopover(); else if (sidepanel.isOpen()) sidepanel.close(); else { closeOverlays(); if (snap) renderFloors(snap); } }
+  else if (k === 'g' || k === 'G') { if (building.isOpen()) { building.hide(); syncPause(); renderFloors(snap); } else if (floorsOf(snap).length) openBuilding(); }
+  else if (k === '[') stepFloor(-1); else if (k === ']') stepFloor(1);
   else if (k === 'b' || k === 'B') { if (board.isOpen()) { board.hide(); syncPause(); } else openBoard(); }
   else if (k === 'c' || k === 'C') { if (calendar.isOpen()) { calendar.hide(); syncPause(); } else openCalendar(); }
   else if (k === 't' || k === 'T') { if (!calendar.isOpen()) openCalendar(); calendar.today(); }
@@ -267,6 +301,6 @@ $('#estop').addEventListener('click', async () => {
 
 // test hooks for the screenshot script (read-only helpers)
 window.__office = {
-  ready: () => ready, reload: () => load(true), ctl, taskpanel, sidepanel, board, presenter, setPresenter, presenterOn: () => presenterOn, closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap,
+  ready: () => ready, reload: () => load(true), ctl, taskpanel, sidepanel, board, presenter, setPresenter, presenterOn: () => presenterOn, closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap, view: () => view, setFloor, floor: () => curFloor, openBuilding,
   setAnimate: (v) => office.setAnimate(v), bench: (ms, opts) => office.bench(ms, opts), stats: () => office.getStats(), togglePerf, settled: () => { const v = office.view, b = office.bakedState(); return (!b.want || b.loaded || !!b.failed) && v.target.distanceTo(v.wantTarget) < 0.002 && Math.abs(v.zoom - v.wantZoom) < 0.0005; }, baked: () => office.bakedState()
 };

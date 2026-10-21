@@ -336,6 +336,8 @@ export function buildRooms(L, p, accents, opts = {}) {
   if (!skipLounge) {
     const S = bucket({ color: true }), lg = L.lounge, f = lg.furniture;
     wood.add(planarUV(box(lg.w, 0.02, lg.d).translate(lg.cx, FLOOR + 0.01, lg.cz), FLOOR_OAK.tile));
+    // B0: on a business floor the lounge corner is open floor (the lounge is on floor 0)
+    if (f) {
     rug(S, f.rug.x0, f.rug.x1, f.rug.z0, f.rug.z1, p.loungeRug, p.loungeRugBorder);
     sofa(S, f.sofaA, f.sofaA.len, p.sofa); sofa(S, f.sofaB, f.sofaB.len, p.sofa);
     armchair(S, f.chair1, p.leather); armchair(S, f.chair2, p.leather);
@@ -345,6 +347,7 @@ export function buildRooms(L, p, accents, opts = {}) {
     S.add(box(0.34, 0.05, 0.26), mat4(t.x - 0.3, FLOOR + 0.47, t.z + 0.1, 0.3), BOOKS[4]); S.add(box(0.3, 0.04, 0.22), mat4(t.x - 0.3, FLOOR + 0.515, t.z + 0.1, 0.2), BOOKS[7]);
     S.add(cyl(0.1, 0.08, 0.16, 10), mat4(t.x + 0.35, FLOOR + 0.525, t.z - 0.15), p.potSmall); S.add(new THREE.IcosahedronGeometry(0.15, 0), mat4(t.x + 0.35, FLOOR + 0.7, t.z - 0.15), p.leafSmall);
     floorLamp(S, f.lamp.x, f.lamp.z, f.table.x, f.table.z);
+    }
     out.statics.push({ key: 'lounge', geo: S.merge() });
   }
 

@@ -3,6 +3,7 @@
 // both. Read-only. Prompts, keys and provider responses never reach the snapshot.
 import fs from 'node:fs';
 import path from 'node:path';
+import { building, SHARED, DEFAULT_BUSINESS } from '../engine/business.mjs';
 import { dublinDay, dublinDayStart, dmyOfDay, dublinDateTime } from '../engine/time.mjs';
 import { nextRuns } from '../engine/scheduler.mjs';
 import { cronWords } from './model.mjs';
@@ -65,6 +66,9 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   // ---- departments and desks: config/office.json (the owner's floor plan)
   const departments = (cfg.office.departments || []).map((d) => ({ id: d.key, key: d.key, name: d.name, rect: d.rect, agents: agentsCfg.filter((a) => String(a.department).toLowerCase() === d.key).map((a) => a.key), warnings: [], metrics: [], counts: { doing: 0, next: 0, done: 0 } }));
   const deptOf = Object.fromEntries(departments.flatMap((d) => d.agents.map((k) => [k, d])));
+  // B0 (owner, 21/10/2026): the building: each department, agent, job and routine carries its business and floor (the shared floor: 0)
+  const B = engine.building || building(cfg), floorOf = (bid) => (bid === SHARED ? (B.shared.floor ?? 0) : (B.get(bid) || {}).floor ?? null);
+  for (const d of departments) { d.businessId = B.ofDept(d.key); d.floor = floorOf(d.businessId); }
 
   // ---- columns: the line's agent stages in order, with the owner's column names
   const columns = [{ key: 'brief', label: 'brief', agentName: 'intake (brief checks)' }];
@@ -82,7 +86,8 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     const dir = path.join(J.dataRoot, j.kind === 'research' ? 'research' : 'jobs', j.kind === 'research' ? '' : j.id);
     const def = stepDef(j, j.step) || {};
     const myRuns = runs.filter((r) => r.job_id === j.id).sort((a, b) => a.started_at - b.started_at);
-    const out = { id: j.id, title: j.title || j.id, niche: null, slogan: null, briefStatus: null, priceRange: null, stage: def.column || 'brief', lane: null, status: 'backlog', flag: null, statusReason: j.reason, agentId: def.agent || null, hops: [], files: [], images: [], costUsd: r6(ledger.spent.job(j.id)), startedAt: j.started_at || j.created_at, updatedAt: j.updated_at, endedAt: j.ended_at || null, tracker: null, queue: null, warnings: [], synthetic: false, line: j.line, kind: j.kind, state: j.state, step: j.step, loops: j.loops, version: j.version };
+    const bizId = j.business_id || B.ofLine(j.line) || (j.legacy ? DEFAULT_BUSINESS : SHARED);
+    const out = { businessId: bizId, floor: floorOf(bizId), id: j.id, title: j.title || j.id, niche: null, slogan: null, briefStatus: null, priceRange: null, stage: def.column || 'brief', lane: null, status: 'backlog', flag: null, statusReason: j.reason, agentId: def.agent || null, hops: [], files: [], images: [], costUsd: r6(ledger.spent.job(j.id)), startedAt: j.started_at || j.created_at, updatedAt: j.updated_at, endedAt: j.ended_at || null, tracker: null, queue: null, warnings: [], synthetic: false, line: j.line, kind: j.kind, state: j.state, step: j.step, loops: j.loops, version: j.version };
     const brief = j.kind === 'research' ? '' : (() => { try { return fs.readFileSync(path.join(dir, 'brief.md'), 'utf8'); } catch (_) { return ''; } })();
     out.niche = (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || null;
     out.briefStatus = (/^status:\s*(\S+)/m.exec(brief) || [])[1] || null;
@@ -186,7 +191,9 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     if (!desk) warnings.push(a.name + ' has no desk in config/office.json');
     const myJobs = jobs.filter((j) => j.hops.some((h) => h.agentId === a.key));
     const imgJob = a.key === 'designer' ? myJobs.find((j) => j.images.length) : null;
+    const aBiz = B.ofAgent(a.key) || SHARED;
     return {
+      businessId: aBiz, floor: floorOf(aBiz),
       id: a.key, name: a.name, model: providers.mode === 'mock' ? 'mock (' + t.model + ')' : t.model, provider: providers.mode === 'mock' ? 'mock' : t.provider, role: roleLabel(a.role, { dept: deptOf[a.key] ? deptOf[a.key].name : null, name: a.name }), modelSource: 'config/agents/' + a.key + '.json + config/engine.json tiers',
       color: a.color || null, gear: a.tools, tier, effort, enabled, version, tierModel: t.model || null, warnings: [], dept: deptOf[a.key] ? deptOf[a.key].key : null, deptName: deptOf[a.key] ? deptOf[a.key].name : null, desk, status, statusText,
       since: live ? live.started_at : last ? (last.ended_at || last.started_at) : null, services: live ? [providers.mode === 'mock' ? 'mock' : t.provider] : [], synthetic: false, syntheticWhat: null,
@@ -215,6 +222,11 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
       const all = lineJobs.flatMap((j) => [...(j.qaDesign || []), ...(j.qaFile1 || [])]), ok = all.filter((p) => p.verdict === 'approved').length;
       d.metrics = [{ label: 'sets made', value: lineJobs.reduce((s, j) => s + (j.setsBuilt || 0), 0), source: 'jobs/*/set-vN/files (built sets)' }, { label: 'QA pass rate', value: all.length ? Math.round(100 * ok / all.length) + '% (' + ok + ' of ' + all.length + ')' : 'n/a', source: 'jobs/*/qa/design-passN.json + file1-passN.json' }];
     }
+    // B0: the shared floor's departments: Finance (the station's spend this Dublin month, the businesses' budgets), Compliance (the
+    // screens every business inherits), OVERSEER (its daily reports)
+    else if (d.key === 'finance') { const mo = day.slice(0, 7); d.metrics = [{ label: 'month (station)', value: '$' + r6(rows.filter((x) => dublinDay(x.ts).slice(0, 7) === mo).reduce((s, x) => s + (Number(x.usd) || 0), 0)).toFixed(2), source: ledger.label }, { label: 'budgets', value: B.list.length + ' business' + (B.list.length === 1 ? '' : 'es'), source: 'config/businesses' }]; }
+    else if (d.key === 'compliance') d.metrics = [{ label: 'blocklist terms', value: (cfg.blocklist || []).length, source: 'config/blocklist.txt' }, { label: 'other-company markers', value: ((cfg.building || {}).foreignDataMarkers || []).length, source: 'config/building.json' }];
+    else if (d.key === 'overseer') d.metrics = [{ label: 'daily reports', value: 0, source: 'none yet' }, { label: 'businesses', value: B.list.length, source: 'config/businesses' }];
     else d.metrics = [{ label: 'listings drafted', value: lineJobs.filter((j) => j.listing).length, source: 'jobs/*/outbox/listing.json' }, { label: 'approval queue', value: jobs.filter((j) => j.state === 'approval').length, source: 'approvals' }];
   }
 
@@ -230,6 +242,11 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     capStatus: [{ cap: 'perDay', label: 'station day', used: r6(g.spentToday), limit: caps.perDayUsd }, ...Object.keys(cfg.lines).map((l) => ({ cap: 'perLineDay[' + l + ']', label: 'line ' + l + ' day', used: r6(ledger.spent.lineDay(l, day)), limit: (caps.perLineDayUsd || {})[l] ?? (caps.perLineDayUsd || {}).default ?? 0 }))].filter((c) => c.limit > 0).map((c) => ({ ...c, pct: Math.round(1000 * c.used / c.limit) / 10, level: c.used >= c.limit ? 'hit' : c.used >= 0.8 * c.limit ? 'warn' : 'ok' })),
     last7days: Array.from({ length: 7 }, (_, i) => { const d = dublinDay(dayStart - (6 - i) * 86400000 + 3600000); return { date: d, usd: r6(ledger.spent.day(d)) }; })
   };
+  // B0: spend per business: today (Dublin day) and this Dublin month against its monthly budget (and its own day cap, when set)
+  const month = day.slice(0, 7);
+  spend.byBusiness = [...B.list.map((b) => ({ id: b.id, name: b.name, floor: b.floor, todayUsd: r6(ledger.spent.businessDay(b.id, day)), monthUsd: r6(ledger.spent.businessMonth(b.id, month)), budgetUsd: b.monthlyBudgetUsd, dayCapUsd: b.dailyCapUsd || null, month })),
+    { id: SHARED, name: B.shared.name || 'Shared services', floor: B.shared.floor ?? 0, todayUsd: r6(ledger.spent.businessDay(SHARED, day)), monthUsd: r6(ledger.spent.businessMonth(SHARED, month)), budgetUsd: null, dayCapUsd: null, month }];
+  for (const b of spend.byBusiness) if (b.budgetUsd && b.monthUsd >= 0.8 * b.budgetUsd) warnings.push((b.monthUsd >= b.budgetUsd ? 'BUDGET REACHED: ' : 'Budget warning: ') + b.name + ' ' + b.monthUsd.toFixed(2) + ' of ' + b.budgetUsd.toFixed(2) + ' USD this month');
   if (!g.ledgerOk) warnings.push('LEDGER UNREADABLE: every paid call is refused. ' + g.ledgerError);
   for (const c of spend.capStatus) if (c.level !== 'ok') warnings.push((c.level === 'hit' ? 'CAP REACHED: ' : 'Cap warning: ') + c.label + ' ' + c.used.toFixed(2) + ' of ' + c.limit.toFixed(2) + ' USD (' + c.pct + '%)' + (c.level === 'hit' ? '; new calls on it are refused' : ''));
   // the legacy station's spend: imported history on its own keys, never counted in the engine's caps
@@ -239,7 +256,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   if (halted) warnings.unshift('E-STOP ON since ' + dublinDateTime(halt.state.at || now) + ' (by ' + (halt.state.by || 'unknown') + '): no call can start');
 
   // ---- routines and the calendar (one entry per job, on the day of its latest stage change)
-  const routines = store.listRoutines().map((r) => { const up = r.enabled ? nextRuns(r.schedule, 6, new Date(now)) : []; return { id: r.id, name: r.name, prompt: String(r.input || '').slice(0, 200), input: String(r.input || '').slice(0, 2000), target: r.target, maxRunsPerDay: r.max_runs_per_day, perRunCapUsd: r.per_run_cap_usd, legacy: r.legacy, runnable: !r.legacy && (engine.routineTargets || []).some((t) => t.id === r.target), schedule: r.schedule, scheduleWords: cronWords(r.schedule) + ' (Dublin)', scheduleDisplay: r.schedule, agentId: r.target, agentName: r.legacy && /^legacy:agent:/.test(r.target) ? (nameOf[r.target.slice(13)] || r.target.slice(13)) + ' (legacy)' : r.target, dept: null, enabled: r.enabled, state: r.enabled ? 'scheduled' : 'paused', needsOk: !r.enabled, nextRun: up[0] || null, nextRunIsProjection: false, upcoming: up, ghostRuns: r.enabled ? [] : nextRuns(r.schedule, 6, new Date(now)), lastRunAt: r.last_fire_at, lastStatus: r.last_status, lastUsd: 0, live: false, version: r.version, source: 'engine routines' }; });
+  const routines = store.listRoutines().map((r) => { const up = r.enabled ? nextRuns(r.schedule, 6, new Date(now)) : []; const rb = r.business_id || B.ofLine((/^line:(.+)$/.exec(r.target || '') || [])[1]) || (r.legacy ? DEFAULT_BUSINESS : SHARED); return { businessId: rb, floor: floorOf(rb), id: r.id, name: r.name, prompt: String(r.input || '').slice(0, 200), input: String(r.input || '').slice(0, 2000), target: r.target, maxRunsPerDay: r.max_runs_per_day, perRunCapUsd: r.per_run_cap_usd, legacy: r.legacy, runnable: !r.legacy && (engine.routineTargets || []).some((t) => t.id === r.target), schedule: r.schedule, scheduleWords: cronWords(r.schedule) + ' (Dublin)', scheduleDisplay: r.schedule, agentId: r.target, agentName: r.legacy && /^legacy:agent:/.test(r.target) ? (nameOf[r.target.slice(13)] || r.target.slice(13)) + ' (legacy)' : r.target, dept: null, enabled: r.enabled, state: r.enabled ? 'scheduled' : 'paused', needsOk: !r.enabled, nextRun: up[0] || null, nextRunIsProjection: false, upcoming: up, ghostRuns: r.enabled ? [] : nextRuns(r.schedule, 6, new Date(now)), lastRunAt: r.last_fire_at, lastStatus: r.last_status, lastUsd: 0, live: false, version: r.version, source: 'engine routines' }; });
   const events = [];
   for (const j of jobs) if (j.stageChangedAt) events.push({ date: dublinDay(j.stageChangedAt), at: j.stageChangedAt, kind: 'job', jobId: j.id, title: j.title, stage: j.lane || j.stage, stageLabel: j.lane || j.stageLabel, status: j.status, dept: j.dept, agent: j.agentName, reason: j.statusReason, synthetic: false });
   for (const r of routines) for (const t of r.upcoming) events.push({ date: dublinDay(t), at: t, kind: 'routine', routineId: r.id, title: r.name, dept: null, agent: r.agentName, projected: false });
@@ -269,6 +286,8 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     source: { mode: 'engine', root: 'data/', snapshotAt: null, synthetic: [], legacy: false },
     engine: { state: halted ? 'halted' : 'running', label: halted ? 'E-STOP ON' : 'engine · ' + (mock ? 'mock provider' : 'live'), detail: halted ? 'every call is refused until you resume (typed confirmation)' : 'Station engine, data root ' + J.dataRoot + '; provider ' + providers.mode, halted, haltedBy: halted ? halt.state.by || null : null, haltedAt: halted ? halt.state.at || null : null, provider: providers.mode, inFlight: g.inFlight, seq: engine.bus.seq, overridden: !!cfg.overridden },
     station: { name: 'Station', runtime: 'Station engine (Node ' + process.version + ')', host: host.label || null, provider: providers.mode },
+    // B0: the building: its floors (the shared floor 0 with the lounge, then one per business) and what each floor holds
+    building: { floors: B.floors().map((fl) => ({ ...fl, lounge: !!fl.shared && (B.shared.lounge !== false), lines: fl.shared ? [] : ((B.get(fl.id) || {}).lines || []), agents: agents.filter((a) => a.businessId === fl.id).map((a) => a.id), empty: !fl.shared && !((B.get(fl.id) || {}).lines || []).length })), sharedId: SHARED },
     services, departments, agents, hub, jobs, board, stages: columns.filter((c) => !['brief', 'approval-queue', 'done'].includes(c.key)), columns, routines, events, spend,
     // E5: what the page's controls may offer (the server checks every action again)
     controls: { live: true, haltVersion: halt.state.at || 0, tiers: Object.entries(cfg.engine.tiers).map(([k, t]) => ({ key: k, model: t.model })), effortLevels: cfg.engine.effortLevels || [], routineTargets: (engine.routineTargets || []).map((t) => ({ id: t.id, label: t.label })), perRunCapUsd: caps.perRunUsd, today: day },

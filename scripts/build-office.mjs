@@ -48,14 +48,22 @@ export const HIGH_DIR = 'high';
 // fixed seeds per area (the Design and Office seeds are R3a's), so a one-unit build gives the same room as a full one
 const SEEDS = { design: 20261017, office: 20261118, research: 20261219, lounge: 20261320, atrium: 20261421 };
 
-// The station's departments in the order the server gives them (research, design, office). tests/baked-room.test.mjs
+// The baked floor's departments in the order the server gives them (research, design, office). tests/baked-room.test.mjs
 // checks the fixtures and engine views give the same specs as the committed manifest.
-export function stationDepartments() {
-  const dir = path.join(ROOT, 'config', 'agents'), byDept = {};
-  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) { const a = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); const k = String(a.department || 'office').toLowerCase(); (byDept[k] = byDept[k] || []).push(a.key); }
-  return ['research', 'design', 'office'].filter((k) => byDept[k]).map((k) => ({ key: k, agents: byDept[k] }));
+// B0 (owner, 21/10/2026): the building has floors; the bake is floor 1 (BAKED_FLOOR), the business on it (config/businesses: etsy-shop),
+// with its lounge corner open (the lounge is on floor 0, the shared floor, which is drawn procedurally)
+export const BAKED_FLOOR = 1;
+export function bakedBusiness() {
+  const dir = path.join(ROOT, 'config', 'businesses');
+  for (const n of fs.readdirSync(dir).filter((x) => x.endsWith('.json') && !x.startsWith('_')).sort()) { const b = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); if (b.floor === BAKED_FLOOR) return b; }
+  throw new Error('no business on floor ' + BAKED_FLOOR + ' in config/businesses');
 }
-export const officeLayout = () => computeLayout(stationDepartments(), [{ id: 's0' }, { id: 's1' }, { id: 's2' }, { id: 's3' }]);
+export function stationDepartments() {
+  const dir = path.join(ROOT, 'config', 'agents'), byDept = {}, mine = bakedBusiness().departments;
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) { const a = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); const k = String(a.department || 'office').toLowerCase(); (byDept[k] = byDept[k] || []).push(a.key); }
+  return ['research', 'design', 'office'].filter((k) => mine.includes(k) && byDept[k]).map((k) => ({ key: k, agents: byDept[k] }));
+}
+export const officeLayout = () => computeLayout(stationDepartments(), [{ id: 's0' }, { id: 's1' }, { id: 's2' }, { id: 's3' }], { lounge: false });
 export function officeSpecs(L = officeLayout()) { return Object.fromEntries(BAKED_ROOMS.map((k) => [k, bakedRoomSpec(L, k)])); }
 // where each area of a unit sits in the unit's frame (the atrium's frame is the slab's; the lounge sits in it)
 function placeIn(L, unit) {

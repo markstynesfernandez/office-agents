@@ -2,6 +2,8 @@
 // data/events/<Dublin day>.jsonl (the audit trail), kept in a ring buffer for replay, and fanned out to subscribers
 // (the SSE stream). Callers write their state change first and emit after, so an event never describes a change that
 // was not stored. Event names are the engine's own.
+// B0 (owner, 21/10/2026): every event carries businessId (its job's or agent's business; "shared" for the shared floor and station-wide
+// events). Events written before B0 are never rewritten (the audit trail is append-only); a reader resolves them the same way.
 import fs from 'node:fs';
 import path from 'node:path';
 import { dublinDay } from './time.mjs';
@@ -10,7 +12,7 @@ export const EVENT_TYPES = ['job.created', 'job.stage', 'job.blocked', 'job.queu
   'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.start', 'engine.recovered',
   'routine.changed', 'action.done', 'action.refused'];
 
-export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringSize = 1000 }) {
+export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringSize = 1000, businessOf = null }) {
   const ring = [], subs = new Set();
   // carry the sequence on across restarts: the last line of the newest events file
   let seq = 0;
@@ -24,7 +26,7 @@ export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringS
 
   function emit(type, { jobId = null, agentKey = null, data = {} } = {}) {
     if (!EVENT_TYPES.includes(type)) throw new Error('unknown event type: ' + type);
-    const ev = { seq: ++seq, ts: Date.now(), type, jobId, agentKey, data };
+    const ev = { seq: ++seq, ts: Date.now(), type, jobId, agentKey, ...(businessOf ? { businessId: businessOf({ jobId, agentKey, businessId: data && data.businessId }) } : {}), data };
     try { J.add(path.join(dir, dublinDay(ev.ts) + '.jsonl'), JSON.stringify(ev) + '\n'); } catch (e) { log && log.error('event not written', { type, error: e.message }); }
     ring.push(ev); if (ring.length > ringSize) ring.shift();
     for (const fn of subs) { try { fn(ev); } catch (e) { log && log.warn('event subscriber failed', { type, error: e.message }); } }

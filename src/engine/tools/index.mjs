@@ -36,6 +36,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { realResolve } from '../store/jail.mjs';
+import { inBusinessArea, foreignDataHits } from '../business.mjs';
 import { screenText, hitLine } from '../lib/originality.mjs';
 import { sha256 } from '../lib/common.mjs';
 import { latestSet } from '../lib/digital-prep.mjs';
@@ -112,6 +113,8 @@ export function normalisePath(p, jobId) {
 export function canonicalDesignFile(p, jobId) { const s = normalisePath(p, jobId); const m = /^set-v(\d+)\/deliverables\.json$/.exec(s); return m ? 'jobs/' + jobId + '/set-v' + m[1] + '/deliverables.json' : null; }
 
 export function createToolbox(ctx) {
+  // B0: a run's folder must itself lie inside its business's data (runtime.mjs passes ctx.businessArea)
+  if (ctx.businessArea && !inBusinessArea(realResolve(ctx.folder), ctx.businessArea)) throw new ToolError('the run\'s folder is outside its business\'s data: ' + ctx.folder);
   const { J, folder, agent, job, cfg, guard, providers, run, halt, log, bus, line } = ctx;
   const counters = { images: 0, web: 0, verdicts: 0, redrawRefusals: 0, fetches: 0 };
   const fetched = new Set();   // L3: the canonical URLs this run's web_fetch calls tried (reached the provider), whatever came back
@@ -135,6 +138,8 @@ export function createToolbox(ctx) {
     const abs = realResolve(path.resolve(root, rel));
     if (!agent.scoutingNotes && isScoutPath(path.relative(root, abs))) throw new ToolError('the scouting notes are internal to TREND-SCOUT: ' + p);
     if (!(abs === root || abs.toLowerCase().startsWith(root.toLowerCase() + path.sep))) throw new ToolError('outside your folder: ' + p);
+    // B0 (owner, 21/10/2026): and inside the data of the business the run works for (another business's dataDir is never reachable)
+    if (ctx.businessArea && !inBusinessArea(abs, ctx.businessArea)) throw new ToolError('outside your business\'s data: ' + p);
     if (forWrite) J.dataJail(abs);
     return { abs, rel: path.relative(root, abs).replace(/\\/g, '/') || '.' };
   }
@@ -164,6 +169,8 @@ export function createToolbox(ctx) {
       const { abs, rel } = inFolder(p, { forWrite: true });
       if (!WRITE_EXT.test(rel)) throw new ToolError('only .md, .json and .txt files can be written (images come from image_generate): ' + rel);
       if (!writeRes.some((re) => re.test(rel))) throw new ToolError('your role may not write ' + rel + ' (allowed: ' + (agent.writes || []).join(', ') + ')');
+      // B0 building rule: another company's data never enters the Station (config/building.json foreignDataMarkers)
+      const foreign = foreignDataHits(content, cfg); if (foreign.length) throw new ToolError('refused by a building rule: the text names another company (' + foreign.join(', ') + '); its data never enters the Station');
       // E6 b3: one notes file per job, so a run never overwrites another run's notes: only this job's own file
       const ownNotes = job && job.data && job.data.day ? notesRel(job.data.day, job.id) : null;
       if (isScoutPath(rel) && rel !== ownNotes) throw new ToolError('scouting notes go to this job\'s own file only (' + (ownNotes || 'no job') + '), not ' + rel);

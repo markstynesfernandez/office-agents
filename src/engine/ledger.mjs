@@ -7,6 +7,9 @@
 // correction) carries the DIFFERENCE in usd, which may be negative (an estimate settled lower), so long as the corrected row's net
 // (its usd plus all its corrections) stays at or above 0. It counts on the corrected row's Dublin day (`correctsTs`), adds no image or
 // web count, and is the only way a figure changes: no row is ever edited.
+// B0 (owner, 21/10/2026): a new row carries businessId (the business it was spent for; the shared floor is "shared"). A row written
+// before B0 has none and is never rewritten (append-only): its business is resolved when the ledger loads (its job's, line's or
+// agent's business: businessOf), for the business totals (byBusinessDay, byBusinessMonth: the Dublin month).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -17,15 +20,16 @@ import { APP_ROOT } from './store/jail.mjs';
 export const KINDS = ['text', 'image', 'web', 'etsy'];
 const r6 = (n) => Math.round(n * 1e6) / 1e6;
 
-export function emptyTotals() { return { byDay: {}, byJob: {}, byRun: {}, byAgentDay: {}, byLineDay: {}, imagesByDay: {}, webByDay: {}, rows: 0, usd: 0 }; }
+export function emptyTotals() { return { byDay: {}, byJob: {}, byRun: {}, byAgentDay: {}, byLineDay: {}, byBusinessDay: {}, byBusinessMonth: {}, imagesByDay: {}, webByDay: {}, rows: 0, usd: 0 }; }
 
-export function addToTotals(t, r) {
+export function addToTotals(t, r, businessId = r.businessId || null) {
   const day = dublinDay(r.correctionOf ? (r.correctsTs || r.ts) : r.ts), add = (o, k, v) => { o[k] = r6((o[k] || 0) + v); };
   add(t.byDay, day, r.usd);
   if (r.jobId) add(t.byJob, r.jobId, r.usd);
   if (r.runId) add(t.byRun, r.runId, r.usd);
   if (r.agentKey) add(t.byAgentDay, r.agentKey + '|' + day, r.usd);
   if (r.line) add(t.byLineDay, r.line + '|' + day, r.usd);
+  if (businessId) { add(t.byBusinessDay, businessId + '|' + day, r.usd); add(t.byBusinessMonth, businessId + '|' + day.slice(0, 7), r.usd); }
   if (r.kind === 'image' && !r.correctionOf) add(t.imagesByDay, day, r.count || 1);
   if (r.kind === 'web' && !r.correctionOf) add(t.webByDay, day, r.count || 1);
   t.rows++; t.usd = r6(t.usd + r.usd);
@@ -44,7 +48,9 @@ export function checkRow(r) {
   return bad;
 }
 
-export function createLedger({ J, store = null, log, file = path.join(J.dataRoot, 'ledger', 'ledger.jsonl') }) {
+export function createLedger({ J, store = null, log, file = path.join(J.dataRoot, 'ledger', 'ledger.jsonl'), businessOf = null }) {
+  // a correction counts for the business of the row it corrects; any other row for its own (or resolved) business
+  const bizOf = (r) => { if (!businessOf) return r.businessId || null; if (r.correctionOf) { const o = rows.find((x) => x.entryId === r.correctionOf); if (o) return o.businessId || businessOf(o); } return r.businessId || businessOf(r); };
   const f = J.dataJail(file);
   let totals = emptyTotals(), state = { ok: true, error: null }, rows = [];
   const ids = new Set();
@@ -66,7 +72,7 @@ export function createLedger({ J, store = null, log, file = path.join(J.dataRoot
       const line = lines[i]; if (!line.trim()) continue;
       let r; try { r = JSON.parse(line); } catch (e) { state = { ok: false, error: 'ledger line ' + (i + 1) + ' is unreadable (' + e.message + '); nothing can be charged until it is fixed by hand' }; log && log.error('ledger unreadable', { file: f, line: i + 1 }); return state; }
       const bad = [...checkRow(r), ...correctionProblems(r)]; if (bad.length) { state = { ok: false, error: 'ledger line ' + (i + 1) + ': ' + bad.join('; ') }; log && log.error('ledger row invalid', { line: i + 1, bad }); return state; }
-      rows.push(r); ids.add(r.entryId); addToTotals(totals, r);
+      rows.push(r); ids.add(r.entryId); addToTotals(totals, r, bizOf(r));
       if (store) store.mirrorLedger(r);
     }
     state = { ok: true, error: null };
@@ -79,10 +85,11 @@ export function createLedger({ J, store = null, log, file = path.join(J.dataRoot
     if (!state.ok) throw new Error('ledger is not ok: ' + state.error);
     const r = { entryId: row.entryId || crypto.randomUUID(), ts: row.ts || Date.now(), ...row };
     r.usd = r6(r.usd);
+    if (businessOf && !r.businessId) r.businessId = bizOf(r);
     if (ids.has(r.entryId)) return rows.find((x) => x.entryId === r.entryId);   // idempotent on entryId
     const bad = [...checkRow(r), ...correctionProblems(r)]; if (bad.length) throw new Error('refusing a ledger row: ' + bad.join('; '));
     J.add(f, JSON.stringify(r) + '\n', { fsync: true });
-    rows.push(r); ids.add(r.entryId); addToTotals(totals, r);
+    rows.push(r); ids.add(r.entryId); addToTotals(totals, r, bizOf(r));
     if (store) store.mirrorLedger(r);
     log && log.info('ledger row', { entryId: r.entryId, jobId: r.jobId, runId: r.runId, agent: r.agentKey, kind: r.kind, model: r.model, usd: r.usd, estimated: !!r.estimated });
     return r;
@@ -95,6 +102,6 @@ export function createLedger({ J, store = null, log, file = path.join(J.dataRoot
     get totals() { return totals; },
     rows: () => rows.slice(),
     rowsForJob: (jobId) => rows.filter((r) => r.jobId === jobId),
-    spent: { day: (day) => totals.byDay[day] || 0, job: (id) => totals.byJob[id] || 0, run: (id) => totals.byRun[id] || 0, agentDay: (k, day) => totals.byAgentDay[k + '|' + day] || 0, lineDay: (l, day) => totals.byLineDay[l + '|' + day] || 0, imagesDay: (day) => totals.imagesByDay[day] || 0 }
+    spent: { day: (day) => totals.byDay[day] || 0, job: (id) => totals.byJob[id] || 0, run: (id) => totals.byRun[id] || 0, agentDay: (k, day) => totals.byAgentDay[k + '|' + day] || 0, lineDay: (l, day) => totals.byLineDay[l + '|' + day] || 0, businessDay: (b, day) => totals.byBusinessDay[b + '|' + day] || 0, businessMonth: (b, month) => totals.byBusinessMonth[b + '|' + month] || 0, imagesDay: (day) => totals.imagesByDay[day] || 0 }
   };
 }

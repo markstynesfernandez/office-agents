@@ -12,6 +12,7 @@ import { readStation, resolveImage } from './sources/files.mjs';
 import { buildSnapshot } from './model.mjs';
 import { applySynthetic, readOverlay } from './sources/synthetic.mjs';
 import { loadEnv, readJsonSafe } from '../lib/legacy-readers/common.mjs';
+import { outboundOwner } from '../engine/business.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..', '..');
@@ -132,10 +133,13 @@ export async function startEngine({ git = null } = {}) {
   if (stampDataRoot(J, inst)) log.info('data root stamped for the ' + inst.name + ' instance', { dataRoot: J.dataRoot });
   // E7a: the own-shop Etsy connection. Live: the real client (keys from .env by name; without them Etsy stays unavailable,
   // the Station still starts). Dev: the mock Etsy only (the real client refuses to build off the live instance)
+  // B0 (owner, 21/10/2026): an outbound action needs a business that lists it in allowedOutbound (and the owner's click each time)
   let etsy;
+  const etsyOwner = outboundOwner(engine.cfg, 'etsy:read-own-shop');
   try {
-    if (inst.name === 'live') { const { createEtsyClient } = await import('../engine/providers/etsy.mjs'); etsy = createEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log }); }
-    else { const { createMockEtsyClient } = await import('../engine/providers/etsy-mock.mjs'); etsy = createMockEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log }); }
+    if (!etsyOwner) throw new Error('no business lists etsy:read-own-shop in allowedOutbound (config/businesses; DECISIONS.md "B0: building rules")');
+    if (inst.name === 'live') { const { createEtsyClient } = await import('../engine/providers/etsy.mjs'); etsy = createEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log, businessId: etsyOwner }); }
+    else { const { createMockEtsyClient } = await import('../engine/providers/etsy-mock.mjs'); etsy = createMockEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log, businessId: etsyOwner }); }
     log.info('etsy: ' + etsy.mode + ' client ready', { connected: etsy.status().connected });
   } catch (e) { etsy = { unavailable: e.message }; log.warn('etsy: unavailable', { code: e.code || null, error: e.message }); }
   const { server, closeAll } = createEngineServer({ engine, log, etsy });

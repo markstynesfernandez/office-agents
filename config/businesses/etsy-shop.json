@@ -1,0 +1,13 @@
+{
+  "$comment": "B0 (owner, 21/10/2026): today's Etsy work, the first business of the building. Its files stay where they are: dataDir \".\" maps to today's layout under the data root (jobs/, research/, ledger/ ...), minus every other business's dataDir (businesses/). Station caps (config/engine.json caps) stay the outer limit. allowedOutbound: the own-shop Etsy read (E7a, owner-clicked) is the only outbound action; each use is also the owner's click.",
+  "id": "etsy-shop",
+  "name": "TheStationShopFinds",
+  "floor": 1,
+  "departments": ["research", "design", "office"],
+  "lines": ["research", "genre-scout", "room1-digital"],
+  "agents": ["demand-researcher", "evidence-checker", "trend-scout", "designer", "qa-design", "lister", "qa-listing", "rejects-desk"],
+  "monthlyBudgetUsd": 200,
+  "allowedOutbound": ["etsy:read-own-shop"],
+  "dataDir": ".",
+  "ownerApprovalRequired": true
+}

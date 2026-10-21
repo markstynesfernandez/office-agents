@@ -122,6 +122,24 @@ Keys: **Space** pauses or resumes, **1 / 2 / 4** set the speed, **R** restarts (
 
 The **E-STOP** button in the page aborts every in-flight model and image call, stops the scheduler and refuses new calls. To resume, type `RESUME`. Stopped jobs are not restarted on their own. `npm run estop` does the same from a terminal by writing `data/HALT` (of the checkout it is run in), which works even when the page or server is stuck. The state survives a restart.
 
+## The building: businesses as floors (B0)
+
+The Station is one building that runs several businesses. Each business is a floor with its own departments, lines, agents, budget, data and rules (`config/businesses/<id>.json`). The shared services sit on floor 0: Finance (the ledger and budgets), Compliance (originality, platform terms, privacy rules), OVERSEER, and the lounge (`config/office.json` `shared`). Today there is one business, **etsy-shop** ("TheStationShopFinds", floor 1), with today's lines, agents and departments. Its files stay where they were (`dataDir` "." is today's layout).
+
+- **Every record carries its business**: each job, run, routine, approval, ledger row and event has `business_id` (`businessId` in the JSONL logs; "shared" for the shared floor and for station-wide records). A data root from before B0 is refused until it is migrated: with the server stopped, `npm run migrate:businesses` (a dry run: what would be set, per table and business, and anything it cannot map), then `npm run migrate:businesses -- --apply` (a full backup to `data\.backups\businesses-<stamp>\` first; a second run changes nothing). The ledger and the event log are append-only and are never rewritten: their older rows get their business when they are read (their job's, line's or agent's).
+- **Spend**: a job's spend counts against its business's monthly budget (`monthlyBudgetUsd`, the Dublin month; etsy-shop USD 200) and its own day cap when it sets one (`dailyCapUsd`, at most the station's), as well as the station's caps; the lowest limit wins. The spend dialog shows the business line (spent this month, budget).
+- **Data**: an agent's file tools are jailed to its business's `dataDir` (and its run folder inside it). Another business's data is never reachable. A new business keeps its files in `data\businesses\<id>\`.
+- **The page**: a floor switcher in the top bar (Building, 0, 1, …; `[` and `]` change floor, `G` opens the whole-building view, `?floor=N` for one page). Each floor shows its own office, task list, routines, board, calendar and spend. The whole-building view lists every floor's totals. A business with no lines yet shows as an empty, labelled floor. Floor 1 is baked; floor 0 is drawn procedurally.
+- **Building rules** (DECISIONS.md "B0: building rules") apply to every business: no outbound action unless the business lists it in `allowedOutbound` and the owner approves it each time; spend caps per run, job, business and station; every agent output is a draft until the owner approves it (`ownerApprovalRequired` cannot be false); originality and IP rules for anything published; personal data only as the business strictly needs it; never another company's data in the Station (`config/building.json` `foreignDataMarkers`: an agent's write or a brief that holds one is refused).
+
+### Adding a business
+
+1. Copy `config/businesses/_template.json` to `config/businesses/<id>.json`. The id is lowercase letters, digits and hyphens, and the same as the file name. The template is never loaded.
+2. Choose a floor: a whole number from 1 up that no other business uses (floor 0 is the shared floor).
+3. List its lines (`config/lines/<id>.json`; each line belongs to one business), its departments (`config/office.json`; each department belongs to one business or the shared floor) and its budget: `monthlyBudgetUsd`, and optionally `dailyCapUsd` (at most the station's day cap). Set `dataDir` to `businesses/<id>/`, `allowedOutbound` to `[]` unless the owner has approved an outbound action, and leave `ownerApprovalRequired` true.
+4. Add its agents (`config/agents/<key>.json`, each with a desk in `config/office.json`) and list them in `agents`. Every agent its lines use must be listed; each agent belongs to one business.
+5. Run the checks: `npm test`, `npm run dry-run`, `npm run dry-run:scout`, `npm run parity -- --rebuild` and `npm run port-drift`. A business that breaks a rule (a floor taken, a line or agent in two businesses, a day cap above the station's, an unknown outbound action) stops the engine with the reason. Then commit, `npm run test:record`, and deploy on the owner's go.
+
 ## Layout
 
 ```

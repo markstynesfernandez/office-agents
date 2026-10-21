@@ -106,14 +106,25 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     // the Console estimate's worst case: this month's Anthropic rows + every open job's worst case + this one (an open job's worst case
     // counts in full: its images are not split out, so the estimate errs high)
     const consoleWorst = r6(consoleUsed + committed + headroomUsd);
+    // B0 (owner, 21/10/2026): the business level: its monthly budget (the Dublin month) and, when it sets one, its day cap, with its own
+    // open jobs at their worst case; the station's caps above stay the outer limit (the lowest limit wins)
+    const B = engine.building, bid = B ? B.ofLine(line) : null, b = bid ? B.get(bid) : null;
+    let business = null;
+    if (b) {
+      const mine = others.filter((j) => (j.business_id || B.ofLine(j.line)) === bid), bc = r6(mine.reduce((s, j) => s + remaining(j), 0));
+      const monthSpent = r6(ledger.spent.businessMonth(bid, month)), daySpent = r6(ledger.spent.businessDay(bid, day)), dayCap = b.dailyCapUsd > 0 ? Math.min(b.dailyCapUsd, caps.perDayUsd) : null;
+      business = { id: bid, name: b.name, floor: b.floor, month, monthSpentUsd: monthSpent, budgetUsd: b.monthlyBudgetUsd, openJobsUsd: bc, monthWorstUsd: r6(monthSpent + bc + headroomUsd), dayCapUsd: dayCap, daySpentUsd: daySpent, dayWorstUsd: r6(daySpent + bc + headroomUsd) };
+    }
     const refusals = [];
     if (halt.isHalted()) refusals.push('e-stop is on: nothing starts until you resume');
     if (!g.ledgerOk) refusals.push('the ledger is unreadable: every paid call is refused');
     if (worst > caps.perDayUsd + 1e-9) refusals.push('the daily cap would be exceeded: spent today ' + usd(spentToday) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(worst) + ', over ' + usd(caps.perDayUsd));
     if (lineCap > 0 && lineWorst > lineCap + 1e-9) refusals.push('the ' + line + ' line\'s daily cap would be exceeded: ' + usd(lineWorst) + ' worst case, over ' + usd(lineCap));
     if (consoleLimit && consoleWorst > consoleLimit + 1e-9) refusals.push('the Anthropic Console\'s monthly limit could be passed (estimate from the station ledger): this month ' + usd(consoleUsed) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(consoleWorst) + ', over ' + usd(consoleLimit));
+    if (business && business.monthWorstUsd > business.budgetUsd + 1e-9) refusals.push(business.name + '\'s monthly budget would be exceeded: this month ' + usd(business.monthSpentUsd) + ' + its open jobs up to ' + usd(business.openJobsUsd) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(business.monthWorstUsd) + ', over ' + usd(business.budgetUsd));
+    if (business && business.dayCapUsd != null && business.dayWorstUsd > business.dayCapUsd + 1e-9) refusals.push(business.name + '\'s daily cap would be exceeded: ' + usd(business.dayWorstUsd) + ' worst case, over ' + usd(business.dayCapUsd));
     const openJobs = others.map((j) => ({ id: j.id, line: j.line, lineLabel: (cfg.lines[j.line] || {}).label || j.line, state: j.state === 'running' || O().isActive(j.id) ? 'running' : 'next', step: j.step || null, spentUsd: r6(ledger.spent.job(j.id)), capUsd: jobCapOf(j.line), worstUsd: r6(remaining(j)) }));
-    return { day, g, month, consoleLimit, consoleUsed, consoleWorst, openJobs, committed, lineCommitted, spentToday, lineSpent, lineCap, worst, lineWorst, refusals };
+    return { day, g, month, business, consoleLimit, consoleUsed, consoleWorst, openJobs, committed, lineCommitted, spentToday, lineSpent, lineCap, worst, lineWorst, refusals };
   }
 
   // the quote (no token): every figure the dialog shows, and why it cannot go ahead (refusals)
@@ -143,6 +154,8 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       openrouterDailyUsd: ol.openrouterDailyUsd ?? null, openrouter: ol.openrouterDailyUsd != null ? { limitUsd: ol.openrouterDailyUsd, usedTodayUsd: orToday, note: 'every job\'s image calls today (station ledger); the engine refuses an image call that would pass the key\'s limit' } : null,
       // L3: the other open jobs (running, or next): line, spend so far, worst case still open
       otherJobs: sc.openJobs,
+      // B0: the business line: the business, its spend this month against its budget (and its day cap, when it sets one)
+      business: sc.business,
       queue: { running, maxRunning: max, startsAsNext: !!nextFor, nextFor },
       routine: t.routine || null,
       refusals

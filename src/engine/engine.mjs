@@ -21,9 +21,11 @@ import { createSpendDesk } from './spend.mjs';
 import { effectiveAgent } from './runtime.mjs';
 import { validSchedule } from './scheduler.mjs';
 import { withScouting, scoutedTerms } from './lib/scouting.mjs';
+import { building } from './business.mjs';
 
 export class LockError extends Error { constructor(msg) { super(msg); this.code = 'LOCKED'; } }
 export class DemoConfigError extends Error { constructor(msg) { super(msg); this.code = 'DEMO_CONFIG'; } }
+export class MigrationNeeded extends Error { constructor(msg) { super(msg); this.code = 'MIGRATE'; } }
 const sameOrInside = (a, b) => { const n = (p) => (process.platform === 'win32' ? p.toLowerCase() : p); const x = n(a), y = n(b); return x === y || x.startsWith(y.endsWith(path.sep) ? y : y + path.sep); };
 
 // DEMO values (demo/station-patch.json, demo/products.json) are for the demo engine only (scripts/demo.mjs passes
@@ -76,14 +78,21 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     Object.defineProperty(cfg, 'station', { enumerable: true, get: () => withScouting(baseStation, scoutedTerms(researchDir)) });
     if (overrides) log.warn('config overrides in use (dry run and demo only)', { products: overrides.productsFile ? overrides.productsFile.products.map((p) => p.key) : null, stationSet: overrides.stationSet ? Object.keys(overrides.stationSet) : null });
     const store = openStore({ J, log });
-    const ledger = createLedger({ J, store, log });
-    const bus = createBus({ J, log });
+    // B0 (owner, 21/10/2026): every job, run, routine, approval, ledger row and event carries business_id. A data root from before
+    // B0 is refused until npm run migrate:businesses -- --apply has backfilled it (fail closed: no record without its business)
+    const gaps = store.businessGaps();
+    if (gaps.missingColumn.length || Object.keys(gaps.nullRows).length) { store.close(); throw new MigrationNeeded('this data root has records without a business (' + [...gaps.missingColumn.map((t) => t + ': no business_id column'), ...Object.entries(gaps.nullRows).map(([t, n]) => t + ': ' + n + ' row(s) without business_id')].join('; ') + '): stop here and run npm run migrate:businesses (a dry run), then npm run migrate:businesses -- --apply'); }
+    const B = building(cfg), jobBusiness = (id) => { const j = store.getJob(id); return j ? (j.business_id || B.ofLine(j.line)) : null; };
+    const businessOf = (rec) => B.resolve(rec, jobBusiness);
+    store.setBusinessResolver(businessOf);
+    const ledger = createLedger({ J, store, log, businessOf });
+    const bus = createBus({ J, log, businessOf });
     const halt = createHalt({ J, bus, log });
-    const guard = createGuard({ J, ledger, halt, caps: cfg.engine.caps, pricing: cfg.engine.pricing, log, bus, clock, outerLimits: cfg.engine.outerLimits || {} });
+    const guard = createGuard({ J, ledger, halt, caps: cfg.engine.caps, pricing: cfg.engine.pricing, log, bus, clock, outerLimits: cfg.engine.outerLimits || {}, businesses: { get: B.get, resolve: businessOf } });
     const recovered = guard.recoverPending();
     const rec = recover({ store, bus, log, resumeOnRestart: cfg.engine.runtime.resumeOnRestart });
     const prov = providers || createProviders({ mode: process.env.STATION_PROVIDER || cfg.engine.provider, script, delayMs: mockDelayMs, log, engineCfg: cfg.engine, halt, demo });
-    const engine = { J, cfg, store, ledger, bus, halt, guard, providers: prov, log, clock, upscaler, recovered: { charged: recovered, ...rec } };
+    const engine = { J, cfg, store, ledger, bus, halt, guard, providers: prov, log, clock, upscaler, recovered: { charged: recovered, ...rec }, building: B, businessOf, jobBusiness };
     // L3 (owner, 21/10/2026): an engine opened by a script (script-engine.mjs): no scheduler, no routine, no resumed job; a maintenance
     // script starts no job at all, any other only the jobs it starts itself (scriptRun.own)
     if (scriptRun) { engine.scriptRun = { purpose: String(scriptRun.purpose || 'script'), startsJobs: scriptRun.startsJobs === true, own: new Set() }; startScheduler = false; resume = false; log.info('engine opened by a script: scheduler and routines off', { purpose: engine.scriptRun.purpose, startsJobs: engine.scriptRun.startsJobs }); }

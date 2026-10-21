@@ -582,11 +582,13 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   let lastLedgerRows = null;
   function setData(snap) {
     data = snap;
-    const key = JSON.stringify([snap.departments.map((d) => [d.key, d.agents]), snap.services.map((s) => s.id)]);
+    // B0: the floor drawn (snap.floorView, main.js): a business floor has no lounge (it is on floor 0, the shared floor)
+    const fv = snap.floorView || null, withLounge = fv ? !!fv.lounge : true;
+    const key = JSON.stringify([fv ? fv.floor : null, withLounge, snap.departments.map((d) => [d.key, d.agents]), snap.services.map((s) => s.id)]);
     if (key !== structureKey) {
       structureKey = key;
       const depts = snap.departments.map((d) => ({ key: d.key, agents: d.agents.map((id) => snap.agents.find((a) => a.id === id)).filter(Boolean).sort((a, b) => (a.desk && b.desk ? (a.desk.y - b.desk.y) || (a.desk.x - b.desk.x) : 0)).map((a) => a.id) }));
-      L = computeLayout(depts, snap.services);
+      L = computeLayout(depts, snap.services, { lounge: withLounge });
       if (L.dropped.length) console.warn('office: only three department rooms are drawn; not drawn:', L.dropped.join(', '));
       updateBaked();
       buildStatic(); buildFurniture(snap); buildServices(snap.services);
@@ -731,7 +733,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     const out = Object.entries(anchors.desks).map(([id, d]) => ({ kind: 'desk', id, ...boxRect(d.min, d.max) }));
     out.push({ kind: 'hub', ...boxRect(new THREE.Vector3(-0.8, FLOOR + 0.4, -0.8), new THREE.Vector3(0.8, CORE_Y + 1.05, 0.8)) });
     if (L && terminals.length) { const c = L.closet; out.push({ kind: 'rack', ...boxRect(new THREE.Vector3(c.x0 + 0.25, FLOOR, c.z0 + 0.4), new THREE.Vector3(c.x0 + 1.1, FLOOR + 2.1, c.z1 - 0.2)) }); }
-    if (L) { const r = L.lounge.furniture.rug; out.push({ kind: 'lounge', ...boxRect(new THREE.Vector3(r.x0 + 0.3, FLOOR, r.z0 + 0.3), new THREE.Vector3(r.x1 - 0.3, FLOOR + 1.4, r.z1 - 0.3)) }); }
+    if (L && L.lounge.furniture) { const r = L.lounge.furniture.rug; out.push({ kind: 'lounge', ...boxRect(new THREE.Vector3(r.x0 + 0.3, FLOOR, r.z0 + 0.3), new THREE.Vector3(r.x1 - 0.3, FLOOR + 1.4, r.z1 - 0.3)) }); }
     return out;
   }
 
@@ -830,5 +832,5 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   function people() { return workers.map((w) => ({ agentId: w.agentId, status: w.status, place: w.walk ? 'walking' : w.place, seat: w.seat ? L.lounge.seats.indexOf(w.seat) : null })); }
 
   resize(); updateCamera(0); paintBackdrop();
-  return { renderer, scene, camera, setData, setTheme, setQuality, get quality() { return quality; }, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
+  return { renderer, scene, camera, setData, setTheme, setQuality, get quality() { return quality; }, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, isPaused: () => paused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
 }

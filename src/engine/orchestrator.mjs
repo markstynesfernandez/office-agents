@@ -40,6 +40,7 @@ import { esrganUpscaler } from './lib/esrgan.mjs';
 import { packageDigital } from './lib/package-digital.mjs';
 import { designSignOff } from './lib/owner-approval.mjs';
 import { setDecisionState } from './lib/set-decision.mjs';
+import { foreignDataHits } from './business.mjs';
 import { readJsonSafe, designPasses } from './lib/gates.mjs';
 import { fillDigitalPrices } from './lib/digital-prices.mjs';
 import { checkPackage } from './lib/gates.mjs';
@@ -107,6 +108,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
         : { ok: false, reasons: ['citations: no transcript to check them against (' + (jid ? 'job ' + jid + ' has none' : 'no station citation line from brief-check') + ')'], key: briefField(t, 'product_type') };
     } else c = checkBrief(t, { products: cfg.products, cfg: cfg.station });
     const sp = scoutingBriefProblems(t, cfg.station), warnings = commonWordWarnings({ brief: t }, commonWords(researchDir()));
+    // B0 building rule: another company's data never enters the Station (config/building.json foreignDataMarkers)
+    const fd = foreignDataHits(t, cfg); if (fd.length) sp.push('refused by a building rule: the brief names another company (' + fd.join(', ') + '); its data never enters the Station');
     return sp.length ? { ...c, ok: false, reasons: [...(c.ok ? [] : c.reasons), ...sp], warnings } : { ...c, warnings };
   }
   // the listing's bare common-word uses (owner 17/10/2026: the gate warns, QA-LISTING checks the context)

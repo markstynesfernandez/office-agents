@@ -33,7 +33,8 @@
     "line:live": "node scripts/line-live.mjs",
     "owner-brief": "node scripts/owner-brief.mjs",
     "settle:images": "node scripts/settle-images.mjs",
-    "settle:failed": "node scripts/settle-failed.mjs"
+    "settle:failed": "node scripts/settle-failed.mjs",
+    "migrate:businesses": "node scripts/migrate-businesses.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

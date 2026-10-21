@@ -14,6 +14,9 @@
 // openrouterDailyUsd, USD 2 a day, set by the owner outside the engine) is mirrored for image calls: every job's OpenRouter rows of
 // the day plus the reservations in flight; the day is both the UTC day and the Dublin day (the higher counts), so the engine never
 // lets a call through that the key's day could refuse.
+// B0 (owner, 21/10/2026): a business level. A call of a business (its job's, else its line's or agent's) also counts against that
+// business's monthly budget (monthlyBudgetUsd, the Dublin month) and, when the business sets one, its day cap (dailyCapUsd, at most
+// the station's); the station's caps stay the outer limit, so the lowest limit wins. The shared floor (OVERSEER) has the station's caps.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -60,7 +63,7 @@ export function textMax(price, inputTokens, maxOutputTokens) {
   return r6((inputTokens * inMax + maxOutputTokens * p.outPerM) / 1e6);
 }
 
-export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = Date.now, outerLimits = {} }) {
+export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = Date.now, outerLimits = {}, businesses = null }) {
   const reserved = new Map();
   const pendingDir = path.join(J.dataRoot, 'ledger', 'pending');
   const warned = new Set();
@@ -72,7 +75,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     for (const n of fs.readdirSync(d).filter((x) => x.endsWith('.json'))) {
       const f = path.join(d, n);
       let res = null; try { res = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { log && log.error('pending reservation unreadable; left for a person to check', { file: f }); continue; }
-      const row = ledger.append({ entryId: 'recovered-' + res.id, ts: clock(), jobId: res.jobId ?? null, runId: res.runId || null, agentKey: res.agentKey || null, line: res.line || null, provider: res.provider, model: res.model, kind: res.kind, count: res.count || 1, usd: res.maxUsd, estimated: true, priceSource: 'reserved-maximum', note: 'call in flight when the engine stopped; charged at its reserved maximum' });
+      const row = ledger.append({ entryId: 'recovered-' + res.id, ts: clock(), jobId: res.jobId ?? null, runId: res.runId || null, agentKey: res.agentKey || null, line: res.line || null, ...(res.businessId ? { businessId: res.businessId } : {}), provider: res.provider, model: res.model, kind: res.kind, count: res.count || 1, usd: res.maxUsd, estimated: true, priceSource: 'reserved-maximum', note: 'call in flight when the engine stopped; charged at its reserved maximum' });
       J.remove(f); out.push(row);
       log && log.warn('in-flight call charged at its reserved maximum after a restart', { reservation: res.id, usd: res.maxUsd, jobId: res.jobId });
     }
@@ -108,6 +111,13 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     if (call.line && lineCap(call.line) > 0) out.push({ cap: 'perLineDay[' + call.line + ']', limit: lineCap(call.line), used: S.lineDay(call.line, day) + reservedWhere((r) => r.line === call.line) });
     out.push({ cap: 'perDay', limit: caps.perDayUsd, used: S.day(day) + reservedWhere(() => true), required: true });
     if (call.provider === 'openrouter' && orLimit() > 0) { const o = openrouterDay(); out.push({ cap: 'openrouterDay', limit: orLimit(), used: o.usedUsd + o.reservedUsd }); }
+    // B0: the business's month and (when it sets one) its day; a business with no record (the shared floor) has the station's caps only
+    const bid = call.businessId, b = bid && businesses ? businesses.get(bid) : null;
+    if (b) {
+      const mine = (r) => r.businessId === bid;
+      out.push({ cap: 'businessMonth[' + bid + ']', limit: b.monthlyBudgetUsd, used: S.businessMonth(bid, day.slice(0, 7)) + reservedWhere(mine), required: true });
+      if (b.dailyCapUsd > 0 && b.dailyCapUsd < caps.perDayUsd) out.push({ cap: 'businessDay[' + bid + ']', limit: b.dailyCapUsd, used: S.businessDay(bid, day) + reservedWhere(mine), required: true });
+    }
     return out;
   }
 
@@ -124,6 +134,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     else if (call.kind === 'web') { if (price.perCall == null) throw new GuardRefusal('no per-call price for ' + call.model + ' (web price to be confirmed)', 'PRICE'); maxUsd = r6(price.perCall * (call.count || 1)); }
     else throw new GuardRefusal('unknown call kind ' + call.kind, 'BAD_CALL');
     if (call.extraUsd) maxUsd = r6(maxUsd + call.extraUsd);
+    if (businesses && !call.businessId) call = { ...call, businessId: businesses.resolve(call) };
     for (const c of ['perRunUsd', 'perJobUsd', 'perDayUsd']) if (!(caps[c] > 0)) throw new GuardRefusal('cap ' + c + ' is not set in config/engine.json: every call is refused', 'CAPS');
     for (const c of checks(call, day)) {
       if (c.used + maxUsd > c.limit + EPS) {
@@ -137,7 +148,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
       const used = ledger.spent.imagesDay(day) + reservedWhere((r) => r.kind === 'image', 'count');
       if (used + (call.count || 1) > caps.imagesPerDay) { const err = new CapError({ cap: 'imagesPerDay', limit: caps.imagesPerDay, spent: used, next: call.count || 1, unit: 'images' }); bus && bus.emit('cap.hit', { jobId: call.jobId || null, agentKey: call.agentKey || null, data: { cap: 'imagesPerDay', message: err.message } }); throw err; }
     }
-    const res = { id: crypto.randomUUID(), at: now, runId: call.runId || null, jobId: call.jobId ?? null, agentKey: call.agentKey || null, line: call.line || null, provider: call.provider, model: call.model, kind: call.kind, count: call.count || 1, maxUsd, price };
+    const res = { id: crypto.randomUUID(), at: now, runId: call.runId || null, jobId: call.jobId ?? null, agentKey: call.agentKey || null, line: call.line || null, ...(call.businessId ? { businessId: call.businessId } : {}), provider: call.provider, model: call.model, kind: call.kind, count: call.count || 1, maxUsd, price };
     J.put(path.join(pendingDir, res.id + '.json'), JSON.stringify(res), { fsync: true });
     reserved.set(res.id, res);
     return res;
@@ -157,7 +168,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     const cost = usd != null ? r6(usd) : textCost(res.price, usage || {});
     const tier = usd == null && res.price.longPrompt ? priceTier(res.price, promptTokens(usage || {})).tier : null;
     const count = web ? (web.searches || 0) + (web.fetches || 0) : res.count;
-    const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, provider: res.provider, model: res.model, kind: res.kind, count, ...(web ? { searches: web.searches || 0, fetches: web.fetches || 0, via: web.via || null } : {}),
+    const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, ...(res.businessId ? { businessId: res.businessId } : {}), provider: res.provider, model: res.model, kind: res.kind, count, ...(web ? { searches: web.searches || 0, fetches: web.fetches || 0, via: web.via || null } : {}),
       tokens: usage ? { in: usage.input_tokens || 0, out: usage.output_tokens || 0, cacheRead: usage.cache_read_input_tokens || 0, cacheWrite: usage.cache_creation_input_tokens || 0 } : null,
       usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(requestId ? { requestId } : {}), ...(messageId ? { messageId } : {}), ...(generationId ? { generationId } : {}), ...(size ? { size } : {}), ...(reason ? { reason } : {}), ...(note ? { note } : {}) });
     if (cost > res.maxUsd + EPS) log && log.warn('a call cost more than its reservation', { id: res.id, model: res.model, kind: res.kind, usd: cost, reservedUsd: res.maxUsd, jobId: res.jobId });
@@ -173,7 +184,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     const day = dublinDay(clock());
     for (const c of checks({ ...res, runCapUsd: null }, day)) {
       if (!(c.limit > 0) || c.used < 0.8 * c.limit) continue;
-      const k = c.cap + '|' + (c.cap === 'perJob' ? res.jobId : c.cap === 'perRun' ? res.runId : day);
+      const k = c.cap + '|' + (c.cap === 'perJob' ? res.jobId : c.cap === 'perRun' ? res.runId : c.cap.startsWith('businessMonth') ? day.slice(0, 7) : day);
       if (warned.has(k)) continue; warned.add(k);
       bus && bus.emit('cap.warn', { jobId: res.jobId, agentKey: res.agentKey, data: { cap: c.cap, limit: c.limit, spent: r6(c.used) } });
     }

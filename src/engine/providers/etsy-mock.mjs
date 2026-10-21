@@ -83,10 +83,10 @@ export function createMockEtsyApi({ keys = MOCK_KEYS, redirectUri = 'https://loc
 }
 
 // the dev instance's Etsy: the client code on the mock API (never a network call, never a real key)
-export function createMockEtsyClient({ engineCfg, J, ledger, log, now, sleep, api = null, tokenFile } = {}) {
+export function createMockEtsyClient({ engineCfg, J, ledger, log, now, sleep, api = null, tokenFile, businessId = null } = {}) {
   const settings = etsySettings(engineCfg, {});
   const mock = api || createMockEtsyApi({ redirectUri: settings.redirectUri, now });
-  const client = makeEtsyClient({ mode: 'mock', settings, keys: MOCK_KEYS, J, ledger, log, fetchImpl: mock.fetch, now, sleep, tokenFile });
+  const client = makeEtsyClient({ mode: 'mock', settings, keys: MOCK_KEYS, J, ledger, log, fetchImpl: mock.fetch, now, sleep, tokenFile, businessId });
   client.mockApi = mock;
   return client;
 }

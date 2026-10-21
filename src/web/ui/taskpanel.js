@@ -119,6 +119,14 @@ export function createTaskPanel({ root, onOpenJob, ctl = null }) {
     if (!briefs.length) root.querySelector('[data-go="brief"]').disabled = true;
     if (!F.products.length) root.querySelector('[data-go="owner-brief"]').disabled = true;
     if (!rr.length) root.querySelector('[data-go="rerun"]').disabled = true;
+    // B0: a new task starts on the line of the floor's own business: on the shared floor, or a floor whose business has no such line,
+    // the box says where to go instead
+    const fv = s.floorView, fl = fv && s.building ? (s.building.floors.find((x) => x.floor === fv.floor) || {}) : null, lines = fl ? fl.lines || [] : null;
+    if (lines) {
+      if (!lines.includes('research')) root.querySelector('[data-go="research"]').disabled = true;
+      if (!lines.includes('room1-digital')) for (const k of ['brief', 'owner-brief', 'rerun']) root.querySelector('[data-go="' + k + '"]').disabled = true;
+      if (!lines.includes('research') && !lines.includes('room1-digital')) { const m = root.querySelector('#task-mode'); m.textContent = 'no line on floor ' + fv.floor; m.title = 'floor ' + fv.floor + (fv.shared ? ' (shared services)' : '') + ' runs no line: new tasks start on a business floor'; }
+    }
   }
 
   // ---- the list

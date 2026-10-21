@@ -31,9 +31,11 @@ test('the committed bake has every area, in its bake unit, and matches the engin
 
 // genre-trend scouting (17/10/2026): TREND-SCOUT's desk gives the engine's Research room a second desk row, which deepens
 // the back row (Research and Design) and so the atrium. The bake follows the ENGINE layout; the legacy fixtures view still
-// has the legacy roster's two research desks, so there exactly those three areas fall back to procedural and the Office
-// room and the lounge stay baked. The R3b captures run on the engine view (screenshots-r3b.mjs --engine) for that reason.
-test('the legacy fixtures layout differs from the bake only in the Research row (Research, Design, atrium); Office and lounge match', async () => {
+// has the legacy roster's two research desks. The R3b captures run on the engine view (screenshots-r3b.mjs --engine) for that reason.
+// B0 (owner, 21/10/2026): the bake is floor 1 (etsy-shop: OVERSEER's desk is on floor 0, the lounge corner is open floor). The legacy
+// fixtures view has no floors (its old floor plan, with the lounge and OVERSEER in the Office), so every area of it is drawn
+// procedurally, one area at a time, as office.js does for any stale area.
+test('B0: the legacy fixtures layout (no floors) differs from the floor-1 bake in every area; each falls back on its own', async () => {
   const log = { read() {}, written() {}, info() {}, warn() {}, error() {}, counts: {} };
   const { server } = createOfficeServer({ fixtures: true, log });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -41,19 +43,20 @@ test('the legacy fixtures layout differs from the bake only in the Research row 
     const snap = await (await fetch('http://127.0.0.1:' + server.address().port + '/api/office/snapshot')).json();
     const L = computeLayout(snap.departments.map((d) => ({ key: d.key, agents: d.agents.slice() })), snap.services);
     const differs = BAKED_ROOMS.filter((k) => JSON.stringify(bakedRoomSpec(L, k)) !== JSON.stringify(manifest.rooms[k].spec));
-    assert.deepEqual(differs.sort(), ['atrium', 'design', 'research']);
+    assert.deepEqual(differs.sort(), ['atrium', 'design', 'lounge', 'office', 'research']);
     assert.equal(L.rooms.find((r) => r.key === 'research').desks.length, 2, 'the legacy roster: two research desks');
-    for (const k of ['office', 'lounge']) assert.deepEqual(bakedRoomSpec(L, k), manifest.rooms[k].spec, k);
+    assert.equal(L.lounge.seats.length, 8, 'the legacy view keeps its lounge (no floors)');
   } finally { server.close(); }
 });
 
 test('a layout change makes only the changed area stale; up to five services keep the one baked atrium', () => {
-  const depts = stationDepartments().map((d) => (d.key === 'office' ? { ...d, agents: d.agents.slice(0, -1) } : d));
-  const L = computeLayout(depts, SERVICES(4));
-  assert.notDeepEqual(bakedRoomSpec(L, 'office'), manifest.rooms.office.spec, 'three Office desks instead of four change the Office spec');
+  const depts = stationDepartments().map((d) => (d.key === 'office' ? { ...d, agents: [...d.agents, 'extra-agent'] } : d));   // B0: three Office desks; a fourth keeps its two rows
+  const L = computeLayout(depts, SERVICES(4), { lounge: false });   // B0: the bake is floor 1 (no lounge furniture)
+  assert.notDeepEqual(bakedRoomSpec(L, 'office'), manifest.rooms.office.spec, 'four Office desks instead of three change the Office spec');
   for (const k of BAKED_ROOMS.filter((x) => x !== 'office')) assert.deepEqual(bakedRoomSpec(L, k), manifest.rooms[k].spec, k + ' is unaffected');
-  for (const n of [0, 3, 4, 5]) assert.deepEqual(bakedRoomSpec(computeLayout(stationDepartments(), SERVICES(n)), 'atrium'), manifest.rooms.atrium.spec, n + ' services: the same closet');
-  assert.notDeepEqual(bakedRoomSpec(computeLayout(stationDepartments(), SERVICES(6)), 'atrium'), manifest.rooms.atrium.spec, 'six services lengthen the closet');
+  for (const n of [0, 3, 4, 5]) assert.deepEqual(bakedRoomSpec(computeLayout(stationDepartments(), SERVICES(n), { lounge: false }), 'atrium'), manifest.rooms.atrium.spec, n + ' services: the same closet');
+  assert.notDeepEqual(bakedRoomSpec(computeLayout(stationDepartments(), SERVICES(6), { lounge: false }), 'atrium'), manifest.rooms.atrium.spec, 'six services lengthen the closet');
+  assert.notDeepEqual(bakedRoomSpec(computeLayout(stationDepartments(), SERVICES(4)), 'lounge'), manifest.rooms.lounge.spec, 'a floor with the lounge (floor 0) is not the baked floor');
   const office = fs.readFileSync(path.join(ROOT, 'src', 'web', 'scene', 'office.js'), 'utf8');
   assert.match(office, /JSON\.stringify\(br\.spec\) === JSON\.stringify\(bakedRoomSpec\(L, key\)\)/, 'office.js compares each area on its own');
 });
@@ -113,20 +116,14 @@ test('the glTFs: lightmap UVs on every lit primitive, shared textures written on
   for (const g of Object.values(gltfs)) for (const n of g.materials.map((m) => m.name)) assert.ok(manifest.materials.all.includes(n), n);
 });
 
-test('the baked lounge: every seat sits on a modelled cushion (hips and knees), at the modelled cushion height', () => {
-  const L = computeLayout(stationDepartments(), SERVICES(4)), g = L.lounge, cushions = manifest.rooms.lounge.cushions;
-  assert.equal(g.seats.length, 8); assert.equal(cushions.length, 8, 'eight cushions modelled (six sofa, two armchair)');
-  for (const [i, s] of g.seats.entries()) {
-    const fwd = { x: -Math.sin(s.yaw), z: -Math.cos(s.yaw) }, side = { x: -fwd.z, z: fwd.x }, loc = (p) => ({ x: p.x - g.x0, z: p.z - g.z0 });
-    const hips = loc(s), c = cushions.find((q) => hips.x > q.x0 && hips.x < q.x1 && hips.z > q.z0 && hips.z < q.z1);
-    assert.ok(c, 'seat ' + i + ': hips on a modelled cushion');
-    for (const k of ['x0', 'x1', 'z0', 'z1']) assert.ok(Math.abs(c[k] - (s.cushion[k] - (k[0] === 'x' ? g.x0 : g.z0))) < 2e-3, 'seat ' + i + ' cushion ' + k + ' as the layout says');
-    assert.ok(Math.abs(c.top - s.cushion.top) < 1e-3, 'seat ' + i + ' cushion height');
-    for (const [f, l, what] of [[0, 0, 'hips'], [0, -0.17, 'left hip'], [0, 0.17, 'right hip'], [0.36, -0.1, 'left knee'], [0.36, 0.1, 'right knee']]) {
-      const p = { x: hips.x + fwd.x * f + side.x * l, z: hips.z + fwd.z * f + side.z * l };
-      assert.ok(p.x > c.x0 + 0.05 && p.x < c.x1 - 0.05 && p.z > c.z0 + 0.05 && p.z < c.z1 - 0.05, 'seat ' + i + ' ' + what + ' inside the modelled cushion');
-    }
-  }
+// B0 (owner, 21/10/2026): the lounge is on floor 0 (the shared floor, drawn procedurally: tests/scene-layout.test.mjs checks its seats sit
+// on their cushions). The baked floor 1 keeps the lounge corner as open floor: no furniture, no seats, nobody walks there.
+test('B0: the baked lounge corner of floor 1 is open floor: no furniture, no seats, no cushions; every floor-1 agent stays at its desk', () => {
+  const L = computeLayout(stationDepartments(), SERVICES(4), { lounge: false }), spec = manifest.rooms.lounge.spec;
+  assert.equal(spec.open, true); assert.deepEqual([spec.seats, spec.plants, spec.furniture], [[], [], undefined]);
+  assert.ok(!manifest.rooms.lounge.cushions || manifest.rooms.lounge.cushions.length === 0, 'no cushions modelled');
+  assert.equal(L.lounge.seats.length, 0); assert.ok(Object.values(L.paths).every((p) => p.seat === null && p.toLounge === null));
+  assert.ok(!stationDepartments().some((d) => d.agents.includes('overseer')), 'OVERSEER is on floor 0');
 });
 
 test('a one-room build replaces only its unit, and refuses when the look or the bake settings changed', () => {
