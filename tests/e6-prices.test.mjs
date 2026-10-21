@@ -43,7 +43,7 @@ test('config: the owner\'s prices, caps and image model; every real price names 
   assert.equal(PRICING.openrouter.models['openai/gpt-5-image-mini'].perImage, 0.08);
   assert.deepEqual(ENGINE.image.allowedModels, ['openai/gpt-5-image-mini']);
   assert.equal(ENGINE.image.opaqueModelApproved, false);
-  assert.deepEqual({ run: CAPS.perRunUsd, job: CAPS.perJobUsd, day: CAPS.perDayUsd, line: CAPS.perLineDayUsd.default, scout: CAPS.perJobUsdByLine['genre-scout'] }, { run: 2, job: 6, day: 10, line: 10, scout: 0.5 });   // W2 (owner, 20/10/2026): USD 6.00 per job, was 5.00
+  assert.deepEqual({ run: CAPS.perRunUsd, job: CAPS.perJobUsd, day: CAPS.perDayUsd, line: CAPS.perLineDayUsd.default, scout: CAPS.perJobUsdByLine['genre-scout'], research: CAPS.perJobUsdByLine.research }, { run: 2, job: 6, day: 10, line: 10, scout: 0.5, research: 1 });   // W2 (owner, 20/10/2026): USD 6.00 per job, was 5.00; L3.1 (owner, 21/10/2026): USD 1.00 per research job
   for (const [prov, p] of Object.entries(PRICING)) {
     if (prov === 'mock') continue;
     for (const [model, e] of Object.entries(p.models)) {

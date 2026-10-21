@@ -241,12 +241,10 @@ test('at most one job runs at a time on an instance; a second start waits as "ne
   assert.equal(engine.maxRunningJobs, 2); engine.maxRunningJobs = 1;
   const a = await confirmed('/api/tasks/brief', 'start-line', { file: JOB_A + '.md' }); assert.equal(a.status, 200, a.text);
   await until(() => job(JOB_A).state === 'running');
-  // W2 (owner, 20/10/2026): at USD 6.00 per job and USD 10.00 per day, a second start while a job is open is refused by the daily cap
-  // (worst case 6 + 6 = 12); the queue itself is tested under a day cap that fits two jobs
-  const q0 = await quote('research', { text: 'woodland niches' }); assert.equal(q0.token, null);
-  assert.match(q0.refusals.join(), /daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
-  engine.cfg.engine.caps.perDayUsd = 12;
-  const q = await quote('research', { text: 'woodland niches' }); assert.equal(q.queue.startsAsNext, true); assert.deepEqual(q.queue.running, [JOB_A]);
+  // W2 (owner, 20/10/2026): at USD 6.00 per job and USD 10.00 per day, a second design-sized start while a job is open is refused by the
+  // daily cap (6 + 6 = 12; tests/l3.test.mjs); L3.1 (owner, 21/10/2026): a research job is capped at USD 1.00, so it fits (6 + 1 = 7)
+  const q = await quote('research', { text: 'woodland niches' }); assert.deepEqual(q.refusals, []); assert.equal(q.day.worstUsd, 7);
+  assert.equal(q.queue.startsAsNext, true); assert.deepEqual(q.queue.running, [JOB_A]);
   assert.equal(q.day.openJobsUsd, REAL.engine.caps.perJobUsd, 'the running job\'s cap counts towards the day');
   const b = await confirmed('/api/tasks/research', 'research', { text: 'woodland niches' }); assert.equal(b.status, 200, b.text);
   const bid = b.json.result.jobId;

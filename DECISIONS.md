@@ -2363,3 +2363,19 @@ on live. The live checkout was read once, read only: the two drafts of job `2026
 - **The office's lounge rule changed for one case**: an agent whose last run ended in an error but who has no step in a running job now
   sits in the lounge (before: at its desk). Its desk light still shows the error colour.
 - **Not deployed.** Ship with `npm run deploy:live` once the job running on live has ended (the checks are in PROGRESS.md "L3").
+
+### L3.1: the research line's job cap (owner decision, 21/10/2026; built 21/10/2026)
+
+- **Decision:** `caps.perJobUsdByLine` gets `"research": 1.00`. A research job has cost about USD 0.11. The line cap only lowers the
+  job cap, as the guard applies it (`perJob[research]`; the guard ignores a line cap at or above `perJobUsd`), and the spend checks count an
+  open research job at it. With a design job open at its worst case of 6.00, a research job beside it is 7.00 worst case, within the
+  USD 10.00 day cap, so the weekday research routine can start next to an open design job. `caps.perJobUsd` 6.00, the day cap 10.00
+  and genre-scout 0.50 unchanged. Mock only, $0; tests in `l3` ("L3.1").
+- **What still does not fit:** a second design job beside an open design job and an open research job: 6 + 1 + 6 = 13.00 worst case,
+  so the dialog refuses it and a design routine firing is skipped (on the engine's own path it waits as next for its line). The
+  open point above (two design-sized jobs at once) would now need USD 13.00 while a research job is open, USD 12.00 otherwise.
+- **What counts as an open job** (the worst case in `spend.startCheck`): a running job, and a queued job that starts by itself (next
+  for its line or the total, or resumed after a restart), at its cap less what it has spent. Not counted: a job in the approval queue
+  and a blocked or stopped job (their spend so far is in today's spend; any further spend needs the owner's click, which is checked
+  then: Re-run the listing or Resume counts that job at its cap less its spend, and a job at its cap is refused "job cap reached"), and a
+  queued job waiting for an off-duty agent (checked when the agent is put back on duty).

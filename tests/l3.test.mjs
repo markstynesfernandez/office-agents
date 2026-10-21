@@ -10,6 +10,8 @@
 //   4 research tune (the first routine run on live, 21/10/2026): OPENED / NOT REACHABLE only for a URL the run fetched (refused on
 //     write), at most 6 fetches a run for EVIDENCE-CHECKER, the keyword rule across the whole list, product fit (a draft for another
 //     product is not written), a price in a title goes in the price cell; the prompts within their caps, the IP-rule lines word for word
+//   L3.1 the research line's job cap, USD 1.00 (owner, 21/10/2026): the research routine starts beside a design job open at 6.00; a second
+//     design job waits as next; the guard refuses a research job's spend past 1.00
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -100,7 +102,11 @@ test('1: the daily cap refuses a start when the open jobs\' worst cases together
   hold('designer');
   const pA = startDesign(JOB_A);
   await until(() => engine.store.runningRuns().length === 1);
-  // the real caps (USD 6.00 a job, USD 10.00 a day): 0 spent + 6 open + 6 this = 12 > 10
+  // the real caps: a research job (USD 1.00, L3.1) fits beside the open design job, 0 spent + 6 open + 1 this = 7 <= 10
+  const qr = engine.spend.quote('research', { text: 'woodland niches' });
+  assert.deepEqual([qr.refusals, qr.day.openJobsUsd, qr.day.worstUsd], [[], 6, 7]); assert.ok(qr.token);
+  // two 6.00 worst cases (the research line at the job cap, as before L3.1): 0 spent + 6 open + 6 this = 12 > 10
+  engine.cfg.engine.caps.perJobUsdByLine = { ...engine.cfg.engine.caps.perJobUsdByLine, research: 6 };
   const q0 = engine.spend.quote('research', { text: 'woodland niches' });
   assert.equal(q0.token, null);
   assert.match(q0.refusals.join(' | '), /the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
@@ -202,7 +208,9 @@ test('1: routines: a firing starts alongside another line\'s job, waits as next 
   hold('designer');
   const pA = startDesign(JOB_A);
   await until(() => engine.store.runningRuns().length === 1);
-  // the real caps: a firing whose worst case would not fit next to the open design job is skipped with the reason; nothing is created
+  // a firing whose worst case would not fit next to the open design job is skipped with the reason; nothing is created (the research
+  // line at the job cap, as before L3.1: 6 + 6 = 12 > 10; at the real USD 1.00 it starts: the L3.1 test below)
+  engine.cfg.engine.caps.perJobUsdByLine = { ...engine.cfg.engine.caps.perJobUsdByLine, research: 6 };
   const skip = await engine.scheduler.fire(mk('rt_real'));
   assert.match(skip.skipped, /^the start would not fit: the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
   assert.equal(researchJobs().length, 0); assert.match(engine.store.getRoutine('rt_real').last_status, /^skipped: the start would not fit/);
@@ -221,6 +229,51 @@ test('1: routines: a firing starts alongside another line\'s job, waits as next 
   await ended(r2.id);
   assert.notEqual(job(r2.id).state, 'queued', 'started by itself when the first research job ended');
   release('designer'); await pA;
+});
+
+// ---- L3.1 (owner, 21/10/2026): the research line's job cap, USD 1.00 (caps.perJobUsdByLine.research)
+
+test('L3.1: the real caps: a design job open at its worst case (6.00) and the research routine fires: the research job starts (7.00 of 10.00); a second design job waits as next for its line, and the dialog refuses one (13.00)', async (t) => {
+  const { engine, hold, release, job, startDesign, ended } = bootLines(t, { tag: 'l31' });
+  const C = engine.cfg.engine.caps;
+  assert.deepEqual([C.perJobUsd, C.perDayUsd, C.perJobUsdByLine.research, C.perJobUsdByLine['genre-scout']], [6, 10, 1, 0.5], 'the real caps, unchanged by this test');
+  engine.store.insertRoutine({ id: 'rt_wk', name: 'weekday research', target: 'line:research', input: '', schedule: '0 9 * * 1-5', max_runs_per_day: 1, per_run_cap_usd: null });
+  const rt = engine.store.setRoutineEnabled('rt_wk', true, { expectedVersion: engine.store.getRoutine('rt_wk').version });
+  hold('designer'); hold('demand-researcher');
+  const pA = startDesign(JOB_A);
+  await until(() => engine.store.runningRuns().length === 1);
+  const before = engine.spend.startCheck({ line: 'research', headroomUsd: 1 });
+  assert.deepEqual([before.committed, before.worst, before.refusals], [6, 7, []]);
+  const f = engine.scheduler.fire(rt);
+  await until(() => engine.store.runningRuns().length === 2);
+  const [r1] = engine.store.listJobs().filter((j) => j.line === 'research');
+  assert.deepEqual([job(JOB_A).state, r1.state, r1.data.routineId], ['running', 'running', 'rt_wk'], 'started, not skipped');
+  assert.doesNotMatch(engine.store.getRoutine('rt_wk').last_status || '', /^skipped/);
+  // a second design job: the spend dialog refuses it (6 + 1 open + 6 = 13.00 over the 10.00 day cap; the line's day cap 12.00 too)
+  const q = engine.spend.assess('start-line', { file: JOB_B + '.md' });
+  assert.match(q.refusals.join(' | '), /the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 7\.00 \+ this up to USD 6\.00 = USD 13\.00, over USD 10\.00/);
+  // started on the engine's own path, it still waits as next for its line (one job at a time on a line), not beside the open one
+  const c = engine.orchestrator.createJob({ briefText: briefText(JOB_B), by: 'test' }); assert.ok(c.ok, (c.reasons || []).join('; '));
+  await engine.orchestrator.startJob(JOB_B);
+  assert.deepEqual([job(JOB_B).state, job(JOB_B).data.nextFor], ['queued', 'line']);
+  release('demand-researcher'); await f; await ended(r1.id);
+  release('designer'); await pA; await ended(JOB_A); await ended(JOB_B);
+});
+
+test('L3.1: a research job is refused any spend past USD 1.00 (the guard: perJob[research]); a design job beside it keeps the USD 6.00 cap', (t) => {
+  const r = tempRoot('l31guard'), ledger = createLedger({ J: r.J, log: r.log }), halt = createHalt({ J: r.J, log: r.log });
+  t.after(() => { halt.close(); r.cleanup(); });
+  const guard = createGuard({ J: r.J, ledger, halt, caps: REAL.engine.caps, pricing: PRICING, log: r.log });
+  // one call: 10,000 tokens in at USD 1/M + 10,000 out at USD 5/M = USD 0.06, each in its own run (the per-run cap is not the limit)
+  const call = (jobId, line, i) => { const res = guard.reserve({ provider: 'test', model: 'cheap-model', kind: 'text', runId: jobId + '-' + i, jobId, line, inputTokens: 10000, maxOutputTokens: 10000 }); guard.settle(res, { usage: { input_tokens: 10000, output_tokens: 10000 } }); };
+  let n = 0, refusal = null;
+  for (; n < 30; n++) { try { call('R', 'research', n); } catch (e) { refusal = e; break; } }
+  assert.ok(refusal instanceof CapError, String(refusal));
+  assert.deepEqual([refusal.cap, refusal.limit, n, r6(ledger.spent.job('R'))], ['perJob[research]', 1, 16, 0.96]);
+  assert.match(refusal.message, /^cap: perJob\[research\] 1\.00 reached \(spent 0\.96, next call up to 0\.06\)/);
+  assert.ok(ledger.spent.job('R') <= 1 + 1e-9);
+  for (let i = 0; i < 20; i++) call('D', 'room1-digital', i);
+  assert.equal(r6(ledger.spent.job('D')), 1.2, 'the design job passes 1.00: its cap is perJob 6.00');
 });
 
 // ---- 2. QA-DESIGN names the files (the line-level runs: tests/w2.test.mjs)

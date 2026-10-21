@@ -73,10 +73,10 @@
     }
   },
   "caps": {
-    "$comment": "Owner, 20/10/2026 (W2): USD 6.00 per job for every job, images included (was USD 5.00, owner 17/10/2026, Q2): text is now paid from the Team plan's API credits, and image spend stays bounded by the OpenRouter key's USD 2 a day. Owner, 17/10/2026 (Q2): USD 10.00 per day, USD 10.00 per line per day, USD 0.50 per scout run (a genre-scout run is one research job: perJobUsdByLine). perRunUsd (one agent run): USD 2.00, owner-approved 17/10/2026 (owner spend rule; was 1.00, carried over from the StarNet era; DECISIONS.md 'E6 step c0: owner decisions, part 2'). Outer limits the owner sets outside the engine: the Anthropic Console monthly workspace limit and the OpenRouter key limit of USD 2 a day. per-agent 0 = off, 12 hops. imagesPerDay 0 = no count cap (image spend still counts in every USD cap).",
+    "$comment": "Owner, 21/10/2026 (L3.1): USD 1.00 per research-line job (perJobUsdByLine.research; a research job has cost about USD 0.11), so the weekday research routine can start beside an open design job: 6.00 + 1.00 = 7.00 worst case, within the USD 10.00 day cap. A line cap only lowers the job cap, never raises it. Owner, 20/10/2026 (W2): USD 6.00 per job for every job, images included (was USD 5.00, owner 17/10/2026, Q2): text is now paid from the Team plan's API credits, and image spend stays bounded by the OpenRouter key's USD 2 a day. Owner, 17/10/2026 (Q2): USD 10.00 per day, USD 10.00 per line per day, USD 0.50 per scout run (a genre-scout run is one research job: perJobUsdByLine). perRunUsd (one agent run): USD 2.00, owner-approved 17/10/2026 (owner spend rule; was 1.00, carried over from the StarNet era; DECISIONS.md 'E6 step c0: owner decisions, part 2'). Outer limits the owner sets outside the engine: the Anthropic Console monthly workspace limit and the OpenRouter key limit of USD 2 a day. per-agent 0 = off, 12 hops. imagesPerDay 0 = no count cap (image spend still counts in every USD cap).",
     "perRunUsd": 2,
     "perJobUsd": 6,
-    "perJobUsdByLine": { "genre-scout": 0.5 },
+    "perJobUsdByLine": { "genre-scout": 0.5, "research": 1 },
     "perDayUsd": 10,
     "perLineDayUsd": { "default": 10 },
     "perAgentDayUsd": { "default": 0 },
