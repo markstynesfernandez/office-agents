@@ -66,8 +66,10 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
     const owner = [c.amend && b('amend', 'Amend brief…', '', 'a dated owner amendment: the frozen brief stays as it is; every agent reads the amendment from its next run'),
       c.setDecision && b('set-approve', 'Approve set-v' + c.setDecision.set + '…', 'btn-ok', 'your approval of the whole set in your words (needs your decision on every file first; originality and build warnings are never overridden)'),
       c.setDecision && b('set-reject', 'Reject set-v' + c.setDecision.set + '…', 'btn-danger', 'the job ends rejected with your words; nothing is deleted')].filter(Boolean).join('');
+    // W4: the set buttons appear only when the approval would be accepted; otherwise one line says why
+    const why = c.setDecisionNote ? '<div class="srcnote" data-set-note>' + esc(c.setDecisionNote) + '</div>' : '';
     const fix = c.fixTools ? '<div class="srcnote">Region fixes stay on the command line for now (stop the server first: one engine per data root): <span class="mono">npm run owner -- edit-set ' + esc(j.id) + ' --from &lt;plan.json&gt;</span>, then <span class="mono">npm run owner -- rebuild ' + esc(j.id) + ' --from &lt;args.json&gt;</span> (set-v' + esc(c.fixTools.set) + ').</div>' : '';
-    return f1 + (owner || fix ? '<div class="ctlbox"><div class="ctlhead">Owner steering</div>' + (owner ? '<div class="btnrow">' + owner + '</div>' : '') + fix + '</div>' : '');
+    return f1 + (owner || fix || why ? '<div class="ctlbox"><div class="ctlhead">Owner steering</div>' + (owner ? '<div class="btnrow">' + owner + '</div>' : '') + why + fix + '</div>' : '');
   }
   // L2: the live status of a job: stage, agent at work, spend so far against its cap, its last 5 events (re-rendered on every event)
   function liveBox(j, now) {
@@ -85,6 +87,9 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
   async function jobAction(j, k) { if (await runJobAction(ctl, j, k) && still('job', j.id)) showJob(j.id, true); }
   const dot = (status) => '<i style="background:' + (PALETTE.status[status] || '#999') + '"></i>';
   const imgs = (list) => (list && list.length ? '<div class="design">' + list.slice(-2).map((im) => '<img src="' + esc(im.url) + '" alt="' + esc(im.file) + '" title="' + esc(im.file) + '">').join('') + '</div>' : '');
+  // W4: every file of the newest built set, each thumbnail with its file name
+  const designGrid = (ds) => (ds && ds.images.length ? '<h4>Designs · set-v' + esc(ds.set) + ' (' + ds.images.length + ' file' + (ds.images.length === 1 ? '' : 's') + ')</h4><div class="designgrid">'
+    + ds.images.map((im) => '<figure><img src="' + esc(im.url) + '" alt="' + esc(im.name) + '" title="' + esc(im.file) + '" loading="lazy"><figcaption class="mono">' + esc(im.name) + '</figcaption></figure>').join('') + '</div>' : '');
   const warnBox = (list) => (list && list.length ? '<div class="warnbox">' + list.map((w) => '<div>⚠ ' + esc(w) + '</div>').join('') + '</div>' : '');
   // a legacy job: where each part came from in the legacy station, imported as it was (read only)
   // the owner's decisions on this job (src/engine/owner.mjs): each override of a QA verdict with its file, pass, date and reason
@@ -149,7 +154,7 @@ export function createSidePanel({ root, onOpenJob, onOpenAgent, onClose = () => 
       + (j.tracker ? '<dt>tracker</dt><dd>' + esc(j.tracker.status) + (j.tracker.etsy_listing_url ? ' · ' + esc(j.tracker.etsy_listing_url) : '') + '</dd>' : '')
       + '</dl>'
       + ownerBox(j.owner)
-      + (j.images.length ? '<h4>Designs</h4>' + imgs(j.images) : '')
+      + designGrid(j.designSet)
       + '<h4>Line hops</h4>' + hops
       + qa(j.qaDesign, 'QA design') + qa(j.qaListing, 'QA listing')
       + (j.files.length ? '<h4>Files (' + j.files.length + ')</h4><div class="files">' + j.files.slice(0, 30).map((f) => '<div title="' + esc(f) + '">' + esc(f) + '</div>').join('') + (j.files.length > 30 ? '<div>…</div>' : '') + '</div>' : '')
@@ -193,9 +198,9 @@ export async function runJobAction(ctl, j, k) {
     return !!(v && await ctl.act('/api/owner/style-ref', { jobId: j.id, set, status: ok ? 'approved' : 'rejected', reason: v.reason.trim(), date: today(), expectedVersion: j.version }, { ok: 'File 1 ' + (ok ? 'approved' : 'rejected') + ' for ' + j.title + ': Resume to continue' }));
   }
   if (k === 'set-approve' || k === 'set-reject') {
-    const ok = k === 'set-approve', set = j.controls.setDecision.set;
-    const v = await ctl.dialog({ title: (ok ? 'Approve' : 'Reject') + ' set-v' + set, intro: t + '<br><br>' + (ok ? 'Your approval of the whole set in your words, after your decision on every file (recorded with the CLI or earlier). Originality and build warnings are never overridden; the server checks the set again.' : 'The job ends rejected with your words, recorded in the decision log. Nothing is deleted; Archive moves the files later.'), fields: [{ name: 'words', label: 'Your words', type: 'textarea', required: true, rows: 3 }], confirm: ok ? 'Approve set' : 'Reject set', danger: !ok });
-    return !!(v && await ctl.act(ok ? '/api/owner/set-approval' : '/api/owner/set-rejection', { jobId: j.id, set, words: v.words.trim(), date: today(), expectedVersion: j.version }, { ok: 'Set-v' + set + ' ' + (ok ? 'approved' : 'rejected') + ' for ' + j.title }));
+    const ok = k === 'set-approve', sdc = j.controls.setDecision, set = sdc.set, pf = ok && sdc.rule === 'post-fix';
+    const v = await ctl.dialog({ title: (ok ? 'Approve' : 'Reject') + ' set-v' + set, intro: t + '<br><br>' + (ok ? 'Your approval of the whole set in your words, after your decision on every file (recorded with the CLI or earlier). Originality and build warnings are never overridden; the server checks the set again.' + (pf ? '<br><br>Post-fix rule: approving records that you reviewed the after previews <span class="mono">' + sdc.reviewedPreviews.map(esc).join(', ') + '</span>.' : '') : 'The job ends rejected with your words, recorded in the decision log. Nothing is deleted; Archive moves the files later.'), fields: [{ name: 'words', label: 'Your words', type: 'textarea', required: true, rows: 3 }], confirm: ok ? 'Approve set' : 'Reject set', danger: !ok });
+    return !!(v && await ctl.act(ok ? '/api/owner/set-approval' : '/api/owner/set-rejection', { jobId: j.id, set, words: v.words.trim(), ...(pf ? { rule: 'post-fix', reviewedPreviews: sdc.reviewedPreviews } : {}), date: today(), expectedVersion: j.version }, { ok: 'Set-v' + set + ' ' + (ok ? 'approved' : 'rejected') + ' for ' + j.title }));
   }
   if (k === 'archive') {
     const v = await ctl.dialog({ title: 'Archive this job?', intro: t + '<br><br>The job leaves the board (it stays under the Archived chip). Its files move to <span class="mono">jobs/' + esc(j.id) + '/rerun-archive-*</span>; nothing is deleted. brief.md stays where it is.', confirm: 'Archive' });

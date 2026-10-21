@@ -39,6 +39,7 @@ import { usesStyleRef, approvedRef, ensureStyleRefInSet, readStyleRef, firstFile
 import { esrganUpscaler } from './lib/esrgan.mjs';
 import { packageDigital } from './lib/package-digital.mjs';
 import { designSignOff } from './lib/owner-approval.mjs';
+import { setDecisionState } from './lib/set-decision.mjs';
 import { readJsonSafe, designPasses } from './lib/gates.mjs';
 import { fillDigitalPrices } from './lib/digital-prices.mjs';
 import { checkPackage } from './lib/gates.mjs';
@@ -374,9 +375,15 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     }
     else if (step === 'designer') {
       // W2: a set left half-drawn by a failed or stopped run (job.data.designSet "drawing") is carried on, never started again
-      const cont = designSetInProgress(job), n = cont ? cont.set : latestSet(dataRoot, job.id) + 1;
+      const cont = designSetInProgress(job);
       why = cont ? cont.why : pass === 1 ? 'first' : job.data.prepFailure && (l.prep || 0) > 0 && !job.data.prepFailureSeen ? 'prep' : 'qa-revise';
+      // W4 (owner, 21/10/2026): a style-reference set that failed the build short of files goes back to the SAME set: only the missing files
+      const sp = !cont && why === 'prep' ? productFor(dataRoot, job.id, productsOf(job.id)).product : null;
+      const fill = sp && usesStyleRef(sp) ? missingFilesOf(job, sp) : null;
+      if (fill) why = 'missing';
+      const n = cont ? cont.set : fill ? fill.set : latestSet(dataRoot, job.id) + 1;
       if (why === 'first') input = 'New verified brief for the Room 1 line. Write set-v' + n + '.\n\n' + readBrief(job.id) + '\n\n' + handoff(job);
+      else if (why === 'missing') { input = '[STATION — set-v' + n + ' is not complete] ' + (job.data.prepFailure || 'files are missing') + '\nDraw only the missing files into set-v' + n + ' (named below); every file already in set-v' + n + '/raw/ stays as it is.\n\n' + handoff(job); if (!cont) store.updateJob(job.id, { data: { prepFailureSeen: true } }); }
       else if (why === 'prep') { input = '[STATION — the set could not be prepared] ' + job.data.prepFailure + '\nWrite a corrected set-v' + n + '.\n\n' + handoff(job); if (!cont) store.updateJob(job.id, { data: { prepFailureSeen: true } }); }
       else { const q = readJson(path.join(folder, 'qa', 'design-pass' + (l.design || 0) + '.json')) || {}; input = '[LOOP — pass ' + pass + ' of ' + (max + 1) + '] QA DESIGN asked for a revise. Write set-v' + n + ' and fix EVERY reason:\n' + (q.reasons || []).map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n' + handoff(job); }
     } else if (step === 'qa-design' && job.data.runMode && job.data.runMode.kind === 'qa-only') input = job.data.runMode.startText;
@@ -397,7 +404,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       if (product && usesStyleRef(product) && job.data.runMode && job.data.runMode.kind === 'redraw-only') return redrawFiles(job, def, pass, stopSignal, product);
       if (product && usesStyleRef(product)) return styleRefDesigner(job, def, pass, input, stopSignal, product, why);
     }
-    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart }, verdictFiles: step === 'qa-design' && !research ? setFileIds(job) : null });
+    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart }, verdictFiles: step === 'qa-design' && !research ? setFileIds(job, reviewedSet(job)) : null });
     // owner D2: the agent said it cannot produce its outputs: the job ends incomplete with its reason, nothing downstream
     if (run.reportedBlocked && run.status === 'incomplete') {
       store.updateJob(job.id, { data: { reportedBlocked: { step, agent: def.agent, reason: run.reportedBlocked } } });
@@ -555,8 +562,17 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const id = job.id, total = product.deliverables.files.length, chunk = Math.max(1, maxImages - 2);
     const refRel = String(ref.file).replace(/^jobs\/[^/]+\//, ''), refAbs = path.join(dataRoot, ref.file);
     let ds = designSetInProgress(job);
-    if (ds && !(['rest', 'flagged'].includes(ds.mode) && ds.ref === ref.sha256)) { log.warn('a set in progress is not carried on (another mode or style reference): a new set is drawn', { jobId: id, set: ds.set, mode: ds.mode }); endDesignSet(id, ds.set); ds = null; }
+    if (ds && !(['rest', 'flagged', 'missing'].includes(ds.mode) && ds.ref === ref.sha256)) { log.warn('a set in progress is not carried on (another mode or style reference): a new set is drawn', { jobId: id, set: ds.set, mode: ds.mode }); endDesignSet(id, ds.set); ds = null; }
     const resumed = !!ds;
+    // W4 (owner, 21/10/2026): the set that failed the build short of files is completed in place: a carried file is copied again by the
+    // station ($0), every other missing file is drawn by DESIGNER into the same set with QA DESIGN's findings for it; never a fresh set
+    const fill = !ds && why === 'missing' ? missingFilesOf(job, product) : null;
+    if (fill) {
+      const recopied = recarry(id, fill.set, fill.missing), files = fill.missing.filter((k) => !recopied.includes(k));
+      store.updateJob(id, { data: { designSet: { set: fill.set, mode: 'missing', why: 'missing', files, ref: ref.sha256, recopied, status: 'drawing', startedAt: Date.now() } } });
+      ds = store.getJob(id).data.designSet;
+      log.info('set short of files: completed in the same set', { jobId: id, set: fill.set, missing: fill.missing.map(pad2), recopied: recopied.map(pad2), toDraw: files.map(pad2) });
+    }
     if (!ds) {
       const n = latestSet(dataRoot, id) + 1, all = Array.from({ length: Math.max(0, total - 1) }, (_, i) => i + 2);
       let plan = { set: n, mode: 'rest', why: why || 'first', files: all, ref: ref.sha256 };
@@ -570,10 +586,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       ds = store.getJob(id).data.designSet;
       if (ds.mode === 'flagged') log.info('QA DESIGN revise: only the flagged files are redrawn', { jobId: id, set: ds.set, from: ds.from, qaPass: ds.qaPass, redraw: ds.files.map(pad2), carried: ds.carry });
     }
-    const n = ds.set, sd = path.join(jobDir(id), 'set-v' + n), rw = ds.mode === 'flagged' ? carryFlagged(store.getJob(id), ds, product, ref) : null;
+    const n = ds.set, sd = path.join(jobDir(id), 'set-v' + n), rw = ds.mode === 'flagged' ? carryFlagged(store.getJob(id), ds, product, ref) : null, fillMode = ds.mode === 'missing';
     const have = new Set(rawFiles(path.join(sd, 'raw')).map(numOf)), done = ds.files.filter((k) => have.has(k)), todo = ds.files.filter((k) => !have.has(k));
     if (resumed) log.info('resume: set-v' + n + ' carried on from the first file not yet done', { jobId: id, set: n, mode: ds.mode, kept: done.map(pad2), toDraw: todo.map(pad2) });
-    if (!ds.files.length) { endDesignSet(id, n); return { next: def.next, note: 'the set is file 1 alone (the owner-approved style reference)' }; }
+    if (!ds.files.length) { endDesignSet(id, n); return { next: def.next, note: fillMode ? 'set-v' + n + ': the missing file(s) ' + (ds.recopied || []).map(pad2).join(', ') + ' copied again from the set they were carried from; nothing to draw' : 'the set is file 1 alone (the owner-approved style reference)' }; }
     const batches = []; for (let i = 0; i < todo.length; i += chunk) batches.push(todo.slice(i, i + chunk));
     const label = (xs) => (xs.every((k, i) => !i || k === xs[i - 1] + 1) ? pad2(xs[0]) + '–' + pad2(xs[xs.length - 1]) : xs.map(pad2).join(', '));
     const refLine = 'STYLE REFERENCE: work/' + id + '/' + refRel + ' (' + refWho(ref) + ', ' + ref.name + '; the station sends it with every image and copies it into raw/ as file 1). ';
@@ -582,7 +598,13 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const keepLine = done.length ? 'RESUMED: set-v' + n + '/raw/ already holds file(s) ' + done.map(pad2).join(', ') + ' of this set from the run that stopped: keep them, never draw them again. ' : '';
       const mdLine = md ? 'Read work/' + id + '/set-v' + n + '/design.md' + (rw ? ' (written by the station: its plan from the current spec and brief, and the carried files\' prompts)' : '') + ' and write it back whole, with these files\' ' + (rw ? 'new ' : '') + 'prompts and analysis added.'
         : 'Write work/' + id + '/set-v' + n + '/design.md with the plan for every file (file 1 = "approved style reference", its prompt copied from set-v' + ref.set + '/design.md) and these files\' prompts and analysis.';
-      const input = rw
+      const input = fillMode
+        ? '[RUN MODE: DRAW MISSING FILES — batch ' + (b + 1) + ' of ' + batches.length + ': files ' + xs.map(pad2).join(', ') + ' of ' + total + '] ' + refLine
+          + 'set-v' + n + ' failed the build because these files are missing from set-v' + n + '/raw/. Every other file there stays exactly as it is: never draw, rename or touch it. ' + keepLine
+          + 'Write set-v' + n + ': draw ONLY these files, each to work/' + id + '/set-v' + n + '/raw/NN-<subject>.png (NN = the file number; the subject is the brief\'s item N), each checked with image analysis. Never draw file 1.\n'
+          + xs.map((k) => { const r = findingsOf(id, n, k); return '- ' + pad2(k) + (r.was ? ' (was ' + r.was + ')' : '') + (r.findings.length ? '. QA DESIGN: ' + r.findings.join(' | ') : '') + (r.buildWarnings.length ? '. Build warning: ' + r.buildWarnings.join(' | ') : ''); }).join('\n')
+          + '\n' + mdLine + '\n\n' + baseInput
+        : rw
         ? '[RUN MODE: REDRAW FLAGGED FILES — batch ' + (b + 1) + ' of ' + batches.length + ': files ' + xs.map(pad2).join(', ') + ' of ' + total + '] ' + refLine
           + 'QA DESIGN (pass ' + rw.qaPass + ') asked for a revise of set-v' + rw.from + '. set-v' + n + '/raw/ already holds every file it did not flag, copied unchanged from set-v' + rw.from + ' (' + (rw.carried.map((c) => c.name).join(', ') || 'none') + '): never draw, rename or touch them. ' + keepLine
           + 'Write set-v' + n + ': draw ONLY these files, each to work/' + id + '/set-v' + n + '/raw/NN-<subject>.png (NN = the file number; the subject is the brief\'s item N), each checked with image analysis. Never draw file 1.\n'
@@ -595,6 +617,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       const stop = stopFrom(run, 'DESIGNER'); if (stop) return stop;
       log.info('rest-of-set batch done', { jobId: id, set: n, mode: ds.mode, batch: b + 1, of: batches.length, files: xs.map(pad2), images: run.counters && run.counters.images });
     }
+    // W4: the carried files of a rework set are the station's: checked (and copied again if missing or changed) once DESIGNER is done
+    if (rw || fillMode) recarry(id, n);
     endDesignSet(id, n);
     const drew = todo.length ? 'files ' + todo.map(pad2).join(', ') + ' drawn in ' + batches.length + ' DESIGNER run(s), each image with the style reference ' + ref.name : 'nothing left to draw';
     return { next: def.next, note: 'set-v' + n + ': ' + drew + (rw ? '; carried unchanged from set-v' + rw.from + ': ' + (rw.carried.map((c) => pad2(numOf(c.name))).join(', ') || 'none') : '') + (done.length ? '; kept from the run that stopped: ' + done.map(pad2).join(', ') : '') };
@@ -609,14 +633,52 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   }
   function endDesignSet(id, n) { const ds = (store.getJob(id).data || {}).designSet; if (ds && ds.set === n && ds.status === 'drawing') store.updateJob(id, { data: { designSet: { ...ds, status: 'drawn', endedAt: Date.now() } } }); }
 
+  // ---- W4 (owner, 21/10/2026): a set is completed in place, never redrawn whole because a file is missing
+  // the newest set when it is unbuilt (no deliverables.json, not a redraw-only set) and its raw/ lacks planned files 02..N -> { set, missing }
+  function missingFilesOf(job, product) {
+    const n = latestSet(dataRoot, job.id); if (!n || !product) return null;
+    const sd = path.join(jobDir(job.id), 'set-v' + n);
+    if (!fs.existsSync(path.join(sd, 'raw')) || fs.existsSync(path.join(sd, 'deliverables.json')) || redrawPlanOf(job.id, n)) return null;
+    const total = product.deliverables.files.length, have = new Set(rawFiles(path.join(sd, 'raw')).map(numOf)), missing = [];
+    for (let k = 2; k <= total; k++) if (!have.has(k)) missing.push(k);
+    return missing.length ? { set: n, missing } : null;
+  }
+  // the carried files of a rework set (set-vN/rework.json) are copied by the station, byte for byte: a carried file missing from raw/, or
+  // with other bytes than the record, is copied again from the set it came from. only = the file numbers to check (all when null).
+  // -> the file numbers copied again
+  function recarry(id, n, only = null) {
+    const sd = path.join(jobDir(id), 'set-v' + n), rw = readJson(path.join(sd, 'rework.json')), out = [];
+    if (!rw) return out;
+    for (const c of rw.carried || []) {
+      const k = numOf(c.name); if (only && !only.includes(k)) continue;
+      const to = path.join(sd, 'raw', c.name), from = path.join(dataRoot, 'jobs', id, c.sameAs);
+      if (fs.existsSync(to) && sha256File(to) === c.sha256) continue;
+      if (!fs.existsSync(from) || sha256File(from) !== c.sha256) { log.warn('a carried file cannot be copied again: its source is missing or changed', { jobId: id, set: n, file: c.name, from: c.sameAs }); continue; }
+      J.copy(from, to); out.push(k);
+      log.warn('carried file copied again by the station', { jobId: id, set: n, file: c.name, from: c.sameAs, sha256: c.sha256 });
+    }
+    return out;
+  }
+  // what DESIGNER is told about file k of set n: its rework entry (QA DESIGN's findings and build warnings), else the newest QA DESIGN
+  // record's reasons that name it
+  function findingsOf(id, n, k) {
+    const rw = readJson(path.join(jobDir(id), 'set-v' + n, 'rework.json')), r = rw && (rw.redraw || []).find((x) => x.n === k);
+    if (r) return { was: r.was || null, findings: r.findings || [], buildWarnings: r.buildWarnings || [] };
+    const passes = designPasses(jobDir(id)), last = passes[passes.length - 1], rec = last && last.rec.ok ? last.rec.v : null;
+    return { was: null, findings: rec ? (rec.reasons || []).filter((t) => namedNums(t).includes(k)) : [], buildWarnings: [] };
+  }
+  // the set a QA DESIGN run reviews: a QA-only run's own set (W4: an older set's file ids), else the newest set
+  const reviewedSet = (job) => (job.data && job.data.runMode && job.data.runMode.kind === 'qa-only' && Number(job.data.runMode.set)) || null;
+
   // the file numbers a QA text names: "NN-subject" (with or without .png), never a date or a size ("2026-10-19", "2000x2000"); since L3 used
   // for build warnings and to give each redrawn file its findings, never to decide what is redrawn (that is the record's "redraw" list)
   const NAMED_FILE = /\b(\d{2})-[a-z][a-z0-9-]*/gi;
   const namedNums = (t) => [...String(t || '').matchAll(NAMED_FILE)].map((m) => Number(m[1]));
-  // L3: the file ids of the newest set of a style-reference product (raw/NN-subject.png), for QA DESIGN's "redraw" list; null otherwise
-  function setFileIds(job) {
+  // L3: the file ids of the newest set of a style-reference product (raw/NN-subject.png), for QA DESIGN's "redraw" list; null otherwise.
+  // W4: set names another set (a QA-only run on an older set checks the ids of the set it reviews)
+  function setFileIds(job, set = null) {
     const { product } = productFor(dataRoot, job.id, productsOf(job.id)); if (!product || !usesStyleRef(product)) return null;
-    const n = latestSet(dataRoot, job.id); if (!n) return null;
+    const n = set || latestSet(dataRoot, job.id); if (!n) return null;
     const sd = path.join(jobDir(job.id), 'set-v' + n), dir = fs.existsSync(path.join(sd, 'raw')) ? path.join(sd, 'raw') : path.join(sd, 'files');
     const ids = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => /^\d{2}-[a-z0-9][a-z0-9-]*\.(png|jpg)$/i.test(f)).map((f) => f.replace(/\.(png|jpg)$/i, '')).sort();
     return { set: n, ids, redrawable: ids.filter((x) => Number(x.slice(0, 2)) >= 2) };
@@ -671,7 +733,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const { product } = productFor(dataRoot, job.id, productsOf(job.id)); if (!product || !usesStyleRef(product)) return '';
     const n = latestSet(dataRoot, job.id), rw = n ? readJson(path.join(jobDir(job.id), 'set-v' + n, 'rework.json')) : null;
     return (rw ? '\n\n[STATION — set-v' + n + ' reworks set-v' + rw.from + ' after QA DESIGN pass ' + rw.qaPass + '] Redrawn for your findings: ' + rw.redraw.map((r) => pad2(r.n)).join(', ') + '. Carried unchanged (copied byte for byte, same sha256) from set-v' + rw.from + ': ' + (rw.carried.map((c) => c.name).join(', ') || 'none') + '. Review EVERY file of the set as usual.' : '')
-      + '\n\n[STATION] On revise, list each file to redraw in the record\'s "redraw" field by its file id (NN-subject, without .png' + (() => { const vf = setFileIds(job); return vf && vf.redrawable.length ? '; this set: ' + vf.redrawable[0] + ' to ' + vf.redrawable[vf.redrawable.length - 1] + '; 01 is the style reference and is never redrawn' : ''; })() + '): only those files, and any file a build warning names, are redrawn; every other file goes into the next set unchanged. A revise without valid file ids is refused once; then the job stops for the owner.';
+      + '\n\n[STATION] On revise, list each file to redraw in the record\'s "redraw" field by its file id (NN-subject, without .png' + (() => { const vf = setFileIds(job); return vf && vf.redrawable.length ? '; this set: ' + vf.redrawable[0] + ' to ' + vf.redrawable[vf.redrawable.length - 1] + '; 01 is the style reference and is never redrawn' : ''; })() + '): only those files, and any file a build warning names, are redrawn; every other file goes into the next set unchanged. Name only the files that MUST be redrawn: a file you call borderline or acceptable stays out of "redraw" and is carried unchanged. A revise without valid file ids is refused once; then the job stops for the owner.';
   }
 
 
@@ -1026,10 +1088,14 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (j.kind !== 'line' || running || ['archived', 'approved', 'published'].includes(st)) return {};
     const aw = j.data && j.data.styleRef && j.data.styleRef.awaiting, n = latestSet(dataRoot, j.id);
     const stoppedWithSet = n > 0 && ['blocked', 'stopped', 'rejected', 'incomplete'].includes(j.state) && fs.existsSync(path.join(jobDir(j.id), 'qa'));
+    // W4 (owner, 21/10/2026): Approve / Reject set-vN only for a built set the approval would be accepted on; otherwise one line says why
+    let sd = null;
+    if (stoppedWithSet) { let total = null; try { const p = productFor(dataRoot, j.id, productsOf(j.id)).product; total = p && p.deliverables && p.deliverables.files ? p.deliverables.files.length : null; } catch (_) { total = null; } sd = setDecisionState({ roomDir: dataRoot, id: j.id, newest: n, total }); }
     return {
       amend: j.state !== 'approval' && fs.existsSync(path.join(jobDir(j.id), 'brief.md')),
       file1: j.state === 'queued' && j.data && j.data.waitingFor === 'owner-style-ref' && aw ? { set: aw.set } : null,
-      setDecision: stoppedWithSet ? { set: n } : null,
+      setDecision: sd && sd.ok ? { set: sd.set, ...(sd.rule ? { rule: sd.rule, reviewedPreviews: sd.reviewedPreviews } : {}) } : null,
+      setDecisionNote: sd ? sd.note : null,
       fixTools: n > 0 && ['blocked', 'stopped', 'rejected', 'incomplete'].includes(j.state) ? { set: n } : null
     };
   }

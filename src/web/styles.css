@@ -150,6 +150,10 @@ body[data-theme="dark"] .pill-done { color: #7fdc9c; } body[data-theme="dark"] .
 .sp h4 { margin: 14px 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .sp .design { width: 100%; background: repeating-conic-gradient(var(--panel-2) 0 25%, var(--panel) 0 50%) 0 0 / 16px 16px; border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; gap: 8px; }
 .sp .design img { max-height: 150px; max-width: 48%; border-radius: 6px; }
+.sp .designgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; background: repeating-conic-gradient(var(--panel-2) 0 25%, var(--panel) 0 50%) 0 0 / 16px 16px; border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.sp .designgrid figure { margin: 0; min-width: 0; text-align: center; }
+.sp .designgrid img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 6px; }
+.sp .designgrid figcaption { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp .row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 12px; min-width: 0; }
 .sp .row > span:first-child { min-width: 0; }
 .sp .row .m { color: var(--muted); font-family: var(--mono); font-size: 11px; white-space: nowrap; text-align: right; }

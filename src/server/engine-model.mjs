@@ -120,6 +120,9 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
         const pics = inFiles.filter((x) => /\.(png|jpg)$/i.test(x)).sort(), useBuild = !pics.length && fs.existsSync(bd), from = useBuild ? bd : fd, sub = useBuild ? 'build/' : '';
         for (const f of (useBuild ? fs.readdirSync(bd).filter((x) => /^[a-z0-9][a-z0-9._-]*\.png$/.test(x)).sort() : pics)) out.images.push({ url: '/api/office/image/job/' + j.id + '/set-v' + v + '/' + sub + f, file: 'set-v' + v + '/' + sub + f, n: v, at: fs.statSync(path.join(from, f)).mtimeMs });
       }
+      // W4 (owner, 21/10/2026): the job panel's Designs show every file of the newest built set (thumbnails with their names)
+      const nb = out.images.reduce((m, im) => Math.max(m, im.n), 0);
+      out.designSet = nb ? { set: nb, images: out.images.filter((im) => im.n === nb).map((im) => ({ url: im.url, file: im.file, name: im.file.split('/').pop() })) } : null;
       const lj = readJson(path.join(dir, 'outbox', 'listing.json'));
       if (lj) out.listing = { title: lj.title, tags: (lj.tags || []).length, priceEur: lj.listingPriceEur ?? null };
       const tr = store.getTracker(j.id); if (tr) out.tracker = { status: tr.status, status_reason: tr.status_reason, packaged_at: tr.packaged_at, cost_usd: tr.cost_usd, updated_at: tr.updated_at };

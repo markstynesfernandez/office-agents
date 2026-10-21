@@ -435,7 +435,10 @@ export function validateVerdict(record, { kind, job, folder, file1 = null }) {
     else {
       r.designFile = df;
       const n = Number(/set-v(\d+)/.exec(df)[1]), shaFile = path.join(folder, 'set-v' + n, 'deliverables.sha256');
-      if (n !== latestSet(path.dirname(path.dirname(folder)), job.id)) bad.push('designFile must be the newest set (set-v' + latestSet(path.dirname(path.dirname(folder)), job.id) + ')');
+      // W4 (owner, 21/10/2026): a QA-only run reviews the set the owner named (it may be older than the newest set); else the newest set
+      const qaOnlySet = job.data && job.data.runMode && job.data.runMode.kind === 'qa-only' ? Number(job.data.runMode.set) || null : null;
+      const want = qaOnlySet || latestSet(path.dirname(path.dirname(folder)), job.id);
+      if (n !== want) bad.push('designFile must be ' + (qaOnlySet ? 'the set this QA-only run reviews' : 'the newest set') + ' (set-v' + want + ')');
       if (r.verdict === 'approved') { const want = fs.existsSync(shaFile) ? fs.readFileSync(shaFile, 'utf8').trim() : null; if (!want || r.manifestSha256 !== want) bad.push('manifestSha256 must be copied exactly from set-v' + n + '/deliverables.sha256'); }
     }
     if (r.verdict === 'approved' && (!r.worthThePrice || r.worthThePrice.verdict !== 'pass' || !String(r.worthThePrice.reason || '').trim())) bad.push('approval needs worthThePrice { verdict: "pass", reason }');

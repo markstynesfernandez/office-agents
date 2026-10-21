@@ -2379,3 +2379,65 @@ on live. The live checkout was read once, read only: the two drafts of job `2026
   and a blocked or stopped job (their spend so far is in today's spend; any further spend needs the owner's click, which is checked
   then: Re-run the listing or Resume counts that job at its cap less its spend, and a job at its cap is refused "job cap reached"), and a
   queued job waiting for an off-duty agent (checked when the agent is put back on duty).
+
+## W4: carry-over by the station, missing files in the same set, set-approval fixes, job cap USD 7.00 (owner decisions, 21/10/2026; built 21/10/2026)
+
+Built in the dev checkout only (mock provider, `STATION_INSTANCE=dev`, port 8792), $0, no real API call. Not deployed. The live data
+(the winter job `2026-10-19--cozy-winter-desk-props-for-pngtuber-and-vtuber`) was read, read only, for the W3 report.
+
+### Records
+
+- **L3 and L3.1 deployed** to live on 21/10/2026 at 12:29 UTC (`9122435`, `npm run deploy:live -- --no-start`; the owner starts live).
+- **The winter job's "fetch failed"** (DESIGNER pass 4, set-v6, 21/10/2026): the laptop slept from 09:42 to 12:01 (on battery, lid
+  closed), so the image call for file 07 lost its connection. The cause was the sleep, not a code fault. The three failed attempts are
+  ledger rows charged at their reserved maximum (USD 0.08 each, reason "no response (connection failed)"); the owner may settle them with
+  `npm run settle:failed` after checking OpenRouter's activity page.
+- **What W3 found** (read only): QA DESIGN pass 2 required one redraw, 03-plaid-scarf (02 and 09 only borderline). Under W2's rule (any
+  file a reason names) set-v5/rework.json flagged 02, 03 and 09 and carried the rest; DESIGNER drew 02 and 03, said 09 was carried and
+  never drew it, so set-v5 had 11 of 12 files; the build failed ("raw/ has 11 file(s), the product spec lists 12"), and the prep retry
+  started a fresh set-v6 (02 to 12) with generic prompts that ignored QA's scarf findings.
+
+### The owner's decisions and how they are built
+
+1. **Carry-over is mechanical.** Before DESIGNER runs a redraw pass the station copies every carried file into the new set, byte for
+   byte (`carryFlagged`, unchanged since W2), and after DESIGNER's run it checks them again (`recarry`): a carried file missing, or with
+   other bytes than `rework.json` records, is copied again from the set it came from (logged "carried file copied again by the
+   station"). DESIGNER draws only the files on the redraw list. The list is QA DESIGN's `redraw` ids (L3) plus any file a build
+   warning names; QA DESIGN is now told that a file it calls borderline or acceptable stays out of `redraw` and is carried unchanged.
+   (Under L3 the winter verdict's "Redraw list: 03-plaid-scarf.png only" would have flagged 03 alone.)
+2. **Missing files go back to the same set.** When the prep step sends a style-reference set back to DESIGNER and the newest set is
+   unbuilt with files 02 to N missing from its raw/, the job does not start a new set: a missing file the set carried is copied again
+   by the station ($0), and DESIGNER draws only the other missing files into the same set, run mode "DRAW MISSING FILES", each with QA
+   DESIGN's findings for it (its rework.json entry, else the newest QA record's reasons that name it), told that every file already
+   there stays as it is (`missingFilesOf`, `findingsOf`; `designSet.mode` "missing", carried on by a Resume like any set in progress).
+   The one prep retry is used as before; if the set is still short after it, the job blocks. A prep failure that is not about
+   missing files (a wrong name, a missing transparent background) keeps its old path.
+3. **QA-only on an older set.** A QA-only run reviews the set the owner named: its verdict's `designFile` must be that set (it was
+   refused unless it was the newest set: a QA-only run on set-v4 while set-v6 exists could never record a verdict), and the redraw ids
+   are checked against that set's files (`validateVerdict`, `setFileIds(job, reviewedSet(job))`).
+4. **Set approval on the page.** "Approve set-vN…" and "Reject set-vN…" appear only when that set is built and the approval would be
+   accepted: the set is the one the last QA DESIGN pass reviewed (else the newest set), it is built (deliverables.json, every file of
+   the spec), the last verdict is not "approved", the pass limit is reached (3 of 3) or the post-fix rule applies, the manifest has no
+   limit problems or build warnings, and originality is clear for the current design.md (`lib/set-decision.mjs`). Otherwise the panel
+   says why in one line, e.g. "set-v6 is not built: 5 of 12 files; set-v4: your set approval stands in for QA DESIGN only at the pass
+   limit (2 of 3 passes) or after a post-fix". The owner's decision on every file is still required and checked by `approveSet`. For
+   the post-fix rule the page now sends `rule` and the after previews it lists in the dialog.
+5. **Designs panel.** The job panel shows every file of the newest built set as a thumbnail with its file name (was the last two).
+6. **Job cap USD 7.00** for every job (`caps.perJobUsd`, was 6.00). The research line stays at USD 1.00, genre-scout at USD 0.50, the
+   day cap at USD 10.00: a design job plus a research job is 7.00 + 1.00 = 8.00 worst case; two design jobs at once (14.00) are still
+   refused. `npm run line:live` checks for USD 7.00.
+
+### The winter job from now to the approval queue (via set-v4, under USD 7.00), once W4 is deployed
+
+1. Optional, $0, server stopped: check the three failed image calls of 21/10 11:01–11:02 UTC on OpenRouter's activity page; if none was
+   charged, `npm run settle:failed -- --job <id> --usd 0 --by "<name>" --source "OpenRouter activity page"`, then the same with `--apply`.
+2. QA-only on set-v4 (about USD 0.65). The page has no QA-only button (the API route exists; the panel does not offer it), so with
+   the server stopped: `$env:STATION_PROVIDER='live'; npm run line:live -- --qa-only <id> --set 4 --max-usd 0.80; Remove-Item Env:STATION_PROVIDER`.
+3. If QA approves: on to step 5. If QA revises only on 03, the set is at the pass limit (3 of 3): the owner's decision on each of the
+   12 files of set-v4 (`npm run owner -- file-decision`, server stopped: "approved" for 01, 02 and 04–12, "keep" for 03-plaid-scarf with
+   qaPass 3, QA's words and the owner's reason), then `npm run owner -- set-approval <id> --from <args.json>` (or, with the server started, **Approve set-v4…** on the page), $0.
+4. If QA revises on anything else, the owner decides (the same overrides where the owner accepts the file; originality and trademarks
+   are never overridden).
+5. Listing-only (LISTER + QA LISTING, about USD 0.15), server stopped: `npm run line:live -- --listing-only <id> --max-usd 0.30` with
+   `STATION_PROVIDER=live` for that process; then the package step (`npm run owner -- package <id>`, server stopped, $0), which puts
+   the job in the approval queue.

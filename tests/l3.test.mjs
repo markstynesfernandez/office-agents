@@ -10,7 +10,7 @@
 //   4 research tune (the first routine run on live, 21/10/2026): OPENED / NOT REACHABLE only for a URL the run fetched (refused on
 //     write), at most 6 fetches a run for EVIDENCE-CHECKER, the keyword rule across the whole list, product fit (a draft for another
 //     product is not written), a price in a title goes in the price cell; the prompts within their caps, the IP-rule lines word for word
-//   L3.1 the research line's job cap, USD 1.00 (owner, 21/10/2026): the research routine starts beside a design job open at 6.00; a second
+//   L3.1 the research line's job cap, USD 1.00 (owner, 21/10/2026): the research routine starts beside a design job open at 6.00 (7.00 since W4); a second
 //     design job waits as next; the guard refuses a research job's spend past 1.00
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -102,36 +102,36 @@ test('1: the daily cap refuses a start when the open jobs\' worst cases together
   hold('designer');
   const pA = startDesign(JOB_A);
   await until(() => engine.store.runningRuns().length === 1);
-  // the real caps: a research job (USD 1.00, L3.1) fits beside the open design job, 0 spent + 6 open + 1 this = 7 <= 10
+  // the real caps: a research job (USD 1.00, L3.1) fits beside the open design job, 0 spent + 7 open + 1 this = 8 <= 10 (W4: the job cap is USD 7.00)
   const qr = engine.spend.quote('research', { text: 'woodland niches' });
-  assert.deepEqual([qr.refusals, qr.day.openJobsUsd, qr.day.worstUsd], [[], 6, 7]); assert.ok(qr.token);
-  // two 6.00 worst cases (the research line at the job cap, as before L3.1): 0 spent + 6 open + 6 this = 12 > 10
-  engine.cfg.engine.caps.perJobUsdByLine = { ...engine.cfg.engine.caps.perJobUsdByLine, research: 6 };
+  assert.deepEqual([qr.refusals, qr.day.openJobsUsd, qr.day.worstUsd], [[], 7, 8]); assert.ok(qr.token);
+  // two 7.00 worst cases (the research line at the job cap, as before L3.1): 0 spent + 7 open + 7 this = 14 > 10
+  engine.cfg.engine.caps.perJobUsdByLine = { ...engine.cfg.engine.caps.perJobUsdByLine, research: 7 };
   const q0 = engine.spend.quote('research', { text: 'woodland niches' });
   assert.equal(q0.token, null);
-  assert.match(q0.refusals.join(' | '), /the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
+  assert.match(q0.refusals.join(' | '), /the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 7\.00 \+ this up to USD 7\.00 = USD 14\.00, over USD 10\.00/);
   assert.throws(() => engine.spend.gate('research', { text: 'woodland niches', confirmToken: 'x' }), (e) => e.code === 'CONFIRM_REQUIRED');
   // a day cap that fits two jobs: the research job starts alongside (another line), and the dialog shows the running job
-  engine.cfg.engine.caps.perDayUsd = 12;
+  engine.cfg.engine.caps.perDayUsd = 14;
   const q = engine.spend.quote('research', { text: 'woodland niches' });
   assert.deepEqual(q.refusals, []); assert.ok(q.token);
-  assert.deepEqual([q.queue.startsAsNext, q.queue.nextFor, q.day.openJobsUsd, q.day.worstUsd], [false, null, 6, 12]);
-  assert.deepEqual(q.otherJobs, [{ id: JOB_A, line: 'room1-digital', lineLabel: 'Room 1 · digital', state: 'running', step: 'designer', spentUsd: 0, capUsd: 6, worstUsd: 6 }]);
+  assert.deepEqual([q.queue.startsAsNext, q.queue.nextFor, q.day.openJobsUsd, q.day.worstUsd], [false, null, 7, 14]);
+  assert.deepEqual(q.otherJobs, [{ id: JOB_A, line: 'room1-digital', lineLabel: 'Room 1 · digital', state: 'running', step: 'designer', spentUsd: 0, capUsd: 7, worstUsd: 7 }]);
   const html = spendHtml(q);
-  assert.match(html, /<span class="m">other job<\/span><span><span class="mono">2026-10-16--dry-run-mushroom-stickers<\/span> · Room 1 · digital · running at designer · spent USD 0\.0000 · worst case still open USD 6\.00<\/span>/);
-  assert.match(html, /this month USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00/);
+  assert.match(html, /<span class="m">other job<\/span><span><span class="mono">2026-10-16--dry-run-mushroom-stickers<\/span> · Room 1 · digital · running at designer · spent USD 0\.0000 · worst case still open USD 7\.00<\/span>/);
+  assert.match(html, /this month USD 0\.00 \+ open jobs up to USD 7\.00 \+ this up to USD 7\.00 = USD 14\.00/);
   // the same line: the line's day cap counts the open job too; within it, the start waits as next for its line
   const q1 = engine.spend.assess('start-line', { file: JOB_B + '.md' });
-  assert.match(q1.refusals.join(' | '), /the room1-digital line's daily cap would be exceeded: USD 12\.00 worst case, over USD 10\.00/);
-  engine.cfg.engine.caps.perLineDayUsd = { default: 12 };
+  assert.match(q1.refusals.join(' | '), /the room1-digital line's daily cap would be exceeded: USD 14\.00 worst case, over USD 10\.00/);
+  engine.cfg.engine.caps.perLineDayUsd = { default: 14 };
   const q2 = engine.spend.assess('start-line', { file: JOB_B + '.md' });
   assert.deepEqual(q2.refusals, []); assert.deepEqual([q2.queue.startsAsNext, q2.queue.nextFor], [true, 'line']);
   assert.match(spendHtml(q2), /waits as <b>next<\/b> for its line: the Room 1 · digital line runs one job at a time/);
   // the Console's monthly estimate: this month + every open job's worst case + this one
-  engine.cfg.engine.outerLimits = { ...engine.cfg.engine.outerLimits, anthropicConsoleMonthlyUsd: 11 };
+  engine.cfg.engine.outerLimits = { ...engine.cfg.engine.outerLimits, anthropicConsoleMonthlyUsd: 13 };
   const q3 = engine.spend.assess('research', { text: 'woodland niches' });
-  assert.deepEqual([q3.console.usedUsd, q3.console.openJobsUsd, q3.console.worstUsd, q3.console.leftAfterWorstUsd], [0, 6, 12, -1]);
-  assert.match(q3.refusals.join(' | '), /the Anthropic Console's monthly limit could be passed \(estimate from the station ledger\): this month USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 11\.00/);
+  assert.deepEqual([q3.console.usedUsd, q3.console.openJobsUsd, q3.console.worstUsd, q3.console.leftAfterWorstUsd], [0, 7, 14, -1]);
+  assert.match(q3.refusals.join(' | '), /the Anthropic Console's monthly limit could be passed \(estimate from the station ledger\): this month USD 0\.00 \+ open jobs up to USD 7\.00 \+ this up to USD 7\.00 = USD 14\.00, over USD 13\.00/);
   // the token taken before the limit changed is refused at the gate with the reason
   assert.throws(() => engine.spend.gate('research', { text: 'woodland niches', confirmToken: q.token }), (e) => e.code === 'DAY_CAP' && /Console's monthly limit/.test(e.message));
   release('designer'); await pA; await ended(JOB_A);
@@ -209,10 +209,10 @@ test('1: routines: a firing starts alongside another line\'s job, waits as next 
   const pA = startDesign(JOB_A);
   await until(() => engine.store.runningRuns().length === 1);
   // a firing whose worst case would not fit next to the open design job is skipped with the reason; nothing is created (the research
-  // line at the job cap, as before L3.1: 6 + 6 = 12 > 10; at the real USD 1.00 it starts: the L3.1 test below)
-  engine.cfg.engine.caps.perJobUsdByLine = { ...engine.cfg.engine.caps.perJobUsdByLine, research: 6 };
+  // line at the job cap, as before L3.1: 7 + 7 = 14 > 10; at the real USD 1.00 it starts: the L3.1 test below)
+  engine.cfg.engine.caps.perJobUsdByLine = { ...engine.cfg.engine.caps.perJobUsdByLine, research: 7 };
   const skip = await engine.scheduler.fire(mk('rt_real'));
-  assert.match(skip.skipped, /^the start would not fit: the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 6\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
+  assert.match(skip.skipped, /^the start would not fit: the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 7\.00 \+ this up to USD 7\.00 = USD 14\.00, over USD 10\.00/);
   assert.equal(researchJobs().length, 0); assert.match(engine.store.getRoutine('rt_real').last_status, /^skipped: the start would not fit/);
   // caps that hold two jobs: the firing starts alongside the design job
   engine.cfg.engine.caps.perDayUsd = 100; engine.cfg.engine.caps.perLineDayUsd = { default: 100 };
@@ -233,25 +233,25 @@ test('1: routines: a firing starts alongside another line\'s job, waits as next 
 
 // ---- L3.1 (owner, 21/10/2026): the research line's job cap, USD 1.00 (caps.perJobUsdByLine.research)
 
-test('L3.1: the real caps: a design job open at its worst case (6.00) and the research routine fires: the research job starts (7.00 of 10.00); a second design job waits as next for its line, and the dialog refuses one (13.00)', async (t) => {
+test('L3.1: the real caps: a design job open at its worst case (7.00, W4) and the research routine fires: the research job starts (8.00 of 10.00); a second design job waits as next for its line, and the dialog refuses one (15.00)', async (t) => {
   const { engine, hold, release, job, startDesign, ended } = bootLines(t, { tag: 'l31' });
   const C = engine.cfg.engine.caps;
-  assert.deepEqual([C.perJobUsd, C.perDayUsd, C.perJobUsdByLine.research, C.perJobUsdByLine['genre-scout']], [6, 10, 1, 0.5], 'the real caps, unchanged by this test');
+  assert.deepEqual([C.perJobUsd, C.perDayUsd, C.perJobUsdByLine.research, C.perJobUsdByLine['genre-scout']], [7, 10, 1, 0.5], 'the real caps, unchanged by this test');
   engine.store.insertRoutine({ id: 'rt_wk', name: 'weekday research', target: 'line:research', input: '', schedule: '0 9 * * 1-5', max_runs_per_day: 1, per_run_cap_usd: null });
   const rt = engine.store.setRoutineEnabled('rt_wk', true, { expectedVersion: engine.store.getRoutine('rt_wk').version });
   hold('designer'); hold('demand-researcher');
   const pA = startDesign(JOB_A);
   await until(() => engine.store.runningRuns().length === 1);
   const before = engine.spend.startCheck({ line: 'research', headroomUsd: 1 });
-  assert.deepEqual([before.committed, before.worst, before.refusals], [6, 7, []]);
+  assert.deepEqual([before.committed, before.worst, before.refusals], [7, 8, []]);
   const f = engine.scheduler.fire(rt);
   await until(() => engine.store.runningRuns().length === 2);
   const [r1] = engine.store.listJobs().filter((j) => j.line === 'research');
   assert.deepEqual([job(JOB_A).state, r1.state, r1.data.routineId], ['running', 'running', 'rt_wk'], 'started, not skipped');
   assert.doesNotMatch(engine.store.getRoutine('rt_wk').last_status || '', /^skipped/);
-  // a second design job: the spend dialog refuses it (6 + 1 open + 6 = 13.00 over the 10.00 day cap; the line's day cap 12.00 too)
+  // a second design job: the spend dialog refuses it (7 + 1 open + 7 = 15.00 over the 10.00 day cap; the line's day cap 14.00 too)
   const q = engine.spend.assess('start-line', { file: JOB_B + '.md' });
-  assert.match(q.refusals.join(' | '), /the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 7\.00 \+ this up to USD 6\.00 = USD 13\.00, over USD 10\.00/);
+  assert.match(q.refusals.join(' | '), /the daily cap would be exceeded: spent today USD 0\.00 \+ open jobs up to USD 8\.00 \+ this up to USD 7\.00 = USD 15\.00, over USD 10\.00/);
   // started on the engine's own path, it still waits as next for its line (one job at a time on a line), not beside the open one
   const c = engine.orchestrator.createJob({ briefText: briefText(JOB_B), by: 'test' }); assert.ok(c.ok, (c.reasons || []).join('; '));
   await engine.orchestrator.startJob(JOB_B);
@@ -260,7 +260,7 @@ test('L3.1: the real caps: a design job open at its worst case (6.00) and the re
   release('designer'); await pA; await ended(JOB_A); await ended(JOB_B);
 });
 
-test('L3.1: a research job is refused any spend past USD 1.00 (the guard: perJob[research]); a design job beside it keeps the USD 6.00 cap', (t) => {
+test('L3.1: a research job is refused any spend past USD 1.00 (the guard: perJob[research]); a design job beside it keeps the USD 7.00 cap (W4)', (t) => {
   const r = tempRoot('l31guard'), ledger = createLedger({ J: r.J, log: r.log }), halt = createHalt({ J: r.J, log: r.log });
   t.after(() => { halt.close(); r.cleanup(); });
   const guard = createGuard({ J: r.J, ledger, halt, caps: REAL.engine.caps, pricing: PRICING, log: r.log });
@@ -273,7 +273,7 @@ test('L3.1: a research job is refused any spend past USD 1.00 (the guard: perJob
   assert.match(refusal.message, /^cap: perJob\[research\] 1\.00 reached \(spent 0\.96, next call up to 0\.06\)/);
   assert.ok(ledger.spent.job('R') <= 1 + 1e-9);
   for (let i = 0; i < 20; i++) call('D', 'room1-digital', i);
-  assert.equal(r6(ledger.spent.job('D')), 1.2, 'the design job passes 1.00: its cap is perJob 6.00');
+  assert.equal(r6(ledger.spent.job('D')), 1.2, 'the design job passes 1.00: its cap is perJob 7.00');
 });
 
 // ---- 2. QA-DESIGN names the files (the line-level runs: tests/w2.test.mjs)

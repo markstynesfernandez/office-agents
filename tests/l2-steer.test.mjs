@@ -143,7 +143,7 @@ test('spend quote: line, models, job cap, today against the daily cap, the Conso
   assert.equal(q.console.note, 'estimate from the station ledger; the Console is the authority');
   assert.match(q.token, /^[0-9a-f]{36}$/); assert.deepEqual(q.refusals, []);
   // L3: the Console line also shows its worst case with every open job counted
-  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /USD 200\.00 left of the monthly limit USD 200\.00 · this month USD 0\.00 \+ open jobs up to USD 0\.00 \+ this up to USD 6\.00 = USD 6\.00 <span class="muted">\(estimate from the station ledger; the Console is the authority\)/);
+  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /USD 200\.00 left of the monthly limit USD 200\.00 · this month USD 0\.00 \+ open jobs up to USD 0\.00 \+ this up to USD 7\.00 = USD 7\.00 <span class="muted">\(estimate from the station ledger; the Console is the authority\)/);
   // the Console limit when the owner sets it: the limit less this Dublin month's Anthropic rows in the ledger
   engine.cfg.engine.outerLimits = { ...engine.cfg.engine.outerLimits, anthropicConsoleMonthlyUsd: 20 };
   engine.ledger.append({ ts: Date.now(), jobId: null, runId: 'r-test', agentKey: 'lister', line: 'room1-digital', provider: 'anthropic', model: 'claude-haiku-5-5', kind: 'text', count: 1, usd: 1.25 });
@@ -179,7 +179,7 @@ test('every spending endpoint refuses without the confirm step, with a reused or
   // the daily cap: a quote that would take today over it has no token; a token taken before the spend moved is refused (422)
   const qC = await quote('start-line', { file: JOB_A + '.md' });
   engine.ledger.append({ ts: Date.now(), jobId: null, runId: 'r-cap', agentKey: 'designer', line: 'room1-digital', provider: 'openrouter', model: 'openai/gpt-5-image-mini', kind: 'image', count: 1, usd: 6 });
-  const qD = await quote('start-line', { file: JOB_A + '.md' }); assert.equal(qD.token, null); assert.match(qD.refusals.join(), /daily cap would be exceeded: spent today USD 6\.00 \+ open jobs up to USD 0\.00 \+ this up to USD 6\.00 = USD 12\.00, over USD 10\.00/);
+  const qD = await quote('start-line', { file: JOB_A + '.md' }); assert.equal(qD.token, null); assert.match(qD.refusals.join(), /daily cap would be exceeded: spent today USD 6\.00 \+ open jobs up to USD 0\.00 \+ this up to USD 7\.00 = USD 13\.00, over USD 10\.00/);
   const capped = await post('/api/tasks/brief', { file: JOB_A + '.md', confirmToken: qC.token }); assert.equal(capped.status, 422, capped.text); assert.equal(capped.json.code, 'DAY_CAP');
   assert.equal(engine.store.getJob(JOB_A), undefined, 'nothing started over the cap');
   // resume (restart) and the run modes go through the same gate
@@ -241,9 +241,9 @@ test('at most one job runs at a time on an instance; a second start waits as "ne
   assert.equal(engine.maxRunningJobs, 2); engine.maxRunningJobs = 1;
   const a = await confirmed('/api/tasks/brief', 'start-line', { file: JOB_A + '.md' }); assert.equal(a.status, 200, a.text);
   await until(() => job(JOB_A).state === 'running');
-  // W2 (owner, 20/10/2026): at USD 6.00 per job and USD 10.00 per day, a second design-sized start while a job is open is refused by the
-  // daily cap (6 + 6 = 12; tests/l3.test.mjs); L3.1 (owner, 21/10/2026): a research job is capped at USD 1.00, so it fits (6 + 1 = 7)
-  const q = await quote('research', { text: 'woodland niches' }); assert.deepEqual(q.refusals, []); assert.equal(q.day.worstUsd, 7);
+  // W4 (owner, 21/10/2026): at USD 7.00 per job and USD 10.00 per day, a second design-sized start while a job is open is refused by the
+  // daily cap (7 + 7 = 14; tests/l3.test.mjs); L3.1 (owner, 21/10/2026): a research job is capped at USD 1.00, so it fits (7 + 1 = 8)
+  const q = await quote('research', { text: 'woodland niches' }); assert.deepEqual(q.refusals, []); assert.equal(q.day.worstUsd, 8);
   assert.equal(q.queue.startsAsNext, true); assert.deepEqual(q.queue.running, [JOB_A]);
   assert.equal(q.day.openJobsUsd, REAL.engine.caps.perJobUsd, 'the running job\'s cap counts towards the day');
   const b = await confirmed('/api/tasks/research', 'research', { text: 'woodland niches' }); assert.equal(b.status, 200, b.text);
@@ -272,7 +272,8 @@ test('steering: amendment, set rejection, the file-1 decision\'s controls; the r
   r.J.put(path.join(r.dataRoot, 'jobs', ID, 'set-v1', 'design.md'), '# set-v1\n');
   r.J.put(path.join(r.dataRoot, 'jobs', ID, 'qa', 'design-pass1.json'), JSON.stringify({ stage: 'design', verdict: 'revise', reasons: ['x'] }));
   let c = (await snap()).jobs.find((x) => x.id === ID).controls;
-  assert.equal(c.amend, true); assert.deepEqual(c.setDecision, { set: 1 }); assert.deepEqual(c.fixTools, { set: 1 }); assert.equal(c.file1, null);
+  // W4 (owner, 21/10/2026): no Approve / Reject set-v1 for a set that is not built; the panel says why in one line
+  assert.equal(c.amend, true); assert.equal(c.setDecision, null); assert.equal(c.setDecisionNote, 'set-v1 is not built: 0 of 5 files'); assert.deepEqual(c.fixTools, { set: 1 }); assert.equal(c.file1, null);
   const am = await post('/api/owner/amend', { jobId: ID, text: 'Item 3 now reads: an acorn house with a round door.', date: dublinDay(), expectedVersion: job(ID).version });
   assert.equal(am.status, 200, am.text);
   assert.ok(fs.readdirSync(path.join(r.dataRoot, 'jobs', ID, 'amendments')).some((f) => /^001-\d{4}-\d{2}-\d{2}\.md$/.test(f)));
