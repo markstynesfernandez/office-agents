@@ -99,6 +99,7 @@ export function researchBrief(day, g, { noPrice = false } = {}) {
     '# Niche', g.genre[0].toUpperCase() + g.genre.slice(1) + ' desk props for streamers (FIXTURE research brief)', '',
     '## Buyer persona', 'FIXTURE: a streamer whose channel is mostly ' + g.genre + ' and who buys transparent PNG props to dress the desk in their overlay.', '',
     '## Demand evidence', 'evidence level: indicative', 'checked: ' + day, 'search queries: ' + researchQuery(g), 'competitor count: not measured',
+    'product fit: same product — FIXTURE results sell transparent PNG desk props for stream scenes (L3)',
     '| # | result title (as shown in the result) | price (as shown) | result URL |', '|---|---|---|---|', rows, '',
     '## Keywords', ...kws.map((k, i) => '- ' + k + ' — ' + urls[i]), '',
     '## Price range', noPrice ? 'owner sets price — no cited result shows a price' : 'USD ' + listingPrice(g, 1) + '–' + listingPrice(g, 5) + ' — ' + urls.slice(0, 3).join(', '), '',

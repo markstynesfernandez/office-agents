@@ -19,7 +19,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJail, realResolve, APP_ROOT } from '../src/engine/store/jail.mjs';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { createEngineServer } from '../src/server/engine-server.mjs';
 import { send, sendJson, LEGACY_PORT } from '../src/server/index.mjs';
 import { makeLogger, SECRET_ENV } from '../src/server/log.mjs';
@@ -148,7 +148,7 @@ function bootRun({ J, log, pacing, speed, generation, onPhase }) {
   const script = createDemoScript({ cfg: cfg.station, draft, jobA, jobB });
   // each stage stays on screen for at least stageHoldMs (the presenter's 3-second hold); hooks never change a job
   const hooks = { onStep: async ({ phase }) => { if (phase === 'end') await clock.wait(pacing.stageHoldMs); } };
-  const engine = createEngine({ J, log, providers: pacedProviders({ script, clock, pacing, log }), overrides, hooks, startScheduler: false, resume: false, demo: true });
+  const engine = openScriptEngine({ J, log, providers: pacedProviders({ script, clock, pacing, log }), overrides, hooks, demo: true, purpose: 'demo', startsJobs: true });
   const run = { generation, engine, clock, jobA, jobB, researchId: null, started: false, phase: 'waiting', startedAt: null, finishedAt: null, error: null, result: null, played: null };
   const setPhase = (p) => { run.phase = p; onPhase && onPhase(run); };
   const realWait = (ms) => new Promise((r) => setTimeout(r, ms));

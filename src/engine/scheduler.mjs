@@ -31,13 +31,16 @@ export const validSchedule = (expr) => { try { const c = new Cron(expr, { timezo
 export const nextRuns = (expr, n = 5, from = new Date()) => { try { const c = new Cron(expr, { timezone: TZ, paused: true }); const out = c.nextRuns(n, from).map((d) => d.getTime()); c.stop(); return out; } catch (_) { return []; } };
 
 // hold(routine) -> a reason to skip or null (E5: the line's first agent is off duty)
-export function createScheduler({ store, halt, ledger, caps, bus, log, run, clock = Date.now, hold = () => null }) {
+// locked (L3, owner 21/10/2026): an engine opened by a script (script-engine.mjs): the scheduler never starts (an e-stop release
+// included) and a routine never fires; the reason is logged
+export function createScheduler({ store, halt, ledger, caps, bus, log, run, clock = Date.now, hold = () => null, locked = null }) {
   const jobs = new Map(), running = new Set();
   let started = false;
   const firesKey = (id) => 'fires:' + id + ':' + dublinDay(clock());
   const firesToday = (routine) => store.meta.get(firesKey(routine.id)) || 0;
 
   async function fire(routine) {
+    if (locked) { log.warn('routine not fired: the scheduler is locked', { id: routine.id, locked }); return { skipped: 'the scheduler is locked (' + locked + ')' }; }
     const cur = store.getRoutine(routine.id) || routine;
     const d = fireDecision({ routine: cur, halted: halt.isHalted(), spentToday: ledger.spent.day(dublinDay(clock())), perDayUsd: caps.perDayUsd, firesToday: firesToday(cur), running: running.has(cur.id), held: hold(cur) });
     if (!d.ok) { store.markRoutineFire(cur.id, 'skipped: ' + d.reason); log.info('routine skipped', { id: cur.id, reason: d.reason }); bus.emit('routine.skip', { data: { routineId: cur.id, name: cur.name, reason: d.reason } }); return { skipped: d.reason }; }
@@ -64,9 +67,9 @@ export function createScheduler({ store, halt, ledger, caps, bus, log, run, cloc
   }
   function disarm(id) { const c = jobs.get(id); if (c) { c.stop(); jobs.delete(id); } }
 
-  function start() { if (halt.isHalted()) { log.warn('scheduler not started: e-stop is on'); return; } started = true; for (const r of store.listRoutines()) arm(r); log.info('scheduler started', { routines: store.listRoutines().length, armed: jobs.size }); }
+  function start() { if (locked) { log.info('scheduler not started: locked', { locked }); return; } if (halt.isHalted()) { log.warn('scheduler not started: e-stop is on'); return; } started = true; for (const r of store.listRoutines()) arm(r); log.info('scheduler started', { routines: store.listRoutines().length, armed: jobs.size }); }
   function stop() { for (const id of [...jobs.keys()]) disarm(id); started = false; log.info('scheduler stopped'); }
   halt.onChange((on) => { if (on) stop(); else start(); });
 
-  return { start, stop, fire, refresh: (id) => { const r = store.getRoutine(id); if (r && started) arm(r); else disarm(id); }, armed: () => [...jobs.keys()], get started() { return started; } };
+  return { start, stop, fire, refresh: (id) => { const r = store.getRoutine(id); if (r && started) arm(r); else disarm(id); }, armed: () => [...jobs.keys()], get started() { return started; }, get locked() { return locked; } };
 }

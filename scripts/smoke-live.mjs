@@ -9,7 +9,7 @@
 // Prints the reply, the request id, the usage, the settled USD, the ledger row and today's ledger total.
 import path from 'node:path';
 import { loadEnv } from '../src/lib/legacy-readers/common.mjs';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { guardedTextCall, estimateTokens } from '../src/engine/runtime.mjs';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
 import { makeLogger } from '../src/server/log.mjs';
@@ -29,7 +29,7 @@ const J = createJail(), log = makeLogger({ dir: path.join(APP_ROOT, 'logs'), nam
 const out = (s) => console.log(log.redact(s));
 
 let engine;
-try { engine = createEngine({ J, log, startScheduler: false, resume: false }); }
+try { engine = openScriptEngine({ J, log, purpose: 'smoke:live' }); }
 catch (e) { console.error(log.redact('smoke-live: the engine did not start: ' + e.message + (e.code === 'LOCKED' ? ' (stop the server first)' : ''))); process.exit(1); }
 try {
   if (engine.providers.mode !== 'live') throw new Error('the engine is not on the live provider (' + engine.providers.mode + ')');

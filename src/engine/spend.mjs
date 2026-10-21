@@ -1,7 +1,8 @@
 // spend.mjs — L2: the spend confirmation behind every page action that can spend (owner brief, 19/10/2026). Before such an action
 // the page asks for a quote (POST /api/spend/quote): the line, the agents and their models, the job cap, today's spend against the
 // daily cap (with the worst case of every running and queued job counted), the line's day cap, the Anthropic Console's monthly limit
-// if the owner configured it (config/engine.json outerLimits), and on the mock provider "mock: $0". A quote with no refusal carries a
+// if the owner configured it (config/engine.json outerLimits; L3: its worst case with every open job counted, refused when over), the
+// other open jobs (L3: line, spend so far, worst case), and on the mock provider "mock: $0". A quote with no refusal carries a
 // confirm token: random, single use, bound to the action and its parameters, valid runtime.confirmTtlMs. The action itself is then
 // refused, server-side, when the e-stop is on (HALTED), when no valid token came with it (CONFIRM_REQUIRED), or when the daily caps
 // would be exceeded at that moment (DAY_CAP). The guard still checks every call as before; this adds a gate in front of the start.
@@ -89,33 +90,60 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       routine: { id: rt.id, name: rt.name, schedule: rt.schedule, scheduleWords: cronWords(rt.schedule) + ' (Dublin)', maxRunsPerDay: rt.max_runs_per_day, perRunCapUsd: rt.per_run_cap_usd, jobCapUsd: jobCap, worstPerFiringUsd: perFiring, firingsPerDayMax: maxDay, worstPerDayUsd: r6(maxDay * perFiring), firingsPerWeek: firingsWeek, worstPerWeekUsd: r6(firingsWeek * perFiring), dailyCapUsd: caps.perDayUsd, overDailyCap: maxDay * perFiring > caps.perDayUsd + 1e-9 } };
   }
 
+  // L3 (owner, 20/10/2026): two lines may run side by side (runtime.maxRunningJobs 2, one job per line), so every check of a start counts
+  // EVERY open job (running, or queued to start by itself) at its worst case (its cap less its spend): the daily cap, the line's day cap
+  // and the Anthropic Console's monthly estimate. The same check is used by the spend dialog, the server-side gate and a routine's
+  // firing (engine.runRoutine). The guard counts every job's reservations call by call (guard.mjs: per run, per job, per day, the
+  // OpenRouter key's day). -> every figure, and the refusals (empty: the start may go ahead)
+  function startCheck({ line, headroomUsd, exceptId = null, exceptJobs = [] }) {
+    const day = dublinDay(now()), g = guard.status();
+    const others = committedJobs(exceptId).filter((j) => !exceptJobs.includes(j.id));
+    const committed = r6(others.reduce((s, j) => s + remaining(j), 0)), lineCommitted = r6(others.filter((j) => j.line === line).reduce((s, j) => s + remaining(j), 0));
+    const spentToday = r6(g.spentToday), lineSpent = r6(ledger.spent.lineDay(line, day)), lineCap = lineDayCapOf(line);
+    const worst = r6(spentToday + committed + headroomUsd), lineWorst = r6(lineSpent + lineCommitted + headroomUsd);
+    const ol = cfg.engine.outerLimits || {}, month = day.slice(0, 7), consoleLimit = ol.anthropicConsoleMonthlyUsd > 0 ? ol.anthropicConsoleMonthlyUsd : null;
+    const consoleUsed = r6(ledger.rows().filter((r) => String(r.provider || '').startsWith('anthropic') && dublinDay(r.ts).slice(0, 7) === month).reduce((s, r) => s + (Number(r.usd) || 0), 0));
+    // the Console estimate's worst case: this month's Anthropic rows + every open job's worst case + this one (an open job's worst case
+    // counts in full: its images are not split out, so the estimate errs high)
+    const consoleWorst = r6(consoleUsed + committed + headroomUsd);
+    const refusals = [];
+    if (halt.isHalted()) refusals.push('e-stop is on: nothing starts until you resume');
+    if (!g.ledgerOk) refusals.push('the ledger is unreadable: every paid call is refused');
+    if (worst > caps.perDayUsd + 1e-9) refusals.push('the daily cap would be exceeded: spent today ' + usd(spentToday) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(worst) + ', over ' + usd(caps.perDayUsd));
+    if (lineCap > 0 && lineWorst > lineCap + 1e-9) refusals.push('the ' + line + ' line\'s daily cap would be exceeded: ' + usd(lineWorst) + ' worst case, over ' + usd(lineCap));
+    if (consoleLimit && consoleWorst > consoleLimit + 1e-9) refusals.push('the Anthropic Console\'s monthly limit could be passed (estimate from the station ledger): this month ' + usd(consoleUsed) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(consoleWorst) + ', over ' + usd(consoleLimit));
+    const openJobs = others.map((j) => ({ id: j.id, line: j.line, lineLabel: (cfg.lines[j.line] || {}).label || j.line, state: j.state === 'running' || O().isActive(j.id) ? 'running' : 'next', step: j.step || null, spentUsd: r6(ledger.spent.job(j.id)), capUsd: jobCapOf(j.line), worstUsd: r6(remaining(j)) }));
+    return { day, g, month, consoleLimit, consoleUsed, consoleWorst, openJobs, committed, lineCommitted, spentToday, lineSpent, lineCap, worst, lineWorst, refusals };
+  }
+
   // the quote (no token): every figure the dialog shows, and why it cannot go ahead (refusals)
   function assess(action, body) {
     if (!SPEND_ACTIONS[action]) throw err('unknown spending action: ' + action, 'BAD_REQUEST');
     const t = target(action, body || {}); if (!t) return null;
-    const day = dublinDay(now()), g = guard.status(), mock = engine.providers.mode === 'mock';
-    const others = committedJobs(t.jobId).filter((j) => !(t.jobs || []).includes(j.id));
-    const committed = r6(others.reduce((s, j) => s + remaining(j), 0)), lineCommitted = r6(others.filter((j) => j.line === t.line).reduce((s, j) => s + remaining(j), 0));
-    const spentToday = r6(g.spentToday), lineSpent = r6(ledger.spent.lineDay(t.line, day)), lineCap = lineDayCapOf(t.line);
-    const worst = r6(spentToday + committed + t.headroomUsd), lineWorst = r6(lineSpent + lineCommitted + t.headroomUsd);
-    const refusals = [...(t.refuse || [])];
-    if (halt.isHalted()) refusals.unshift('e-stop is on: nothing starts until you resume');
-    if (!g.ledgerOk) refusals.push('the ledger is unreadable: every paid call is refused');
-    if (!t.routine && worst > caps.perDayUsd + 1e-9) refusals.push('the daily cap would be exceeded: spent today ' + usd(spentToday) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(t.headroomUsd) + ' = ' + usd(worst) + ', over ' + usd(caps.perDayUsd));
-    if (!t.routine && lineCap > 0 && lineWorst > lineCap + 1e-9) refusals.push('the ' + t.line + ' line\'s daily cap would be exceeded: ' + usd(lineWorst) + ' worst case, over ' + usd(lineCap));
-    const ol = cfg.engine.outerLimits || {}, month = day.slice(0, 7);
-    const consoleUsed = r6(ledger.rows().filter((r) => String(r.provider || '').startsWith('anthropic') && dublinDay(r.ts).slice(0, 7) === month).reduce((s, r) => s + (Number(r.usd) || 0), 0));
-    const running = store.listJobs({ states: ['running'] }).map((j) => j.id), max = engine.maxRunningJobs || null;
-    const waitsAsNext = !!max && running.filter((x) => x !== t.jobId).length >= max;
+    const mock = engine.providers.mode === 'mock';
+    const sc = startCheck({ line: t.line, headroomUsd: t.headroomUsd, exceptId: t.jobId, exceptJobs: t.jobs || [] });
+    const { day, month, spentToday, committed, worst, lineSpent, lineWorst, lineCap, consoleUsed, consoleWorst, consoleLimit } = sc;
+    // arming a routine spends nothing now: only the e-stop and the ledger refuse it (the firing is checked when it fires)
+    const scr = t.routine ? sc.refusals.filter((x) => /^e-stop|^the ledger/.test(x)) : sc.refusals, isStop = (x) => /^e-stop/.test(x);
+    const refusals = [...scr.filter(isStop), ...(t.refuse || []), ...scr.filter((x) => !isStop(x))];   // the e-stop first (the gate's HALTED)
+    const ol = cfg.engine.outerLimits || {};
+    // L3: the queue: a start on a line whose job is running waits as next for that line; one beyond the total waits as next as before
+    const runningJobs = store.listJobs({ states: ['running'] }).filter((j) => !j.legacy), running = runningJobs.map((j) => j.id), max = engine.maxRunningJobs || null;
+    const lineBusy = runningJobs.some((j) => j.line === t.line && j.id !== t.jobId), totalFull = !!max && running.filter((x) => x !== t.jobId).length >= max;
+    const nextFor = t.routine ? null : lineBusy ? 'line' : totalFull ? 'total' : null;
+    // the OpenRouter key's day (outside the engine; the guard refuses an image call that would pass it): every job's image rows today
+    const orToday = r6(guard.openrouterDay ? guard.openrouterDay().usedUsd : 0);
     return {
       action, label: SPEND_ACTIONS[action].label, what: t.what, line: t.line, lineLabel: (cfg.lines[t.line] || {}).label || t.line, jobId: t.jobId,
       provider: engine.providers.mode, mock, mockNote: mock ? 'mock: $0 (no model is called and nothing is charged)' : null,
       agents: lineAgents(t.line), imageModel: lineAgents(t.line).some((a) => a.images) ? (mock ? 'mock (' + cfg.engine.image.allowedModels.join(', ') + ')' : cfg.engine.image.allowedModels.join(', ')) : null,
       job: { capUsd: jobCapOf(t.line), spentUsd: t.jobId ? r6(ledger.spent.job(t.jobId)) : 0, headroomUsd: t.headroomUsd, perRunUsd: caps.perRunUsd },
       day: { date: day, spentUsd: spentToday, openJobsUsd: committed, worstUsd: worst, capUsd: caps.perDayUsd, line: { spentUsd: lineSpent, worstUsd: lineWorst, capUsd: lineCap } },
-      console: ol.anthropicConsoleMonthlyUsd > 0 ? { configured: true, month, limitUsd: ol.anthropicConsoleMonthlyUsd, usedUsd: consoleUsed, leftUsd: r6(ol.anthropicConsoleMonthlyUsd - consoleUsed), note: 'estimate from the station ledger; the Console is the authority' } : { configured: false, month, usedUsd: consoleUsed, note: 'not configured (config/engine.json outerLimits.anthropicConsoleMonthlyUsd)' },
-      openrouterDailyUsd: ol.openrouterDailyUsd ?? null,
-      queue: { running, maxRunning: max, startsAsNext: !t.routine && waitsAsNext },
+      console: consoleLimit ? { configured: true, month, limitUsd: consoleLimit, usedUsd: consoleUsed, leftUsd: r6(consoleLimit - consoleUsed), openJobsUsd: committed, worstUsd: consoleWorst, leftAfterWorstUsd: r6(consoleLimit - consoleWorst), note: 'estimate from the station ledger; the Console is the authority' } : { configured: false, month, usedUsd: consoleUsed, note: 'not configured (config/engine.json outerLimits.anthropicConsoleMonthlyUsd)' },
+      openrouterDailyUsd: ol.openrouterDailyUsd ?? null, openrouter: ol.openrouterDailyUsd != null ? { limitUsd: ol.openrouterDailyUsd, usedTodayUsd: orToday, note: 'every job\'s image calls today (station ledger); the engine refuses an image call that would pass the key\'s limit' } : null,
+      // L3: the other open jobs (running, or next): line, spend so far, worst case still open
+      otherJobs: sc.openJobs,
+      queue: { running, maxRunning: max, startsAsNext: !!nextFor, nextFor },
       routine: t.routine || null,
       refusals
     };
@@ -143,5 +171,5 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     if (q.refusals.length) throw err('refused: ' + q.refusals.join('; '), /e-stop/.test(q.refusals[0]) ? 'HALTED' : 'DAY_CAP');
     return q;
   }
-  return { quote, gate, assess, pending: () => tokens.size };
+  return { quote, gate, assess, startCheck, pending: () => tokens.size };
 }

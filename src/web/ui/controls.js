@@ -135,9 +135,11 @@ export function spendHtml(q) {
     + row('job cap', usd(jb.capUsd) + (jb.spentUsd ? ' · spent so far ' + usd(jb.spentUsd, 4) : '') + ' · this up to ' + usd(jb.headroomUsd) + ' · one agent run at most ' + usd(jb.perRunUsd))
     + row('today', usd(dy.spentUsd, 4) + ' spent + open jobs up to ' + usd(dy.openJobsUsd) + ' + this up to ' + usd(jb.headroomUsd) + ' = ' + usd(dy.worstUsd) + ' of the daily cap ' + usd(dy.capUsd) + ' <span class="muted">(' + esc(dy.date || '') + ', Dublin)</span>')
     + (ln.capUsd ? row('line today', usd(ln.worstUsd) + ' worst case of ' + usd(ln.capUsd)) : '')
-    + row('Console', c.configured ? usd(c.leftUsd) + ' left of the monthly limit ' + usd(c.limitUsd) + ' <span class="muted">(' + esc(c.note) + ')</span>' : 'monthly limit not configured <span class="muted">(' + esc(c.note || '') + '; Anthropic rows this month ' + usd(c.usedUsd, 4) + ')</span>')
-    + (q.openrouterDailyUsd != null && q.imageModel ? row('OpenRouter', 'key limit ' + usd(q.openrouterDailyUsd) + ' a day (outside the engine)') : '')
-    + row('queue', q.queue && q.queue.startsAsNext ? 'waits as <b>next</b>: ' + esc(q.queue.running.join(', ')) + ' running (at most ' + q.queue.maxRunning + ' at a time)' : 'starts now')
+    + row('Console', c.configured ? usd(c.leftUsd) + ' left of the monthly limit ' + usd(c.limitUsd) + (c.worstUsd != null ? ' · this month ' + usd(c.usedUsd) + ' + open jobs up to ' + usd(c.openJobsUsd) + ' + this up to ' + usd(jb.headroomUsd) + ' = ' + usd(c.worstUsd) : '') + ' <span class="muted">(' + esc(c.note) + ')</span>' : 'monthly limit not configured <span class="muted">(' + esc(c.note || '') + '; Anthropic rows this month ' + usd(c.usedUsd, 4) + ')</span>')
+    + (q.openrouterDailyUsd != null && q.imageModel ? row('OpenRouter', 'key limit ' + usd(q.openrouterDailyUsd) + ' a day (outside the engine)' + (q.openrouter ? ' · every job today ' + usd(q.openrouter.usedTodayUsd, 4) + ' <span class="muted">(' + esc(q.openrouter.note) + ')</span>' : '')) : '')
+    // L3: the other open jobs (two lines run side by side): line, spend so far, worst case still open
+    + ((q.otherJobs || []).length ? row(q.otherJobs.length === 1 ? 'other job' : 'other jobs', q.otherJobs.map((o) => '<span class="mono">' + esc(o.id) + '</span> · ' + esc(o.lineLabel || o.line) + ' · ' + esc(o.state) + (o.step ? ' at ' + esc(o.step) : '') + ' · spent ' + usd(o.spentUsd, 4) + ' · worst case still open ' + usd(o.worstUsd)).join('<br>')) : '')
+    + row('queue', q.queue && q.queue.startsAsNext ? 'waits as <b>next</b>' + (q.queue.nextFor === 'line' ? ' for its line: the ' + esc(q.lineLabel || q.line) + ' line runs one job at a time' : ': ' + esc(q.queue.running.join(', ')) + ' running (at most ' + q.queue.maxRunning + ' at a time)') : 'starts now')
     + (q.refusals && q.refusals.length ? '<div class="spend-refused">' + q.refusals.map((x) => '<div>✕ ' + esc(x) + '</div>').join('') + '</div>' : '')
     + '</div>';
 }

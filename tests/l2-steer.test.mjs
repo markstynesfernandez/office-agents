@@ -142,7 +142,8 @@ test('spend quote: line, models, job cap, today against the daily cap, the Conso
   assert.deepEqual([q.console.configured, q.console.limitUsd, q.console.usedUsd, q.console.leftUsd], [true, 200, 0, 200]);
   assert.equal(q.console.note, 'estimate from the station ledger; the Console is the authority');
   assert.match(q.token, /^[0-9a-f]{36}$/); assert.deepEqual(q.refusals, []);
-  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /USD 200\.00 left of the monthly limit USD 200\.00 <span class="muted">\(estimate from the station ledger; the Console is the authority\)/);
+  // L3: the Console line also shows its worst case with every open job counted
+  assert.match(spendHtml(q), /mock: \$0/); assert.match(spendHtml(q), /USD 200\.00 left of the monthly limit USD 200\.00 · this month USD 0\.00 \+ open jobs up to USD 0\.00 \+ this up to USD 6\.00 = USD 6\.00 <span class="muted">\(estimate from the station ledger; the Console is the authority\)/);
   // the Console limit when the owner sets it: the limit less this Dublin month's Anthropic rows in the ledger
   engine.cfg.engine.outerLimits = { ...engine.cfg.engine.outerLimits, anthropicConsoleMonthlyUsd: 20 };
   engine.ledger.append({ ts: Date.now(), jobId: null, runId: 'r-test', agentKey: 'lister', line: 'room1-digital', provider: 'anthropic', model: 'claude-haiku-5-5', kind: 'text', count: 1, usd: 1.25 });
@@ -236,6 +237,8 @@ test('arming a routine (L2.1): the dialog\'s schedule, line, models, per-run cap
 
 test('at most one job runs at a time on an instance; a second start waits as "next" and starts when the first ends', async (t) => {
   const { confirmed, snap, job, settled, engine, quote } = await boot(t, { tag: 'l2next', mockDelayMs: 60 });
+  // L3 (owner, 20/10/2026): runtime.maxRunningJobs is 2 now (tests/l3.test.mjs); the total's queue is tested here at 1, as in L2
+  assert.equal(engine.maxRunningJobs, 2); engine.maxRunningJobs = 1;
   const a = await confirmed('/api/tasks/brief', 'start-line', { file: JOB_A + '.md' }); assert.equal(a.status, 200, a.text);
   await until(() => job(JOB_A).state === 'running');
   // W2 (owner, 20/10/2026): at USD 6.00 per job and USD 10.00 per day, a second start while a job is open is refused by the daily cap
@@ -249,7 +252,7 @@ test('at most one job runs at a time on an instance; a second start waits as "ne
   const bid = b.json.result.jobId;
   assert.equal(job(bid).state, 'queued'); assert.match(job(bid).reason, /^next: waiting for 2026-10-16--dry-run-mushroom-stickers \(at most 1 job running at a time\)/);
   const s = await snap(), sj = s.jobs.find((x) => x.id === bid);
-  assert.equal(sj.next, true); assert.deepEqual(s.jobLimit, { maxRunning: 1, running: [JOB_A], next: [bid] });
+  assert.equal(sj.next, true); assert.deepEqual(s.jobLimit, { maxRunning: 1, perLine: { 'genre-scout': 1, research: 1, 'room1-digital': 1 }, running: [JOB_A], next: [bid] });
   // the live status of the running job: stage, agent at work, spend against the cap, its last 5 events
   const live = s.jobs.find((x) => x.id === JOB_A).liveStatus;
   assert.equal(live.running, true); assert.equal(live.capUsd, REAL.engine.caps.perJobUsd); assert.ok(live.events.length > 0 && live.events.length <= 5);

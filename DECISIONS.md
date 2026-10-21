@@ -2227,3 +2227,139 @@ image 1.898131, 41 images), blocked at QA DESIGN pass 2 by the job cap ("cap: pe
   (the dry run: it lists the 16 rows and the job's spend after), then the same with `--apply`. A call the Console shows at another
   amount: `--entry <entryId> --usd <amount>` instead of `--job`.
 - The `settle:failed` script test writes `logs\settle-failed-<day>.log` in the dev checkout (git-ignored), as the script does.
+
+## L3: parallel lines, QA names files, research tune (owner decisions, 20–21/10/2026; built 21/10/2026)
+
+Built in the dev checkout only (mock provider, `STATION_INSTANCE=dev`, port 8792), $0, no real API call. Not deployed: a job is running
+on live. The live checkout was read once, read only: the two drafts of job `2026-10-21--research-1` in
+`data/research/drafts/2026-10-21/`.
+
+### The owner's decisions
+
+1. **Parallel lines** (20/10/2026): at most 1 running job per line (each line's `maxConcurrentJobs`) and at most 2 in total
+   (`runtime.maxRunningJobs` 2). A start on a line whose job is running waits as "next" for that line; a start beyond the total waits
+   as next as now. Every spend guard counts all running and queued jobs together (the daily cap check and the dialog's worst case of
+   open jobs, the per-run and per-job reservations, the OpenRouter key's USD 2/day, the Console monthly estimate), and reservations
+   stay safe when two jobs reserve at the same moment. The E-STOP halts every running job; Stop job stops only its own. The spend
+   dialog shows the other running job. A routine firing while another line's job runs starts alongside it within these limits; on the
+   same line it waits as next. In the office an agent working on either job sits at its desk; the lounge is for agents with no step in
+   any running job.
+2. **QA-DESIGN names the files** (21/10/2026): a revise carries the files to redraw as file ids (NN-subject) in the verdict's
+   structured fields, checked by the engine against the set's files; none, or an id not in the set, is refused back once with the
+   reason; still none: the job blocks with that reason instead of redrawing the whole set. W2's whole-set fallback is removed. The
+   QA-DESIGN prompt stays within its target.
+3. **Maintenance scripts never start the scheduler** (21/10/2026): settle:failed, settle:images and every other script that opens the
+   engine run with the scheduler and routines off, so no job can start from a script.
+4. **Research tune** (21/10/2026), from the first routine run on live (2 drafts, both rejected): EVIDENCE-CHECKER never records a
+   source as OPENED or NOT REACHABLE unless it tried it in this run (it fetches, at most 6 a run, or writes "not re-opened; URL and
+   price checked by the station against this job's search results"), enforced on write; the keyword rule is stated as the station
+   applies it (at least 3 distinct cited results across the whole Keywords list); DEMAND-RESEARCHER's evidence is for the
+   products.json product itself, from non-Etsy places that sell or discuss it, with no brief for a different product; a title cell
+   with a price never has "no price" in its price cell. Prompts within their caps; the IP-rule lines word for word.
+
+### What the two 21/10 drafts showed (read only)
+
+- `2026-10-21--cozy-cocoa-desk-props-planner-crafters`: evidence for planner and Goodnotes sticker sets (its own Risks: "the buyer
+  segment does not match the product"); rows 4 and 5 named prices in their titles (USD 1.99, USD 3.96) with "no price" in the price cell.
+- `2026-10-21--stream-overlay-asset-buyers`: evidence for stream overlay packs (animated and themed bundles), not the prop pack; row 5's
+  title said "packs from about USD 3 to 17" with "no price".
+- EVIDENCE-CHECKER made no web call in the run, yet wrote "NOT REACHABLE in this run" (or "OPENED / NOT REACHABLE") for every source
+  of both drafts, and applied the keyword rule per keyword (both drafts cite at least 3 distinct results across their Keywords lists:
+  5 and 4). Its product-mismatch rejection of both was right.
+
+### As built
+
+- **1. Parallel lines.**
+  - `config/engine.json` `runtime.maxRunningJobs` 2 (its comment); each line keeps `maxConcurrentJobs` 1. `orchestrator.startJob`
+    queues a start on a busy line as next for that line (`data.nextFor` "line", reason "one job at a time on the <line> line") and one
+    beyond the total as before (`nextFor` "total"); `startNext` starts each in queue order when a place frees on its line.
+  - `spend.mjs` `startCheck` is the one check of a start, used by the dialog, the server-side gate and a routine's firing. It counts
+    every open job (running, or queued to start by itself) at its worst case (its cap less its spend) in the daily cap, the line's day
+    cap and the Console estimate (this month's Anthropic rows + open jobs + this one; the dialog now refuses a start whose Console
+    worst case is over the limit). The quote carries `otherJobs` (id, line, running or next, step, spend so far, cap, worst case still
+    open), `console.worstUsd`, the OpenRouter day of every job, and `queue.nextFor`; the dialog shows them ("other job", "waits as
+    next for its line").
+  - `guard.mjs`: every check already counted every job's spend and reservations; `reserve()` is synchronous, so two jobs reserving at
+    once are checked one after the other (tested: three workers on two jobs, peak spent + reserved never over the day cap, every row
+    counted once). New: the OpenRouter key's day (`outerLimits.openrouterDailyUsd`, unchanged at USD 2) is mirrored for image calls:
+    every job's OpenRouter rows of the day plus the image reservations in flight; refused as `cap: openrouterDay`. The day is both the
+    UTC day and the Dublin day, the higher counting.
+  - The E-STOP's shared signal already reached every job; Stop job aborts only its own job's controller (both tested with two jobs).
+  - Routines (`engine.runRoutine`): a firing runs `startCheck` first; if the caps would not hold with every open job counted it is
+    skipped with the reason (logged on the routine); otherwise it starts alongside another line's job, or waits as next on its own line.
+  - The office (`engine-model.mjs`, `office.js`): each agent carries `onStep` (it has the current step or a live run in any running
+    job), `stepJobs`, `currentJobs` and `place`; the office seats `onStep` agents at their desks and every other agent in the lounge
+    (the legacy view, without `onStep`, keeps the old idle rule). `jobLimit.perLine` in the snapshot.
+- **2. QA DESIGN names the files.**
+  - The record's new field `redraw`: a list of file ids (`10-wooden-sled`; a trailing `.png` or a path is dropped). For a set review of
+    a style-reference product (the only product) the station gives QA DESIGN the set's ids (`setFileIds`: `set-vN/raw/NN-subject.png`;
+    02–N may be named, 01 is the approved style reference). `submit_verdict` checks a revise: no `redraw`, an empty one, an id not in
+    the set or file 01 is refused once with the reason and the ids it may name; a second bad revise is recorded with `redrawProblem`
+    and the job blocks at QA DESIGN with the reason ("asked for a revise without naming the files to redraw (...): nothing is redrawn;
+    the owner decides"). A QA run that ends with no verdict at all blocks the same way when a design loop is left. No loop is used.
+  - `flaggedPlan` takes the files from `redraw` (plus any file a build warning names and any file missing from the reviewed set); the
+    reasons still give each redrawn file its findings. `restOfSet` no longer falls back to the whole set: it blocks.
+  - QA DESIGN's input now says: list each file to redraw in the record's "redraw" field by its file id, with the set's first and last
+    id; refused once, then the job stops for the owner. Its prompt: the schema line `"redraw": [...]` and "each file to redraw in
+    `redraw`" in step 5; "You sit after the Designer and before the loop gate." removed to stay within the target: 10,493 of 10,500.
+- **3. Scripts.** `src/engine/script-engine.mjs` `openScriptEngine({ purpose, startsJobs })` is the only way a script opens the engine
+  (a test fails on any `createEngine(` under `scripts/`). The scheduler is locked (never starts, an e-stop release included; a routine
+  never fires: `fire` skips, `runRoutine` throws), restart recovery marks interrupted jobs but starts none, and the caller cannot turn
+  `startScheduler` or `resume` back on. Maintenance scripts (`settle:failed`, `settle:images`, `owner-brief`, `blocklist-hygiene`,
+  `smoke:live`) start no job at all (`startJob` refuses, code SCRIPT). Scripts that exist to run a job (`line:live`, `scout:live`,
+  `owner` run modes, the dry runs, the demo, the screenshot scripts) start only the jobs they start themselves; a queued "next" job they
+  did not start is never started when their job ends. `npm start` (the Station) is unchanged.
+- **4. Research tune.**
+  - `tools/index.mjs`: the URLs this run's `web_fetch` calls tried are kept (a refused fetch is not a try). A draft write (drafts/ or
+    scout-drafts/) whose `## Evidence check` marks a URL OPENED or NOT REACHABLE that this run did not fetch is refused with the
+    reason and the "not re-opened; ..." wording (`lib/scout-brief.mjs` `evidenceCheckProblems`). `limits.maxWebFetches` caps an agent's
+    fetches a run: EVIDENCE-CHECKER 6 of its 15 web calls (`config/agents/evidence-checker.json`); it already had `web_fetch`.
+  - `lib/scout-brief.mjs`, on an agent's write only (intake and older briefs unchanged): a research brief needs `product fit: same
+    product — ...` in its Demand evidence, and is refused when its Niche, Buyer persona, Demand evidence or Risks say the evidence is
+    for another product ("does not match the product", "different product", "product mismatch", ...); a row with "no price" whose title
+    shows a price (USD/EUR/GBP/CAD/AUD, $, € or £ and a figure) is refused, both lines. The keyword rule is unchanged (it was already
+    across the list).
+  - Prompts: EVIDENCE-CHECKER (12,440 characters): 6 fetches; OPENED / NOT REACHABLE only for a URL fetched in this run, else the
+    not-re-opened wording; fetch only SOURCES RETURNED URLs; a price in a title with "no price": REJECTED; PRODUCT FIT (a different
+    product: REJECTED, naming it); "the Keywords list as a whole cites at least 3 distinct results (the station rule: across the whole
+    list, not 3 per keyword; each keyword needs one cited result)". DEMAND-RESEARCHER (15,991 of 16,000): the PRODUCT FIT bullet in the
+    owner's words; to fit, step 3 now points to the format skill instead of repeating it, and the front-matter placement lines the
+    template already shows were dropped. GENRE BRIEF FORMAT (shared with TREND-SCOUT, now 15,072): "`no price` only when the result
+    shows none ... A price the result shows goes in the price cell, never only in the title" and the `product fit:` line (research
+    briefs). The IP-rule lines are unchanged, word for word (tested).
+  - Fixtures: the research fixture brief and the demo's research brief carry a `product fit:` line.
+- Tests: `tests/l3.test.mjs` 16 (the queue with a research and a design job running at once, a second design job next for its line, a
+  genre-scout job next for the total, both starting by themselves; the office seats; the daily, line-day and Console worst cases and the
+  dialog's other job; concurrent reservations; the OpenRouter day across jobs; E-STOP and Stop job; routines alongside, next and
+  skipped; the `redraw` ids and the refusal; scripts; NOT REACHABLE refused then accepted after the fetch; the 6-fetch cap; the keyword
+  rule; a mismatched-product draft not written; the title price; the prompts). `tests/w2.test.mjs`: the flagged-redraw test now names
+  its files in `redraw`; the whole-set test now expects the block; 2 new (refused once, then only the named file redrawn; a wrong id
+  twice, then blocked). `tests/l2-steer.test.mjs`: the Console line's new wording; the "next" queue test runs at a total of 1 (the
+  config is 2), and the snapshot's `jobLimit.perLine`.
+
+### Points for the owner
+
+- **Under the real caps two jobs still cannot both be open.** At USD 6.00 per job and USD 10.00 per day the worst case of a second
+  start is 6 + 6 = 12, so the dialog refuses it and a routine firing next to an open job is skipped with that reason. Parallel lines
+  take effect with a day cap of USD 12.00 (or once the open job has spent more than USD 2.00). The day cap was not changed. Say if it
+  should be USD 12.00. (Two jobs on different lines each have their own USD 10.00 line cap; two on the same line would also need it raised,
+  but they wait for each other in any case.)
+- **New refusal: the Console estimate.** The dialog now refuses a start whose worst case (this month's Anthropic rows + every open
+  job's worst case + this one) would pass `anthropicConsoleMonthlyUsd` (USD 200). An open job's worst case counts in full, images
+  included, so the estimate errs high. At USD 200 a month it bites only near the month's end.
+- **New refusal: the OpenRouter key's day in the engine.** An image call that would take every job's OpenRouter spend of the day past
+  USD 2.00 is now refused by the guard (`cap: openrouterDay`) instead of failing at OpenRouter. I did not check when OpenRouter resets
+  the key's day; the guard counts the UTC day and the Dublin day and uses the higher, so it never lets through a call the key could
+  refuse, but it may refuse one up to an hour before OpenRouter would allow it (21/10–25/10/2026 and in summer time).
+- **QA DESIGN's prompt is 7 characters under its 10,500 target**, DEMAND-RESEARCHER's 9 under the 16,000 clamp. The next change to
+  either needs a trim first.
+- **Product fit is still a judgement.** The engine refuses a research draft that does not say `product fit: same product` or that
+  admits another product in its own words; whether the cited results really sell the prop pack is DEMAND-RESEARCHER's call and
+  EVIDENCE-CHECKER's check. The genre-scout line is not changed (TREND-SCOUT writes genre briefs for the line's product key).
+- **"Tried" means the fetch was made**: a fetch the station refused (not a searched URL, a blocked domain, over the limit) is not a try,
+  so it cannot be recorded as NOT REACHABLE.
+- **The redraw ids apply to the style-reference product** (the only product). A product without a style reference has one design mode
+  (the whole set), so its revises need no ids.
+- **The office's lounge rule changed for one case**: an agent whose last run ended in an error but who has no step in a running job now
+  sits in the lounge (before: at its desk). Its desk light still shows the error colour.
+- **Not deployed.** Ship with `npm run deploy:live` once the job running on live has ended (the checks are in PROGRESS.md "L3").

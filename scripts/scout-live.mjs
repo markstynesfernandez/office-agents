@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadEnv } from '../src/lib/legacy-readers/common.mjs';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { effectiveAgent, MAX_NUDGES } from '../src/engine/runtime.mjs';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
 import { makeLogger } from '../src/server/log.mjs';
@@ -44,7 +44,7 @@ const J = createJail(), log = makeLogger({ dir: path.join(APP_ROOT, 'logs'), nam
 const out = (s) => console.log(log.redact(s));
 
 let engine;
-try { engine = createEngine({ J, log, startScheduler: false, resume: false }); }
+try { engine = openScriptEngine({ J, log, purpose: 'scout:live', startsJobs: true }); }
 catch (e) { console.error(log.redact('scout-live: the engine did not start: ' + e.message + (e.code === 'LOCKED' ? ' (the Station server holds the engine lock: stop it first)' : ''))); process.exit(1); }
 try {
   const { cfg, providers, halt, ledger, store, orchestrator } = engine;

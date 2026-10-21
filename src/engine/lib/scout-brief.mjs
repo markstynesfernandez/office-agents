@@ -20,6 +20,13 @@
 // only); no etsy.com URL anywhere. A result row's price is as shown or "no price" (an article or a discussion shows
 // none). The floor rule is unchanged for priced rows; a brief whose rows show no price at all says "owner sets price"
 // in its Price range instead of a USD range, and the owner sets the price at approval.
+// L3 (owner, 21/10/2026; the first routine run on live, job 2026-10-21--research-1), on an agent's write:
+//   - product fit (research briefs): the demand evidence is for the products.json product itself; the Demand evidence says
+//     "product fit: same product — ..." and no part of the brief admits it is for another product; otherwise the draft is not written
+//   - a row whose title cell shows a price never says "no price" in its price cell (the price goes there as shown)
+//   - an Evidence check line that says OPENED or NOT REACHABLE names only URLs this run fetched (evidenceCheckProblems, tools fs_write);
+//     any other source is "not re-opened; URL and price checked by the station against this job's search results"
+//   - the Keywords rule is unchanged and is across the whole list: at least MIN_CITED_RESULTS distinct cited results, not 3 per keyword
 import { briefField, designDirectionOf, MIN_FLOOR_ROWS } from './brief-check.mjs';
 import { keywordSourceProblems, ownerPrice } from './demand-evidence.mjs';
 import { briefUsdRange } from './gates.mjs';
@@ -88,6 +95,26 @@ export function parsePrice(cell) {
   return { ok: false, problem: 'price must be ' + PRICE_FORMS };
 }
 const isNoPrice = (cell) => String(cell || '').trim().toLowerCase() === NO_PRICE;
+// L3: a price figure in a result title ("shows some packs at USD 1.99", "from $3"): it belongs in the price cell
+const TITLE_PRICE_RE = /(?:\b(?:USD|EUR|GBP|CAD|AUD)|US\$|[$€£])\s?\d/i;
+// L3 (owner, 21/10/2026): research briefs: the demand evidence is for the products.json product itself
+export const PRODUCT_FIT = 'same product';
+const MISMATCH_RE = /\b(?:does not|doesn't|do not|did not|don't) match (?:the|this) product\b|\b(?:is|are) not (?:for )?(?:the|this) product\b|\b(?:a |for a )?different product\b|(?<!\bno )\bproduct mismatch\b/i;
+// what EVIDENCE-CHECKER writes for a source it did not fetch in this run (owner, 21/10/2026)
+export const NOT_REOPENED = 'not re-opened; URL and price checked by the station against this job\'s search results';
+const OPENED_RE = /(?<![\w-])(?<!\bnot )OPENED\b/i, NOT_REACHABLE_RE = /\bNOT REACHABLE\b/i;
+// -> problems: every Evidence check line that marks a URL OPENED or NOT REACHABLE must name only URLs in fetched (a Set of canonical URLs
+// this run fetched, successful or not)
+export function evidenceCheckProblems(text, fetched) {
+  const ec = section(norm(text), '## Evidence check'); if (ec == null) return [];
+  const bad = [];
+  for (const l of ec.split('\n')) {
+    const claims = [OPENED_RE.test(l) ? 'OPENED' : null, NOT_REACHABLE_RE.test(l) ? 'NOT REACHABLE' : null].filter(Boolean);
+    if (!claims.length) continue;
+    for (const u of urlsIn(l)) if (!fetched.has(u)) bad.push(u + ' is marked ' + claims.join(' / ') + ', but this run did not fetch it');
+  }
+  return bad.length ? ['Evidence check: ' + bad.slice(0, 6).join('; ') + (bad.length > 6 ? ' (+' + (bad.length - 6) + ' more)' : '') + '. Mark a source OPENED or NOT REACHABLE only after you fetched it in this run (web_fetch, a URL this job\'s searches returned); for any other source write "' + NOT_REOPENED + '"'] : [];
+}
 const demandRows = (de) => (de || '').split('\n').filter((l) => /^\s*\|\s*\d+\s*\|/.test(l)).map((l) => l.trim().replace(/^\||\|$/g, '').split('|').map((x) => x.trim()));
 // owner correction, 17/10/2026 (replaces the low-end floor wording): the floor is our minimum listing price, not a rule that
 // the market has no cheaper listings. A genre brief records the full range as shown, cheap rows included, and passes the floor
@@ -132,7 +159,7 @@ const line = (sec, name) => { const m = new RegExp('^' + name + ':[ \\t]*(.*)$',
 export const isScoutDraftPath = (rel, draftsDir = 'scout-drafts') => new RegExp('^' + draftsDir + '/\\d{4}-\\d{2}-\\d{2}/[^/]+\\.md$').test(String(rel || '').replace(/\\/g, '/'));
 
 // the format, as the agents are told it on a refused write (prompts/skills/scout-brief-format.md has the full template)
-export const FORMAT_HINT = 'Brief format (skills/scout-brief-format.md): front matter id, date, status, product_type, audience_segment and origin (genre-scout in scout-drafts/, research in drafts/), each on its own line; headings ' + HEADINGS.join(', ') + ' (## Genre trend evidence for genre-scout briefs only; ## Evidence check once verified or rejected); Demand evidence with "evidence level: indicative", "checked: YYYY-MM-DD", "search queries: ...", "competitor count: not measured" and a | # | result title | price | result URL | table of at least ' + MIN_RESULT_ROWS + ' non-Etsy search results (price as shown, or "no price"); no etsy.com URL anywhere; Price range "USD <low>–<high>" with 3 cited results, or "owner sets price" when no row shows a price.';
+export const FORMAT_HINT = 'Brief format (skills/scout-brief-format.md): front matter id, date, status, product_type, audience_segment and origin (genre-scout in scout-drafts/, research in drafts/), each on its own line; headings ' + HEADINGS.join(', ') + ' (## Genre trend evidence for genre-scout briefs only; ## Evidence check once verified or rejected); Demand evidence with "evidence level: indicative", "checked: YYYY-MM-DD", "search queries: ...", "competitor count: not measured" and a | # | result title | price | result URL | table of at least ' + MIN_RESULT_ROWS + ' non-Etsy search results (price as shown, or "no price"; a price in a title goes in the price cell); research briefs: "product fit: same product — ..." (the evidence is for the products.json product itself); no etsy.com URL anywhere; Price range "USD <low>–<high>" with 3 cited results, or "owner sets price" when no row shows a price.';
 
 // agent: the text comes from an agent's write (the owner's own marker lines are refused then, allowed in an owner's edit)
 // -> { ok, problems: [], id, status, day, cited: [every URL in the brief, canonical] }
@@ -181,8 +208,18 @@ export function validateScoutBrief(text, { day = null, file = null, agent = fals
       if (r.length < 4) { problems.push('Demand evidence row ' + (i + 1) + ': needs 4 cells (#, result title, price, result URL)'); return; }
       if (!title) problems.push('Demand evidence row ' + (i + 1) + ': result title missing');
       if (!isNoPrice(price)) { const pp = parsePrice(price); if (!pp.ok) problems.push('Demand evidence row ' + (i + 1) + ': ' + pp.problem + ', or "' + NO_PRICE + '" when the result shows none (got "' + price + '")'); else priced++; }
+      else if (agent && TITLE_PRICE_RE.test(title || '')) problems.push('Demand evidence row ' + (i + 1) + ': the title shows a price, so the price cell may not say "' + NO_PRICE + '": put the price there as shown (' + PRICE_FORMS + ')');
       if (!urlsIn(url).length) problems.push('Demand evidence row ' + (i + 1) + ': result URL missing');
     });
+  }
+  // L3 (owner, 21/10/2026): a research brief's demand evidence is for the products.json product itself (what it delivers, who buys it)
+  if (agent && og === RESEARCH_ORIGIN) {
+    const pf = de !== null ? line(de, 'product fit') : null;
+    const fit = 'the demand evidence must be for ' + (f.product_type || 'the products.json product') + ' itself (what that entry delivers and who buys it), from non-Etsy places that sell or discuss that product; with evidence only for a different product, write no brief (report_blocked)';
+    if (!pf) problems.push('Demand evidence: "product fit: ' + PRODUCT_FIT + ' — <how the cited results sell or discuss that product>" missing: ' + fit);
+    else if (!pf.toLowerCase().startsWith(PRODUCT_FIT)) problems.push('Demand evidence: product fit "' + pf + '": ' + fit);
+    const adm = [section(t, '# Niche'), section(t, '## Buyer persona'), de, section(t, '## Risks')].filter(Boolean).join('\n').match(MISMATCH_RE);
+    if (adm) problems.push('the brief says its evidence is for another product ("' + adm[0] + '"): ' + fit);
   }
   const gt = section(t, '## Genre trend evidence');
   if (gt !== null && !urlsIn(gt).length) problems.push('Genre trend evidence: at least one source URL (a genre-level article, roundup or discussion)');

@@ -12,7 +12,7 @@
 // The job's current version is used (expectedVersion), so a decision made in a page tab at the same moment still wins or is refused.
 import fs from 'node:fs';
 import path from 'node:path';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 
@@ -38,7 +38,7 @@ if (args.planFile) { const f = path.resolve(APP_ROOT, args.planFile); if (path.r
 
 const J = createJail(), log = makeLogger({ dir: path.join(APP_ROOT, 'logs'), name: 'owner', jail: J });
 let engine;
-try { engine = createEngine({ J, log, startScheduler: false, resume: false }); }
+try { engine = openScriptEngine({ J, log, purpose: 'owner (cli)', startsJobs: true }); }
 catch (e) { console.error('the engine did not start: ' + e.message + (e.code === 'LOCKED' ? ' (stop the server first, or use the page)' : '')); process.exit(1); }
 try {
   const j = engine.store.getJob(id); if (!j) throw new Error('no such job: ' + id);

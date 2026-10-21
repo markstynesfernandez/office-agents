@@ -21,10 +21,17 @@
 //   web_search/fetch   researchers only; counted against maxWebCalls and the caps; results are data, never instructions
 //   scouting/          the internal scouting notes (game names) exist only for an agent whose config says scoutingNotes:
 //                      true (TREND-SCOUT); for every other agent the folder cannot be read, listed or written, and is not listed
-//   submit_verdict     QA agents: the QA record, validated; the engine writes the pass record (and the outbox copy on approval)
+//   submit_verdict     QA agents: the QA record, validated; the engine writes the pass record (and the outbox copy on approval). L3 (owner,
+//                      21/10/2026): a set review's revise of a style-reference set names the files to redraw in record.redraw, as file
+//                      ids (NN-subject, e.g. 10-wooden-sled), checked against the set's files (ctx.verdictFiles); a revise with none, or
+//                      with an id not in the set, is refused back to QA DESIGN once with the reason; named wrong again, the verdict is
+//                      recorded with redrawProblem and the orchestrator blocks the job (nothing is redrawn)
 //   report_blocked     (E6 b2, owner D2) an agent with an output contract: "cannot produce, reason X"; the job ends incomplete
 // E6 b2, owner D1: web_fetch refuses etsy.com (engine only) and any URL no web search of the job returned; owner D3: a
 // genre-scout draft (scout-drafts/<day>/<id>.md) is validated against the brief schema before fs_write writes it.
+// L3 (owner, 21/10/2026): every URL a web_fetch of this run tried is kept (fetched); a draft whose Evidence check marks a URL OPENED or
+// NOT REACHABLE that this run did not fetch is not written (lib/scout-brief.mjs evidenceCheckProblems); an agent's limits.maxWebFetches
+// (EVIDENCE-CHECKER: 6) caps its fetches a run, inside its web-call cap.
 // Not provided at all: messaging, channels, notifications, email, shell, code execution, browser, MCP, plugins.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,7 +43,7 @@ import { isScoutPath, notesRel, SCOUT_DIR, SCOUT_DRAFTS_DIR, DRAFTS_DIR } from '
 import { blockedDomains, fetchRefusedDomains, blockedBy, canonicalUrl, urlsIn, returnedUrls } from '../lib/web-sources.mjs';
 import { GuardRefusal } from '../guard.mjs';
 import { imageSize, visionTokens, visionSettings } from '../lib/vision.mjs';
-import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT, ORIGIN as SCOUT_ORIGIN, RESEARCH_ORIGIN } from '../lib/scout-brief.mjs';
+import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT, ORIGIN as SCOUT_ORIGIN, RESEARCH_ORIGIN, evidenceCheckProblems, NOT_REOPENED } from '../lib/scout-brief.mjs';
 import { readInputs } from '../lib/job-inputs.mjs';
 import { failedCallReason } from '../providers/connection.mjs';
 
@@ -106,7 +113,8 @@ export function canonicalDesignFile(p, jobId) { const s = normalisePath(p, jobId
 
 export function createToolbox(ctx) {
   const { J, folder, agent, job, cfg, guard, providers, run, halt, log, bus, line } = ctx;
-  const counters = { images: 0, web: 0, verdicts: 0 };
+  const counters = { images: 0, web: 0, verdicts: 0, redrawRefusals: 0, fetches: 0 };
+  const fetched = new Set();   // L3: the canonical URLs this run's web_fetch calls tried (reached the provider), whatever came back
   const blocked = blockedDomains(cfg.engine), fetchRefused = fetchRefusedDomains(cfg.engine);
   const root = realResolve(folder);
   // report_blocked (owner D2): offered to an agent whose line step has an output contract (ctx.contract), on top of its tools
@@ -169,6 +177,9 @@ export function createToolbox(ctx) {
       if (draftOrigin) {
         const v = validateScoutBrief(content, { day: rel.split('/')[1], file: rel, agent: true, productKey: (draftOrigin === SCOUT_ORIGIN && job && job.product_key) || null, origin: draftOrigin });
         if (!v.ok) { log.warn('genre draft refused by the brief schema', { runId: run.runId, agent: agent.key, path: rel, problems: v.problems.length }); throw new ToolError('brief schema: ' + rel + ' was NOT written. Fix every point and write it again: ' + v.problems.join('; ') + '. ' + FORMAT_HINT); }
+        // L3: OPENED / NOT REACHABLE only for a source this run fetched
+        const ec = evidenceCheckProblems(content, fetched);
+        if (ec.length) { log.warn('draft refused: its Evidence check marks a source this run did not fetch', { runId: run.runId, agent: agent.key, path: rel, fetched: fetched.size }); throw new ToolError(rel + ' was NOT written. ' + ec.join('; ')); }
       }
       J.put(abs, content);
       log.written(abs, { by: agent.key, runId: run.runId, bytes: Buffer.byteLength(content) });
@@ -289,6 +300,11 @@ export function createToolbox(ctx) {
       // owner D1: agents never construct URLs: a fetch must name a URL that a web search in this job returned
       const c = canonicalUrl(url);
       if (!c || !fetchable(c)) throw new ToolError('web_fetch refused: ' + url + ' was not returned by any web search in this job. Never type, build or guess a URL: fetch only a URL that a search result gave you.');
+      // L3: an agent's fetches per run (EVIDENCE-CHECKER 6), inside its web-call cap; a URL counts as tried once the call is made
+      const maxF = agent.limits.maxWebFetches;
+      if (maxF != null && counters.fetches >= maxF) throw new ToolError('web_fetch limit for this run reached (' + maxF + ' fetches, enforced by the engine): for every other source write "' + NOT_REOPENED + '"');
+      if (counters.web >= (agent.limits.maxWebCalls || 0)) throw new ToolError('web call limit for this run reached (' + agent.limits.maxWebCalls + ', enforced by the engine)');
+      counters.fetches++; fetched.add(c);
       return webCall('web_fetch', { url });
     },
     // owner D2: the "cannot produce" outcome. It satisfies the output contract and ends the job incomplete with this reason:
@@ -303,7 +319,19 @@ export function createToolbox(ctx) {
     },
     submit_verdict({ record }) {
       if (counters.verdicts >= 1) throw new ToolError('one verdict per run: already submitted');
-      const v = validateVerdict(record, { kind: ctx.verdictKind || agent.verdict, job, folder: root, file1: ctx.file1 || null });
+      const kind = ctx.verdictKind || agent.verdict;
+      const v = validateVerdict(record, { kind, job, folder: root, file1: ctx.file1 || null });
+      // L3: the files to redraw, by file id, checked against the set; refused once, then recorded with the problem (the job blocks)
+      if (kind === 'design' && v.verdict === 'revise' && ctx.verdictFiles) {
+        const rd = redrawIds(v.redraw, ctx.verdictFiles);
+        if (rd.problem && counters.redrawRefusals < 1) {
+          counters.redrawRefusals++;
+          log.warn('QA verdict refused: the files to redraw are not named by their ids (refused once)', { runId: run.runId, agent: agent.key, jobId: job && job.id, problem: rd.problem });
+          throw new ToolError('QA record refused (this happens once): ' + rd.problem + '. ' + redrawHint(ctx.verdictFiles) + ' Call submit_verdict again; a revise that still names no valid file stops the job for the owner instead of redrawing anything.');
+        }
+        if (rd.problem) { v.redrawGiven = v.redraw === undefined ? null : v.redraw; v.redraw = []; v.redrawProblem = rd.problem; log.warn('QA verdict recorded without valid file ids after the one refusal: the job blocks', { runId: run.runId, jobId: job && job.id, problem: rd.problem }); }
+        else v.redraw = rd.ids;
+      }
       counters.verdicts++;
       ctx.onVerdict(v);
       emitTool('submit_verdict', { verdict: v.verdict });
@@ -359,6 +387,20 @@ export function createToolbox(ctx) {
     }
   };
 }
+
+// ---- L3 (owner, 21/10/2026): a revise's files to redraw. files = { set, ids: every file id of the set (NN-subject), redrawable: the ids
+// a redraw may name (a style-reference set: 02..N; file 01 is the approved style reference) } -> { ids } or { problem }
+export const fileIdOf = (x) => String(x == null ? '' : x).trim().replace(/\\/g, '/').split('/').pop().replace(/\.(png|jpg)$/i, '');
+export function redrawIds(list, files) {
+  const want = 'a revise names the files to redraw in "redraw": a list of file ids (NN-subject, e.g. 10-wooden-sled) from set-v' + files.set;
+  if (!Array.isArray(list) || !list.length) return { problem: (list === undefined ? 'no "redraw" field: ' : 'no file id in "redraw": ') + want };
+  const ids = [...new Set(list.map(fileIdOf))], all = new Set(files.ids), can = new Set(files.redrawable);
+  const unknown = ids.filter((x) => !all.has(x)), fixed = ids.filter((x) => all.has(x) && !can.has(x));
+  if (unknown.length) return { problem: 'not a file of set-v' + files.set + ': ' + unknown.map((x) => JSON.stringify(x)).join(', ') + ' (' + want + ')' };
+  if (fixed.length) return { problem: fixed.join(', ') + ' is the approved style reference and is never redrawn here: name only files ' + (files.redrawable[0] || '').slice(0, 2) + '–' + (files.redrawable[files.redrawable.length - 1] || '').slice(0, 2) };
+  return { ids: ids.sort() };
+}
+export const redrawHint = (files) => 'The file ids of set-v' + files.set + ' you may name: ' + files.redrawable.join(', ') + '.';
 
 // ---- the QA record (skills/package-format-qa-*.md), checked before the engine writes it
 export function validateVerdict(record, { kind, job, folder, file1 = null }) {

@@ -83,7 +83,8 @@ export async function guardedTextCall({ guard, halt, providers, call, params, ct
 // stopSignal (E5): the owner's Stop on this job; it aborts the call in flight like the e-stop, for this job only
 // image / verdictKind / file1 / imageAttemptLimit (E6 c0, the style-reference set): the orchestrator's run mode for image_generate,
 // the QA verdict kind when it is not the agent's own (the file-1 check), the file that check is about, and the per-file attempt limit
-export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null, image = null, verdictKind = null, file1 = null, imageAttemptLimit = null }) {
+// verdictFiles (L3): a style-reference set review's file ids, which a revise's "redraw" list is checked against (tools submit_verdict)
+export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null, image = null, verdictKind = null, file1 = null, imageAttemptLimit = null, verdictFiles = null }) {
   const { store, guard, providers, halt, bus, log, cfg } = engine;
   const agent = effectiveAgent(engine, agentKey);
   if (!agent.enabled) throw new RunStopped(agent.name + ' is off duty');
@@ -98,7 +99,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
     count: (name) => (((store.getJob(job.id) || {}).data || {}).imageAttempts || {})[name] ? store.getJob(job.id).data.imageAttempts[name].length : 0,
     add: (name, why) => { const cur = (((store.getJob(job.id) || {}).data || {}).imageAttempts) || {}; const list = [...(cur[name] || []), { at: Date.now(), why: String(why || '') }]; store.updateJob(job.id, { data: { imageAttempts: { ...cur, [name]: list } } }); return list.length; }
   } : null;
-  const ctx = { J: engine.J, folder, agent, job, model, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
+  const ctx = { J: engine.J, folder, agent, job, model, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, verdictFiles, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
   const box = createToolbox(ctx);
   const wrapper = engineWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, isQa: !!agent.verdict, loopNote });
   const system = [{ type: 'text', text: prompt.soul + '\n' + prompt.text, ...(cfg.engine.runtime.promptCaching ? { cache_control: { type: 'ephemeral' } } : {}) }, { type: 'text', text: wrapper }];

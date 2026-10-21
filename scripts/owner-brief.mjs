@@ -8,7 +8,7 @@
 // Needs the engine lock (stop the server first, or it refuses).
 import fs from 'node:fs';
 import path from 'node:path';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 import { isOwnerBrief, checkOwnerBrief } from '../src/engine/lib/owner-brief.mjs';
@@ -21,7 +21,7 @@ if (!isOwnerBrief(text)) { console.error('owner-brief refused: not an owner brie
 
 const J = createJail(), log = makeLogger({ dir: path.join(APP_ROOT, 'logs'), name: 'owner-brief', jail: J });
 let engine;
-try { engine = createEngine({ J, log, startScheduler: false, resume: false }); }
+try { engine = openScriptEngine({ J, log, purpose: 'owner-brief' }); }
 catch (e) { console.error('owner-brief: the engine did not start: ' + e.message + (e.code === 'LOCKED' ? ' (the Station server holds the engine lock: stop it first)' : '')); process.exit(1); }
 try {
   if (CHECK) {

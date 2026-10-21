@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { createEngineServer } from '../src/server/engine-server.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 import { loadConfig } from '../src/engine/config.mjs';
@@ -64,7 +64,7 @@ export async function dryRun({ shots: takeShots = shots, quiet = false } = {}) {
   };
   // the scripted agents write the listing text from the effective (patched) station config
   const script = createDryRunScript({ cfg: loadConfig({ configDir: path.join(APP_ROOT, 'config'), promptsDir: path.join(APP_ROOT, 'prompts'), overrides }).station });
-  const engine = createEngine({ J, log, script, overrides, hooks, startScheduler: true });
+  const engine = openScriptEngine({ J, log, script, overrides, hooks, purpose: 'dry-run', startsJobs: true });
   const { server, closeAll } = createEngineServer({ engine, log });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = 'http://127.0.0.1:' + server.address().port;

@@ -110,8 +110,8 @@
   "runtime": {
     "resumeOnRestart": 1,
     "maxConcurrentJobsPerLine": 1,
-    "$maxRunningJobsComment": "L2 (19/10/2026): at most this many jobs run at once on a Station instance started by npm start (live and dev), across every line; a further start waits in the queue as \"next\" and starts when a running job ends. Demo, dry runs and the line scripts are not limited by it (one job per line still applies everywhere). An engine setting, not a cap.",
-    "maxRunningJobs": 1,
+    "$maxRunningJobsComment": "L2 (19/10/2026): at most this many jobs run at once on a Station instance started by npm start (live and dev), across every line; a further start waits in the queue as \"next\" and starts when a running job ends. Demo, dry runs and the line scripts are not limited by it (one job per line still applies everywhere). An engine setting, not a cap. L3 (owner, 20/10/2026): 2, so two lines run side by side; each line still runs at most 1 job (config/lines/*.json maxConcurrentJobs), and a start on a line whose job is running waits as next for that line. Every spend check counts every running and queued job together (spend.mjs startCheck, guard.mjs).",
+    "maxRunningJobs": 2,
     "$confirmComment": "L2: every page action that can spend needs a confirm token from POST /api/spend/quote (single use, bound to the action and its parameters, valid confirmTtlMs).",
     "confirmTtlMs": 600000,
     "maxReadBytes": 200000,
@@ -137,7 +137,7 @@
     "notice": "The term 'Etsy' is a trademark of Etsy, Inc. This Application uses Etsy's API, but is not endorsed or certified by Etsy."
   },
   "outerLimits": {
-    "$comment": "L2: limits the owner sets OUTSIDE the engine, shown in the spend confirmation only; never caps (the engine's caps are under caps). anthropicConsoleMonthlyUsd: the Anthropic Console's monthly limit for the station workspace in USD (owner, 20/10/2026: USD 200, raised from USD 100; the org limit is USD 350, also raised by the owner on 20/10/2026), null = not configured; the dialog shows the limit less this Dublin month's Anthropic rows in the station ledger, labelled 'estimate from the station ledger; the Console is the authority'. openrouterDailyUsd: the OpenRouter key limit (owner, 17/10/2026).",
+    "$comment": "L2: limits the owner sets OUTSIDE the engine, shown in the spend confirmation; never caps (the engine's caps are under caps). L3 (owner, 20/10/2026): both are counted with every running and queued job together: the dialog refuses a start whose Console worst case (this month's Anthropic rows + every open job's worst case + this one) would pass anthropicConsoleMonthlyUsd, and the guard refuses an image call that would take every job's OpenRouter spend of the day (UTC day and Dublin day, the higher) plus the reservations in flight over openrouterDailyUsd; neither limit is changed here. anthropicConsoleMonthlyUsd: the Anthropic Console's monthly limit for the station workspace in USD (owner, 20/10/2026: USD 200, raised from USD 100; the org limit is USD 350, also raised by the owner on 20/10/2026), null = not configured; the dialog shows the limit less this Dublin month's Anthropic rows in the station ledger, labelled 'estimate from the station ledger; the Console is the authority'. openrouterDailyUsd: the OpenRouter key limit (owner, 17/10/2026).",
     "anthropicConsoleMonthlyUsd": 200,
     "openrouterDailyUsd": 2
   }

@@ -1,6 +1,7 @@
 // w2.test.mjs — W2 (owner, 20/10/2026), after the winter job's W1 report:
 //   1 a DESIGNER pass after a QA DESIGN revise redraws only the files the verdict names (and any a build warning names); the rest are
-//     copied into the new set byte for byte; the build and QA DESIGN still cover every file
+//     copied into the new set byte for byte; the build and QA DESIGN still cover every file. L3 (owner, 21/10/2026): the files are the
+//     record's "redraw" ids, and a revise without them blocks the job (the whole-set redraw is gone; tests/l3.test.mjs has the refusal)
 //   2 a Resume after a run failed mid-pass carries on the same set from the first file not yet done
 //   3 a dropped connection (no HTTP response) is retried like a 429/5xx, logged per attempt; after the last retry the run ends and the
 //     job is blocked (never handed back to the agent); 400 and 401 are never retried
@@ -134,7 +135,7 @@ test('1: after a QA DESIGN revise only the named files (and a build-warning file
         // a build warning on file 07 of the reviewed set (the station's near-white fill check), named by no reason
         const mf = path.join(dir, 'set-v' + set, 'deliverables.json'), m = JSON.parse(fs.readFileSync(mf, 'utf8'));
         fs.writeFileSync(mf, JSON.stringify({ ...m, buildWarnings: ['07-prop-7.png: 1 near-white fill(s), pure white or grey-white (generator px 1,1,2,2)'] }, null, 2));
-        return { verdict: 'revise', checks: CHECKS(['usable', 'briefFit']), worthThePrice: { verdict: 'fail', reason: 'two props are rough' },
+        return { verdict: 'revise', checks: CHECKS(['usable', 'briefFit']), worthThePrice: { verdict: 'fail', reason: 'two props are rough' }, redraw: ['03-prop-3', '10-prop-10.png'],
           reasons: ['usable 03-prop-3.png: a stray mark on the left edge', 'briefFit 10-prop-10: reads as the wrong object; also 01-steaming-mug.png stripe is rust, not cranberry', 'the outline weight drifts a little across the set', 'Checked and fine: files 02, 04, 05 and 12 at 2000x2000, as of 2026-10-19'] };
       }
       stopAt = 'lister';
@@ -168,26 +169,82 @@ test('1: after a QA DESIGN revise only the named files (and a build-warning file
   const md = fs.readFileSync(path.join(d, 'set-v3', 'design.md'), 'utf8');
   assert.match(md, /^## Station plan/m); assert.match(md, /### 05-prop-5\nprompt: winter desk prop 5, soft outline \(set-v2\)/, 'carried prompts kept'); assert.match(md, /### 03-prop-3\nprompt: winter desk prop 3, soft outline \(set-v3\)/);
   // QA DESIGN reviews the whole new set and is told how it was made; every review is told to name the files to redraw
-  assert.match(seen.qa[0], /\[STATION\] On revise, name each file to redraw by its file name \(NN-subject\.png\)/);
+  assert.match(seen.qa[0], /\[STATION\] On revise, list each file to redraw in the record's "redraw" field by its file id \(NN-subject, without \.png; this set: 02-prop-2 to 12-prop-12; 01 is the style reference and is never redrawn\)/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(d, 'qa', 'design-pass1.json'), 'utf8')).redraw, ['03-prop-3', '10-prop-10'], 'the ids as recorded (.png dropped)');
   assert.match(seen.qa[1], /\[STATION — set-v3 reworks set-v2 after QA DESIGN pass 1\] Redrawn for your findings: 03, 07, 10\. Carried unchanged \(copied byte for byte, same sha256\) from set-v2: 02-prop-2\.png, .*12-prop-12\.png\. Review EVERY file of the set as usual\./);
   assert.equal(JSON.parse(fs.readFileSync(path.join(d, 'qa', 'design-pass2.json'), 'utf8')).verdict, 'approved');
   assert.equal(engine.store.getJob(ID).data.designSet.status, 'drawn');
   assert.equal(engine.ledger.rowsForJob(ID).filter((x) => x.kind === 'image' && !x.correctionOf).length, 15);
 });
 
-test('1: a revise that names no file 02-12 (only file 01, or set-wide reasons) redraws the whole set, as before', async (t) => {
+test('1 (L3): a revise that names no file 02-12 (only file 01 in its reasons, no "redraw" ids) no longer redraws the whole set: the job blocks', async (t) => {
   await png();
   const seen = { designer: [], qa: [] };
-  const env = liveEngine(t, { tag: 'w2whole', hooks: { onStep: ({ job, step, phase, result }) => { if (step === 'designer' && phase === 'end' && result && result.next === 'prep' && job.loops.design === 1) engine.orchestrator.stopJob(job.id, { expectedVersion: engine.store.getJob(job.id).version }); } },
+  const env = liveEngine(t, { tag: 'w2whole',
     script: lineScript({ dir: () => env.jobDir(), seen, qaDesign: () => ({ verdict: 'revise', checks: CHECKS(['briefFit']), worthThePrice: { verdict: 'fail', reason: 'too dark overall' }, reasons: ['briefFit 01-steaming-mug.png: the palette is too dark for the brief', 'the set as a whole is too dark'] }) }) });
   const { engine, fetchImpl, addJob, jobDir } = env;
   addJob();
   const job = await engine.orchestrator.startJob(ID);
-  assert.equal(job.state, 'stopped', job.reason); assert.equal(job.step, 'prep');
-  assert.equal(fetchImpl.calls.length, 12 + 11, 'files 02-12 drawn again');
-  assert.deepEqual(seen.designer.filter((x) => x.set === 3).map((x) => x.files), [range(2, 7), range(8, 12)]);
-  assert.match(seen.designer.find((x) => x.set === 3).input, /^\[RUN MODE: REST OF SET — batch 1 of 2: files 02–07 of 12\]/);
-  assert.ok(!fs.existsSync(path.join(jobDir(), 'set-v3', 'rework.json')));
+  assert.equal(job.state, 'blocked', job.reason); assert.equal(job.step, 'qa-design');
+  assert.match(job.reason, /^QA DESIGN pass 1 asked for a revise without naming the files to redraw \(/);
+  assert.equal(fetchImpl.calls.length, 12, 'nothing drawn after the review');
+  assert.equal(seen.designer.filter((x) => x.set === 3).length, 0);
+  assert.ok(!fs.existsSync(path.join(jobDir(), 'set-v3')));
+  assert.equal((engine.store.getJob(ID).loops || {}).design || 0, 0, 'no design loop used');
+});
+
+// L3 (owner, 21/10/2026): QA DESIGN scripted per review; first(turn, rec, params) answers the first set review, the second approves
+function namingScript(env, seen, first) {
+  const base = lineScript({ dir: () => env.jobDir(), seen });
+  let reviews = 0;
+  return (ctx, params) => {
+    const input = String(params.messages[0].content);
+    if (ctx.agentKey !== 'qa-design' || /RUN MODE: FILE 1 CHECK/.test(input)) return base(ctx, params);
+    const turn = turnOf(params), set = Number(/DESIGN: work\/[^/]+\/set-v(\d+)\/deliverables\.json/.exec(input)[1]);
+    if (turn === 0) { reviews++; seen.qa.push(input); }
+    const rec = (extra) => ({ record: { stage: 'design', listingId: ctx.jobId, designFile: 'jobs/' + ctx.jobId + '/set-v' + set + '/deliverables.json', ...extra } });
+    if (reviews === 1) return first(turn, rec, params);
+    return turn === 0 ? { content: [tool('ok' + set, 'submit_verdict', rec(approve(env.jobDir(), set)))] } : { content: [{ type: 'text', text: 'verdict recorded' }] };
+  };
+}
+const REVISE5 = { verdict: 'revise', checks: CHECKS(['usable']), worthThePrice: { verdict: 'fail', reason: 'one prop is rough' }, reasons: ['usable 05-prop-5.png: the handle is cut off at the right edge'] };
+
+test('1 (L3): a revise without file ids is refused back to QA DESIGN once with the reason; named then, only those files are redrawn', async (t) => {
+  await png();
+  const seen = { designer: [], qa: [] }, replies = [];
+  let stopAt = null, qa = null;
+  const env = liveEngine(t, { tag: 'w2once', hooks: { onStep: ({ job, step, phase }) => { if (step === 'qa-design' && phase === 'end' && job.loops.design === 1) stopAt = 'lister'; if (stopAt && step === stopAt && phase === 'start') engine.orchestrator.stopJob(job.id, { expectedVersion: engine.store.getJob(job.id).version }); } },
+    script: (ctx, params) => (qa = qa || namingScript(env, seen, (turn, rec, p) => {
+      if (turn === 0) return { content: [tool('n1', 'submit_verdict', rec(REVISE5))] };
+      if (turn === 1) { replies.push(...lastResults(p)); return { content: [tool('n2', 'submit_verdict', rec({ ...REVISE5, redraw: ['05-prop-5'] }))] }; }
+      return { content: [{ type: 'text', text: 'verdict recorded' }] };
+    }))(ctx, params) });
+  const { engine, fetchImpl, addJob, jobDir } = env, d = jobDir();
+  addJob();
+  const job = await engine.orchestrator.startJob(ID);
+  assert.equal(job.state, 'stopped', job.reason); assert.equal(job.step, 'lister');
+  assert.equal(replies.length, 1); assert.equal(replies[0].is_error, true);
+  assert.match(String(replies[0].content), /^QA record refused \(this happens once\): no "redraw" field: a revise names the files to redraw in "redraw": a list of file ids \(NN-subject, e\.g\. 10-wooden-sled\) from set-v2\. The file ids of set-v2 you may name: 02-prop-2, 03-prop-3, .*12-prop-12\. Call submit_verdict again/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(d, 'qa', 'design-pass1.json'), 'utf8')).redraw, ['05-prop-5']);
+  assert.equal(fetchImpl.calls.length, 12 + 1, 'file 05 only');
+  assert.deepEqual(seen.designer.filter((x) => x.set === 3).map((x) => x.files), [[5]]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(d, 'set-v3', 'rework.json'), 'utf8')).redraw.map((x) => x.n), [5]);
+});
+
+test('1 (L3): a revise that names a file not in the set, and again after the refusal, blocks the job with the reason; nothing is redrawn', async (t) => {
+  await png();
+  const seen = { designer: [], qa: [] };
+  let qa = null;
+  const env = liveEngine(t, { tag: 'w2bad',
+    script: (ctx, params) => (qa = qa || namingScript(env, seen, (turn, rec) => (turn < 2 ? { content: [tool('b' + turn, 'submit_verdict', rec({ ...REVISE5, redraw: [turn ? '98-wooden-sled' : '99-nope'] }))] } : { content: [{ type: 'text', text: 'verdict recorded' }] })))(ctx, params) });
+  const { engine, fetchImpl, addJob, jobDir } = env;
+  addJob();
+  const job = await engine.orchestrator.startJob(ID);
+  assert.equal(job.state, 'blocked'); assert.equal(job.step, 'qa-design');
+  assert.match(job.reason, /^QA DESIGN pass 1 asked for a revise without naming the files to redraw \(not a file of set-v2: "98-wooden-sled" \(a revise names the files to redraw in "redraw": .*\)\): nothing is redrawn; the owner decides/);
+  const rec = JSON.parse(fs.readFileSync(path.join(jobDir(), 'qa', 'design-pass1.json'), 'utf8'));
+  assert.deepEqual([rec.verdict, rec.redraw, rec.redrawGiven], ['revise', [], ['98-wooden-sled']]);
+  assert.equal(fetchImpl.calls.length, 12); assert.ok(!fs.existsSync(path.join(jobDir(), 'set-v3')));
 });
 
 // ---- 2. Resume carries on the set in progress

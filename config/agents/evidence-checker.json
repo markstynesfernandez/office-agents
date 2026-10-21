@@ -1,5 +1,5 @@
 {
-  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/evidence-checker.md (+ the skills its front-matter names). tier: config/engine.json tiers. scout-drafts/: the genre-scout line's own drafts folder (owner 17/10/2026). The page may change enabled, tier and effort only.",
+  "$comment": "Agent config (ENGINE-PLAN.md §2.1). Prompt: prompts/agents/evidence-checker.md (+ the skills its front-matter names). tier: config/engine.json tiers. scout-drafts/: the genre-scout line's own drafts folder (owner 17/10/2026). limits.maxWebFetches (L3, owner 21/10/2026): at most 6 of its 15 web calls a run are web_fetch (engine-enforced); a source it did not fetch in the run is written 'not re-opened; URL and price checked by the station against this job's search results', never OPENED or NOT REACHABLE (refused on write). The page may change enabled, tier and effort only.",
   "key": "evidence-checker",
   "name": "EVIDENCE-CHECKER",
   "department": "RESEARCH",
@@ -23,6 +23,7 @@
     "maxTurns": 40,
     "maxOutputTokens": 8000,
     "maxWebCalls": 15,
+    "maxWebFetches": 6,
     "maxImages": 0
   },
   "color": "#d99a5a",

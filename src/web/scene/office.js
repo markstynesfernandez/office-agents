@@ -409,7 +409,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       for (const j of [0, 1]) { parts.upperArm.setColorAt(i * 2 + j, shirt); parts.forearm.setColorAt(i * 2 + j, skin); parts.hand.setColorAt(i * 2 + j, skin); parts.thigh.setColorAt(i * 2 + j, legs); parts.shin.setColorAt(i * 2 + j, legs); }
       setInst(light, i, x + 0.9, onTop + 0.05, z + 0.34); setInst(lightBase, i, x + 0.9, onTop, z + 0.34);
       const path = L.paths[agentId] || { seat: null, toLounge: null };
-      workers.push({ agentId, i, x, z, chair: ch, seat: path.seat != null ? L.lounge.seats[path.seat] : null, path: path.toLounge, len: path.toLounge ? pathLength(path.toLounge) : 0, phase: (i * 1.7) % (Math.PI * 2), status: a.status, place: 'desk', walk: null, yaw: 0, pick: null, style, hairI });
+      workers.push({ agentId, i, x, z, chair: ch, seat: path.seat != null ? L.lounge.seats[path.seat] : null, path: path.toLounge, len: path.toLounge ? pathLength(path.toLounge) : 0, phase: (i * 1.7) % (Math.PI * 2), status: a.status, onStep: a.onStep, place: 'desk', walk: null, yaw: 0, pick: null, style, hairI });
       // the screen: its own mesh (own texture), glow material at overview, canvas text when zoomed in or selected
       const tex = makeMonitorTexture();
       const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
@@ -459,8 +459,10 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (scr.instanceColor) scr.instanceColor.needsUpdate = true; if (lt.instanceColor) lt.instanceColor.needsUpdate = true;
   }
 
-  // ---- people: where each one should be (idle -> lounge seat, anything else -> desk) and the walk between
-  function wantPlace(w) { return w.status === 'idle' && w.seat && w.path ? 'lounge' : 'desk'; }
+  // ---- people: where each one should be and the walk between. L3 (owner, 20/10/2026; two jobs may run at once): an agent with a step in
+  // any running job (the engine snapshot's onStep) sits at its desk; every other agent goes to its lounge seat. A snapshot without onStep
+  // (the legacy view): idle -> lounge seat, anything else -> desk
+  function wantPlace(w) { const free = w.onStep === false || (w.onStep == null && w.status === 'idle'); return free && w.seat && w.path ? 'lounge' : 'desk'; }
   function syncPlaces(snap) {
     for (const w of workers) {
       const want = wantPlace(w);
@@ -591,7 +593,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const b = L.base; drop.scale.set(b.w * 1.2, 1, b.d * 1.2); drop.position.set(b.cx - 0.6, 0.004, b.cz + 0.2);
       renderer.shadowMap.needsUpdate = true;
     }
-    for (const w of workers) { const a = snap.agents.find((x) => x.id === w.agentId); if (a) { w.status = a.status; inst.light.setColorAt(w.i, new THREE.Color(PALETTE.status[a.status] || PALETTE.status.idle)); } }
+    for (const w of workers) { const a = snap.agents.find((x) => x.id === w.agentId); if (a) { w.status = a.status; w.onStep = a.onStep; inst.light.setColorAt(w.i, new THREE.Color(PALETTE.status[a.status] || PALETTE.status.idle)); } }
     if (inst.light && inst.light.instanceColor) inst.light.instanceColor.needsUpdate = true;
     syncPlaces(false); poseWorkers(performance.now() / 1000);
     for (const t of terminals) { const s = snap.services.find((x) => x.id === t.id); if (s) t.status = s.status; }

@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 import { readBlocklist } from '../src/engine/lib/scouting.mjs';
 import { createScoutScript, BAD_BRIEF_GAME } from '../fixtures/engine/scout-script.mjs';
@@ -29,7 +29,7 @@ export async function dryRunScout({ quiet = false } = {}) {
   const base = createScoutScript({ bad: true });
   const script = (ctx, params) => { const last = params.messages[params.messages.length - 1]; if (ctx.agentKey === 'trend-scout' && Array.isArray(last.content)) tools.push(...last.content.filter((b) => b.type === 'tool_result')); return base(ctx, params); };
   script.web = base.web;
-  const engine = createEngine({ J, log, script, startScheduler: false });
+  const engine = openScriptEngine({ J, log, script, purpose: 'dry-run:scout', startsJobs: true });
   try {
     if (engine.providers.mode !== 'mock') throw new Error('not on the mock provider');
     const rdir = path.join(J.dataRoot, 'research');

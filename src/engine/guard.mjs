@@ -8,6 +8,12 @@
 // A reservation is also written to data/ledger/pending/ before the call. If the process dies mid-call, the next start
 // charges that call at its reserved maximum (marked estimated), so a crash can never hide spend.
 // Days are Europe/Dublin calendar days. Caps come from config/engine.json only (DECISIONS.md Q7).
+// L3 (owner, 20/10/2026): two jobs may run at once (one per line). Every check counts every job's spend and every reservation in
+// flight, whichever job made it; reserve() is synchronous (no await between the check and the reservation), so two jobs reserving at
+// the same moment are checked one after the other: no double count, no overshoot. The OpenRouter key's own limit (outerLimits
+// openrouterDailyUsd, USD 2 a day, set by the owner outside the engine) is mirrored for image calls: every job's OpenRouter rows of
+// the day plus the reservations in flight; the day is both the UTC day and the Dublin day (the higher counts), so the engine never
+// lets a call through that the key's day could refuse.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -54,7 +60,7 @@ export function textMax(price, inputTokens, maxOutputTokens) {
   return r6((inputTokens * inMax + maxOutputTokens * p.outPerM) / 1e6);
 }
 
-export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = Date.now }) {
+export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = Date.now, outerLimits = {} }) {
   const reserved = new Map();
   const pendingDir = path.join(J.dataRoot, 'ledger', 'pending');
   const warned = new Set();
@@ -79,6 +85,19 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
   const jobCap = (l) => { const c = l && caps.perJobUsdByLine ? caps.perJobUsdByLine[l] : null; return c > 0 && c < caps.perJobUsd ? { cap: 'perJob[' + l + ']', limit: c } : { cap: 'perJob', limit: caps.perJobUsd }; };
   const reservedWhere = (pred, field = 'maxUsd') => [...reserved.values()].filter(pred).reduce((s, r) => s + (r[field] || 0), 0);
 
+  // L3: the OpenRouter key's day, every job together: its rows on the UTC day and on the Dublin day of now (the higher of the two)
+  const orLimit = () => (outerLimits && outerLimits.openrouterDailyUsd > 0 ? outerLimits.openrouterDailyUsd : 0);
+  function openrouterDay() {
+    const now = clock(), utc = new Date(now).toISOString().slice(0, 10), dub = dublinDay(now); let u = 0, d = 0;
+    for (const r of ledger.rows()) {
+      if (r.provider !== 'openrouter') continue;
+      const ts = r.correctionOf ? (r.correctsTs || r.ts) : r.ts, v = Number(r.usd) || 0;
+      if (new Date(ts).toISOString().slice(0, 10) === utc) u += v;
+      if (dublinDay(ts) === dub) d += v;
+    }
+    return { usedUsd: r6(Math.max(u, d)), reservedUsd: r6(reservedWhere((r) => r.provider === 'openrouter')), limitUsd: orLimit() || null, utcDay: utc, dublinDay: dub };
+  }
+
   // the caps a call is checked against, with what is spent and reserved against each
   function checks(call, day) {
     const S = ledger.spent, out = [];
@@ -88,6 +107,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     if (call.agentKey && agentCap(call.agentKey) > 0) out.push({ cap: 'perAgentDay[' + call.agentKey + ']', limit: agentCap(call.agentKey), used: S.agentDay(call.agentKey, day) + reservedWhere((r) => r.agentKey === call.agentKey) });
     if (call.line && lineCap(call.line) > 0) out.push({ cap: 'perLineDay[' + call.line + ']', limit: lineCap(call.line), used: S.lineDay(call.line, day) + reservedWhere((r) => r.line === call.line) });
     out.push({ cap: 'perDay', limit: caps.perDayUsd, used: S.day(day) + reservedWhere(() => true), required: true });
+    if (call.provider === 'openrouter' && orLimit() > 0) { const o = openrouterDay(); out.push({ cap: 'openrouterDay', limit: orLimit(), used: o.usedUsd + o.reservedUsd }); }
     return out;
   }
 
@@ -164,5 +184,5 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     return { day, caps, spentToday: r6(S.day(day)), reservedNow: r6(reservedWhere(() => true)), inFlight: reserved.size, imagesToday: S.imagesDay(day), ledgerOk: ledger.state.ok, ledgerError: ledger.state.error, halted: halt ? halt.isHalted() : false };
   }
 
-  return { reserve, settle, release, recoverPending, status, reservations: () => [...reserved.values()] };
+  return { reserve, settle, release, recoverPending, status, openrouterDay, reservations: () => [...reserved.values()] };
 }

@@ -7,7 +7,7 @@
 // The engine lock refuses while the server is running (stop it first). OPENROUTER_API_KEY comes from the shell or .env; no value is printed.
 import path from 'node:path';
 import { loadEnv } from '../src/lib/legacy-readers/common.mjs';
-import { createEngine } from '../src/engine/engine.mjs';
+import { openScriptEngine } from '../src/engine/script-engine.mjs';
 import { createJail, APP_ROOT } from '../src/engine/store/jail.mjs';
 import { makeLogger } from '../src/server/log.mjs';
 import { settleImageRows } from '../src/engine/lib/settle-images.mjs';
@@ -16,7 +16,7 @@ const apply = process.argv.includes('--apply');
 loadEnv(path.join(APP_ROOT, '.env'));   // fills only what the shell has not set; no value is printed
 const J = createJail(), log = makeLogger({ dir: path.join(APP_ROOT, 'logs'), name: 'settle-images', jail: J });
 let engine;
-try { engine = createEngine({ J, log, startScheduler: false, resume: false }); }
+try { engine = openScriptEngine({ J, log, purpose: 'settle:images' }); }
 catch (e) { console.error('the engine did not start: ' + e.message + (e.code === 'LOCKED' ? ' (stop the server first)' : '')); process.exit(1); }
 try {
   if (!engine.ledger.state.ok) throw new Error('the ledger is not ok: ' + engine.ledger.state.error);

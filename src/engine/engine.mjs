@@ -63,7 +63,7 @@ export function recover({ store, bus, log, resumeOnRestart = 1 }) {
   return out;
 }
 
-export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false, upscaler = null, limitJobs = false } = {}) {
+export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false, upscaler = null, limitJobs = false, scriptRun = null } = {}) {
   J = J || createJail({ dataRoot });
   const unlock = takeLock(J, log);
   useJail(J);   // the ported station modules write through this engine's jail
@@ -79,11 +79,14 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     const ledger = createLedger({ J, store, log });
     const bus = createBus({ J, log });
     const halt = createHalt({ J, bus, log });
-    const guard = createGuard({ J, ledger, halt, caps: cfg.engine.caps, pricing: cfg.engine.pricing, log, bus, clock });
+    const guard = createGuard({ J, ledger, halt, caps: cfg.engine.caps, pricing: cfg.engine.pricing, log, bus, clock, outerLimits: cfg.engine.outerLimits || {} });
     const recovered = guard.recoverPending();
     const rec = recover({ store, bus, log, resumeOnRestart: cfg.engine.runtime.resumeOnRestart });
     const prov = providers || createProviders({ mode: process.env.STATION_PROVIDER || cfg.engine.provider, script, delayMs: mockDelayMs, log, engineCfg: cfg.engine, halt, demo });
     const engine = { J, cfg, store, ledger, bus, halt, guard, providers: prov, log, clock, upscaler, recovered: { charged: recovered, ...rec } };
+    // L3 (owner, 21/10/2026): an engine opened by a script (script-engine.mjs): no scheduler, no routine, no resumed job; a maintenance
+    // script starts no job at all, any other only the jobs it starts itself (scriptRun.own)
+    if (scriptRun) { engine.scriptRun = { purpose: String(scriptRun.purpose || 'script'), startsJobs: scriptRun.startsJobs === true, own: new Set() }; startScheduler = false; resume = false; log.info('engine opened by a script: scheduler and routines off', { purpose: engine.scriptRun.purpose, startsJobs: engine.scriptRun.startsJobs }); }
     // L2: an instance started by npm start (limitJobs) runs at most runtime.maxRunningJobs jobs at once, across every line; others queue as next
     engine.maxRunningJobs = limitJobs ? (cfg.engine.runtime.maxRunningJobs ?? 1) : null;
     engine.orchestrator = createOrchestrator(engine, { hooks });
@@ -93,11 +96,16 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.owner = createOwnerActions(engine);   // the owner's decisions and owner-started mechanical steps (port batch 17/10/2026)
     // a routine fires a line (verified briefs, up to its daily limit) or a research batch; created disabled, enabled by the owner only
     engine.runRoutine = async (routine) => {
+      if (engine.scriptRun) throw new Error('no routine runs in an engine opened by a script (' + engine.scriptRun.purpose + ')');
       const cap = routine.per_run_cap_usd ?? null;
       const rl = /^line:(.+)$/.exec(routine.target), rline = rl && cfg.lines[rl[1]];
       // the product key is data (owner, 17/10/2026): a shipped routine carries it in config/routines.json (productKey);
       // any other routine uses the line's config default; the orchestrator checks it against products.json at start
       const seed = (cfg.routines || []).find((s) => s.id === routine.id);
+      // L3 (owner, 20/10/2026): a firing starts alongside another line's job within the job limits (on its own line it waits as next),
+      // and only when the day caps and the Console estimate hold with every open job's worst case counted (spend.startCheck)
+      const fits = (line) => { const c = engine.spend.startCheck({ line, headroomUsd: (cfg.engine.caps.perJobUsdByLine || {})[line] ?? cfg.engine.caps.perJobUsd }); return c.refusals.length ? 'the start would not fit: ' + c.refusals.join('; ') : null; };
+      if (rline) { const no = fits(rline.id); if (no) return { skipped: no }; }
       if (rline && rline.kind === 'research') { const r = engine.orchestrator.createResearchJob({ line: rline.id, input: routine.input || undefined, by: 'routine ' + routine.id, ...(seed && seed.productKey !== undefined ? { productKey: seed.productKey } : {}) }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
       if (routine.target === 'line:room1-digital') {
         // the oldest verified brief that has no job yet (owner Q13: once the owner enables a line routine); never a legacy one (E7a.1)
@@ -117,7 +125,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
       const t = engine.routineTargets.find((x) => x.id === routine.target); if (!t || !t.firstAgent) return null;
       return effectiveAgent(engine, t.firstAgent).enabled ? null : ((cfg.agents[t.firstAgent] || {}).name || t.firstAgent) + ' is off duty';
     };
-    engine.scheduler = createScheduler({ store, halt, ledger, caps: cfg.engine.caps, bus, log, clock, hold: routineHold, run: (routine) => (engine.runRoutine ? engine.runRoutine(routine) : Promise.reject(new Error('no routine runner'))) });
+    engine.scheduler = createScheduler({ store, halt, ledger, caps: cfg.engine.caps, bus, log, clock, hold: routineHold, locked: engine.scriptRun ? 'script: ' + engine.scriptRun.purpose : null, run: (routine) => (engine.runRoutine ? engine.runRoutine(routine) : Promise.reject(new Error('no routine runner'))) });
     if (startScheduler) engine.scheduler.start();
     engine.routines = routineAdmin(engine);
     engine.seededRoutines = seedRoutines(engine);

@@ -83,13 +83,13 @@ export function makeViewer({ browser, base, outDir, log, problems, fpsRows, benc
 async function engineMain(arg, headed) {
   if (process.env.STATION_PROVIDER && process.env.STATION_PROVIDER !== 'mock') throw new Error('engine screenshots run on the mock provider only (STATION_PROVIDER=' + process.env.STATION_PROVIDER + ')');
   const { createJail } = await import('../src/engine/store/jail.mjs');
-  const { createEngine } = await import('../src/engine/engine.mjs');
+  const { openScriptEngine } = await import('../src/engine/script-engine.mjs');
   const { createEngineServer } = await import('../src/server/engine-server.mjs');
   const outDir = String(arg('--out', 'e4')).replace(/^screenshots[/\\]/, '');
   fs.mkdirSync(outJail(outDir), { recursive: true });
   const J = createJail();
   const log = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-engine', jail: J });
-  const engine = createEngine({ J, log });
+  const engine = openScriptEngine({ J, log, purpose: 'screenshots', startsJobs: true });
   if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
   const { server, closeAll } = createEngineServer({ engine, log });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -156,10 +156,10 @@ async function main() {
   async function startEngineSide() {
     if (process.env.STATION_PROVIDER && process.env.STATION_PROVIDER !== 'mock') throw new Error('engine screenshots run on the mock provider only');
     const { createJail } = await import('../src/engine/store/jail.mjs');
-    const { createEngine } = await import('../src/engine/engine.mjs');
+    const { openScriptEngine } = await import('../src/engine/script-engine.mjs');
     const { createEngineServer } = await import('../src/server/engine-server.mjs');
     const J = createJail(), elog = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-engine', jail: J });
-    const engine = createEngine({ J, log: elog });
+    const engine = openScriptEngine({ J, log: elog, purpose: 'screenshots', startsJobs: true });
     if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
     const es = createEngineServer({ engine, log: elog });
     await new Promise((r) => es.server.listen(0, '127.0.0.1', r));

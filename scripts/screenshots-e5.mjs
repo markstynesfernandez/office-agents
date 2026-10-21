@@ -21,7 +21,7 @@ async function main() {
   const headed = !process.argv.includes('--headless'), outDir = String(arg('--out', 'e5'));
   fs.mkdirSync(outJail(outDir), { recursive: true });
   const { createJail } = await import('../src/engine/store/jail.mjs');
-  const { createEngine } = await import('../src/engine/engine.mjs');
+  const { openScriptEngine } = await import('../src/engine/script-engine.mjs');
   const { createEngineServer } = await import('../src/server/engine-server.mjs');
   const { loadConfig } = await import('../src/engine/config.mjs');
   const { makeLogger } = await import('../src/server/log.mjs');
@@ -36,7 +36,7 @@ async function main() {
   const FIX = path.join(ROOT, 'fixtures', 'engine'), rj = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
   const overrides = { productsFile: rj(path.join(FIX, 'products.json')), stationSet: rj(path.join(FIX, 'station-config-patch.json')).set };
   const station = loadConfig({ configDir: path.join(ROOT, 'config'), promptsDir: path.join(ROOT, 'prompts'), overrides }).station;
-  const engine = createEngine({ J, log, script: createDryRunScript({ cfg: station }), overrides, mockDelayMs: 220 });
+  const engine = openScriptEngine({ J, log, script: createDryRunScript({ cfg: station }), overrides, mockDelayMs: 220, purpose: 'screenshots-e5', startsJobs: true });
   if (engine.providers.mode !== 'mock') throw new Error('not on the mock provider');
   for (const id of [JOB_A, JOB_B]) J.put(path.join(J.dataRoot, 'research', 'briefs', id + '.md'), fs.readFileSync(path.join(FIX, 'briefs', id + '.md'), 'utf8').replace(/\{\{TODAY\}\}/g, dublinDay()));
   const es = createEngineServer({ engine, log });
@@ -180,7 +180,7 @@ async function main() {
 
     // fps: the overview on the station's own data root (engine mode, mock provider), light and dark
     const sJ = createJail(), slog = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-e5-station', jail: sJ, quiet: true });
-    const sEngine = createEngine({ J: sJ, log: slog });
+    const sEngine = openScriptEngine({ J: sJ, log: slog, purpose: 'screenshots-e5', startsJobs: true });
     if (sEngine.providers.mode !== 'mock') throw new Error('station engine not on the mock provider');
     const sEs = createEngineServer({ engine: sEngine, log: slog });
     await new Promise((r) => sEs.server.listen(0, '127.0.0.1', r));

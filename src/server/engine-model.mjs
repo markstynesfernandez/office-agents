@@ -164,9 +164,16 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
 
   // ---- agents
   const rows = ledger.rows();
+  // L3 (owner, 20/10/2026): two jobs may run at once (one per line). An agent with a step in ANY running job (its live run, or the job's
+  // current agent step) sits at its desk; the lounge is for agents with no step in any running job (the office's wantPlace)
+  const stepJobs = {};
+  for (const j of jobs.filter((x) => x.kind !== 'legacy' && x.state === 'running')) {
+    const def = stepDef(j, j.step) || {}, keys = new Set([...(def.kind === 'agent' && def.agent ? [def.agent] : []), ...j.hops.filter((h) => h.live).map((h) => h.agentId)]);
+    for (const k of keys) (stepJobs[k] = stepJobs[k] || []).push(j.id);
+  }
   const agents = agentsCfg.map((a) => {
     const st = store.agentState(a.key) || {}, version = st.version || 0, enabled = st.enabled == null ? a.enabled !== false : !!st.enabled, tier = st.tier || a.tier, effort = st.effort || a.effort;
-    const t = cfg.engine.tiers[tier] || {}, myRuns = runs.filter((r) => r.agent_key === a.key), last = myRuns[0] || null, live = running.find((r) => r.agent_key === a.key);
+    const t = cfg.engine.tiers[tier] || {}, myRuns = runs.filter((r) => r.agent_key === a.key), last = myRuns[0] || null, live = running.find((r) => r.agent_key === a.key), lives = running.filter((r) => r.agent_key === a.key);
     const todayRows = rows.filter((r) => r.agentKey === a.key && dublinDay(r.ts) === day);
     let status = 'idle', statusText = enabled ? 'idle' : 'off duty';
     const liveJob = live ? jobs.find((j) => j.id === live.job_id) : null;
@@ -181,6 +188,8 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
       color: a.color || null, gear: a.tools, tier, effort, enabled, version, tierModel: t.model || null, warnings: [], dept: deptOf[a.key] ? deptOf[a.key].key : null, deptName: deptOf[a.key] ? deptOf[a.key].name : null, desk, status, statusText,
       since: live ? live.started_at : last ? (last.ended_at || last.started_at) : null, services: live ? [providers.mode === 'mock' ? 'mock' : t.provider] : [], synthetic: false, syntheticWhat: null,
       currentJob: liveJob ? { id: liveJob.id, stage: liveJob.stage, stageLabel: liveJob.stageLabel, status: liveJob.status, pass: live.pass } : null,
+      // L3: every running job this agent has a step in (EVIDENCE-CHECKER can work on the research and the genre-scout line at once)
+      currentJobs: lives.map((r) => r.job_id).filter(Boolean), onStep: !!stepJobs[a.key], stepJobs: stepJobs[a.key] || [], place: stepJobs[a.key] ? 'desk' : 'lounge',
       lastOutput: last && last.status !== 'running' ? { text: last.status + (last.end_reason ? ' · ' + last.end_reason : '') + ' · ' + last.turns + ' turns · tools: ' + (last.tools.join(', ') || 'none'), at: last.ended_at, jobId: last.job_id } : null,
       spendToday: { usd: r6(todayRows.reduce((s, r) => s + r.usd, 0)), runs: new Set(todayRows.map((r) => r.runId)).size, date: day, label: 'calendar day ' + dmyOfDay(day) + ' (Dublin)' },
       lastRun: last ? { at: last.ended_at || last.started_at, reason: last.status, title: (last.step || '') + ' · ' + (last.job_id || ''), usd: last.usd } : null,
@@ -263,7 +272,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     briefs: engine.orchestrator ? engine.orchestrator.verifiedBriefs().map((b) => ({ file: b.file, id: b.id, niche: b.niche, status: b.status, product: b.product, jobId: b.jobId, legacy: b.legacy })) : [],
     // L2: the owner brief form (products.json: the file count from the spec, the floor, whether file 1 is a style reference) and the job limit
     ownerBriefForm: { products: formProducts(cfg.products, cfg.station), today: day },
-    jobLimit: { maxRunning: engine.maxRunningJobs || null, running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }
+    jobLimit: { maxRunning: engine.maxRunningJobs || null, perLine: Object.fromEntries(Object.values(cfg.lines).map((l) => [l.id, l.maxConcurrentJobs || 1])), running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }
   };
 }
 

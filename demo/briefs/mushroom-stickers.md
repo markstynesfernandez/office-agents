@@ -17,6 +17,7 @@ evidence level: indicative
 checked: {{TODAY}}
 search queries: mushroom sticker png
 competitor count: not measured
+product fit: same product — DEMO results sell sticker packs, the demo product (simulated data)
 | # | result title (as shown in the result) | price (as shown) | result URL |
 |---|---|---|---|
 | 1 | DEMO result 1 mushroom sticker png | USD 7.50 | https://market.example.com/demo/mushroom-sticker-1 |

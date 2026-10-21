@@ -25,6 +25,9 @@
 //   W2 (owner, 20/10/2026) after a QA DESIGN revise, only the files the verdict names (and any a build warning names) are redrawn; the
 //               rest are copied into the new set unchanged (set-vN/rework.json). The set being drawn is recorded on the job
 //               (data.designSet): a Resume after a run failed or was stopped mid-pass carries on that set from the first file not yet done.
+//   L3 (owner, 21/10/2026) QA DESIGN's revise names the files to redraw as file ids in its record ("redraw": NN-subject), checked against
+//               the set (tools submit_verdict, refused back once); a revise that still names none blocks the job for the owner: W2's
+//               whole-set redraw is gone.
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAgent, effectiveAgent } from './runtime.mjs';
@@ -193,17 +196,22 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  // ---- start: one job per line at a time, and (L2) at most engine.maxRunningJobs across every line on an instance started by npm start;
-  // returns the run promise (or null when it has to wait: the job stays queued as "next" and starts when a running job ends)
+  // ---- start: one job per line at a time (each line's maxConcurrentJobs, 1), and (L2) at most engine.maxRunningJobs across every line on an
+  // instance started by npm start (L3, owner 20/10/2026: 2, so two lines run side by side); returns the run promise (or null when it has to
+  // wait: the job stays queued as "next", for its line or for the total, and starts when a running job ends)
+  // L3: an engine opened by a script (script-engine.mjs) starts no job (a maintenance script) or only the jobs the script starts itself
   const queuedAt = (j) => (j.data && j.data.queuedAt) || j.updated_at || j.created_at || 0;
   function startJob(id) {
     const job = store.getJob(id); if (!job) throw new Error('no such job: ' + id);
     if (!['queued'].includes(job.state)) throw new Error('job ' + id + ' is ' + job.state + ', not queued');
     if (halt.isHalted()) throw new Error('e-stop is on');
+    const sr = engine.scriptRun;
+    if (sr && !sr.startsJobs) { const e = new Error('no job starts from this script (' + sr.purpose + '): it opens the engine for maintenance only'); e.code = 'SCRIPT'; throw e; }
+    if (sr) sr.own.add(id);
     const L = lineOf(job.line), cur = active.get(L.id), max = engine.maxRunningJobs || null;
-    if (cur && (L.maxConcurrentJobs || 1) <= 1) { setJob(id, { reason: 'next: waiting for ' + cur.jobId + ' (one job at a time on the line)', data: { autoStart: true, next: true, queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
-    if (max && active.size >= max) { const on = [...active.values()].map((a) => a.jobId); setJob(id, { reason: 'next: waiting for ' + on.join(', ') + ' (at most ' + max + ' job' + (max === 1 ? '' : 's') + ' running at a time)', data: { autoStart: true, next: true, queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
-    if (job.data && job.data.next) store.updateJob(id, { data: { next: false } });
+    if (cur && (L.maxConcurrentJobs || 1) <= 1) { setJob(id, { reason: 'next: waiting for ' + cur.jobId + ' (one job at a time on the ' + L.id + ' line)', data: { autoStart: true, next: true, nextFor: 'line', queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
+    if (max && active.size >= max) { const on = [...active.values()].map((a) => a.jobId); setJob(id, { reason: 'next: waiting for ' + on.join(', ') + ' (at most ' + max + ' job' + (max === 1 ? '' : 's') + ' running at a time)', data: { autoStart: true, next: true, nextFor: 'total', queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
+    if (job.data && job.data.next) store.updateJob(id, { data: { next: false, nextFor: null } });
     const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { blocklistOnEnd(id); active.delete(L.id); startNext(id); });
     active.set(L.id, { jobId: id, promise });
     return promise;
@@ -218,6 +226,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     for (const j of nextJobs(endedId)) {
       if (max && active.size >= max) return;
       if (active.get(j.line)) continue;
+      if (engine.scriptRun && !engine.scriptRun.own.has(j.id)) continue;   // L3: a script never starts a job it did not start itself
       try { startJob(j.id); } catch (e) { log.warn('next job not started', { jobId: j.id, error: e.message }); }
     }
   }
@@ -388,7 +397,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       if (product && usesStyleRef(product) && job.data.runMode && job.data.runMode.kind === 'redraw-only') return redrawFiles(job, def, pass, stopSignal, product);
       if (product && usesStyleRef(product)) return styleRefDesigner(job, def, pass, input, stopSignal, product, why);
     }
-    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart } });
+    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: research ? 'the research folder (' + draftsDirOf(L) + '/, briefs/, rejected/)' : 'the job folder of ' + job.id, input, loopNote, line: job.line, runCapUsd: job.data.runCapUsd ?? null, stopSignal, contract: outputContract(job, def), hooks: { onRunStart: hooks.onRunStart }, verdictFiles: step === 'qa-design' && !research ? setFileIds(job) : null });
     // owner D2: the agent said it cannot produce its outputs: the job ends incomplete with its reason, nothing downstream
     if (run.reportedBlocked && run.status === 'incomplete') {
       store.updateJob(job.id, { data: { reportedBlocked: { step, agent: def.agent, reason: run.reportedBlocked } } });
@@ -537,7 +546,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // W2 (owner, 20/10/2026):
   //   after a QA DESIGN revise  only the files the verdict names (NN-subject.png in its reasons) and any file a build warning of the
   //                             reviewed set names are redrawn ("flagged"); every other file is copied into the new set byte for byte
-  //                             (set-vN/rework.json records both). A verdict that names no file 02..N redraws the whole set, as before.
+  //                             (set-vN/rework.json records both). L3: the named files are the record's "redraw" ids; a verdict without
+  //                             them blocks the job (W2's whole-set redraw is removed).
   //   a set in progress         the set is recorded on the job (data.designSet, status "drawing") before anything is drawn; a run that
   //                             fails or is stopped mid-pass leaves it "drawing", and the Resume carries on THAT set: the files already
   //                             in its raw/ are kept, only the planned files not yet there are drawn. "drawn" once every batch is done.
@@ -552,8 +562,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
       let plan = { set: n, mode: 'rest', why: why || 'first', files: all, ref: ref.sha256 };
       if (why === 'qa-revise') {
         const fp = flaggedPlan(store.getJob(id), n, total);
-        if (fp.ok) plan = { ...plan, mode: 'flagged', from: fp.from, qaPass: fp.qaPass, files: fp.redraw, carry: fp.carry };
-        else log.info('QA DESIGN revise: the whole set is drawn again', { jobId: id, set: n, reason: fp.reason });
+        // L3 (owner, 21/10/2026): W2's whole-set fallback is removed: without the named files nothing is drawn and the owner decides
+        if (!fp.ok) { log.warn('QA DESIGN revise without the files to redraw: nothing is drawn, the job blocks', { jobId: id, set: n, reason: fp.reason }); return { blocked: 'QA DESIGN asked for a revise without naming the files to redraw (' + fp.reason + '): nothing is redrawn; the owner decides (a QA-only run, a redraw-only set, or the owner\'s set approval)' }; }
+        plan = { ...plan, mode: 'flagged', from: fp.from, qaPass: fp.qaPass, files: fp.redraw, carry: fp.carry };
       }
       store.updateJob(id, { data: { designSet: { ...plan, status: 'drawing', startedAt: Date.now() } } });
       ds = store.getJob(id).data.designSet;
@@ -598,10 +609,30 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   }
   function endDesignSet(id, n) { const ds = (store.getJob(id).data || {}).designSet; if (ds && ds.set === n && ds.status === 'drawing') store.updateJob(id, { data: { designSet: { ...ds, status: 'drawn', endedAt: Date.now() } } }); }
 
-  // the file numbers a QA text names: "NN-subject" (with or without .png), never a date or a size ("2026-10-19", "2000x2000")
+  // the file numbers a QA text names: "NN-subject" (with or without .png), never a date or a size ("2026-10-19", "2000x2000"); since L3 used
+  // for build warnings and to give each redrawn file its findings, never to decide what is redrawn (that is the record's "redraw" list)
   const NAMED_FILE = /\b(\d{2})-[a-z][a-z0-9-]*/gi;
   const namedNums = (t) => [...String(t || '').matchAll(NAMED_FILE)].map((m) => Number(m[1]));
+  // L3: the file ids of the newest set of a style-reference product (raw/NN-subject.png), for QA DESIGN's "redraw" list; null otherwise
+  function setFileIds(job) {
+    const { product } = productFor(dataRoot, job.id, productsOf(job.id)); if (!product || !usesStyleRef(product)) return null;
+    const n = latestSet(dataRoot, job.id); if (!n) return null;
+    const sd = path.join(jobDir(job.id), 'set-v' + n), dir = fs.existsSync(path.join(sd, 'raw')) ? path.join(sd, 'raw') : path.join(sd, 'files');
+    const ids = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => /^\d{2}-[a-z0-9][a-z0-9-]*\.(png|jpg)$/i.test(f)).map((f) => f.replace(/\.(png|jpg)$/i, '')).sort();
+    return { set: n, ids, redrawable: ids.filter((x) => Number(x.slice(0, 2)) >= 2) };
+  }
+  // L3: why a design revise cannot go back to DESIGNER (no valid "redraw" list on a style-reference set), or null
+  function redrawBlock(job, rec) {
+    const vf = setFileIds(job); if (!vf) return null;
+    if (rec.redrawProblem) return rec.redrawProblem;
+    if (rec.recordedBy === 'engine') return 'the QA run ended without a valid verdict, so no file was named';
+    if (!Array.isArray(rec.redraw) || !rec.redraw.length) return 'the revise names no file id in "redraw"';
+    const bad = rec.redraw.filter((x) => !vf.redrawable.includes(x));
+    return bad.length ? 'not a redrawable file of set-v' + vf.set + ': ' + bad.join(', ') : null;
+  }
   // what a QA DESIGN revise asks to redraw: -> { ok, from, qaPass, redraw: [n], carry: [names], ... } or { ok: false, reason }
+  // L3: the files are the record's "redraw" ids (checked when QA DESIGN submitted it), plus any file a build warning names and any file
+  // missing from the reviewed set; no list -> not ok (the job blocks: nothing is redrawn)
   function flaggedPlan(job, n, total) {
     const qp = ((job.data || {}).qaPasses || {}).design || (job.loops || {}).design || 0, rec = readJson(path.join(jobDir(job.id), 'qa', 'design-pass' + qp + '.json'));
     if (!rec || rec.verdict !== 'revise') return { ok: false, reason: 'no QA DESIGN revise record (qa/design-pass' + qp + '.json)' };
@@ -609,9 +640,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (from !== n - 1) return { ok: false, reason: 'the revise was on set-v' + from + ', not on the newest set-v' + (n - 1) };
     const src = new Map(rawFiles(path.join(jobDir(job.id), 'set-v' + from, 'raw')).map((f) => [numOf(f), f]));
     const warnings = (readJson(path.join(jobDir(job.id), 'set-v' + from, 'deliverables.json')) || {}).buildWarnings || [];
-    const texts = [...(Array.isArray(rec.reasons) ? rec.reasons : []), ...(rec.worthThePrice && rec.worthThePrice.reason ? [rec.worthThePrice.reason] : [])];
-    const named = new Set([...texts.flatMap(namedNums), ...warnings.flatMap(namedNums)].filter((k) => k >= 2 && k <= total));
-    if (!named.size) return { ok: false, reason: 'the verdict names no file 02–' + pad2(total) + (texts.some((t) => namedNums(t).includes(1)) ? ' (only file 01, the approved style reference)' : '') };
+    if (rec.redrawProblem || !Array.isArray(rec.redraw) || !rec.redraw.length) return { ok: false, reason: rec.redrawProblem || 'the verdict names no file to redraw in "redraw" (qa/design-pass' + qp + '.json)' };
+    const ids = rec.redraw.map((x) => numOf(String(x) + '.png')).filter((k) => k >= 2 && k <= total);
+    if (ids.length !== rec.redraw.length) return { ok: false, reason: 'the "redraw" list holds an id that is not a file 02–' + pad2(total) + ': ' + rec.redraw.join(', ') };
+    const named = new Set([...ids, ...warnings.flatMap(namedNums).filter((k) => k >= 2 && k <= total)]);
     for (let k = 2; k <= total; k++) if (!src.has(k)) named.add(k);   // a file missing from the reviewed set is drawn in any case
     const redraw = [...named].sort((a, b) => a - b), carry = [...src.entries()].filter(([k]) => k >= 2 && k <= total && !named.has(k)).sort((a, b) => a[0] - b[0]).map(([, f]) => f);
     return { ok: true, from, qaPass: qp, redraw, carry };
@@ -639,7 +671,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const { product } = productFor(dataRoot, job.id, productsOf(job.id)); if (!product || !usesStyleRef(product)) return '';
     const n = latestSet(dataRoot, job.id), rw = n ? readJson(path.join(jobDir(job.id), 'set-v' + n, 'rework.json')) : null;
     return (rw ? '\n\n[STATION — set-v' + n + ' reworks set-v' + rw.from + ' after QA DESIGN pass ' + rw.qaPass + '] Redrawn for your findings: ' + rw.redraw.map((r) => pad2(r.n)).join(', ') + '. Carried unchanged (copied byte for byte, same sha256) from set-v' + rw.from + ': ' + (rw.carried.map((c) => c.name).join(', ') || 'none') + '. Review EVERY file of the set as usual.' : '')
-      + '\n\n[STATION] On revise, name each file to redraw by its file name (NN-subject.png) in your reasons: only the files you name, and any file a build warning names, are redrawn; every other file goes into the next set unchanged.';
+      + '\n\n[STATION] On revise, list each file to redraw in the record\'s "redraw" field by its file id (NN-subject, without .png' + (() => { const vf = setFileIds(job); return vf && vf.redrawable.length ? '; this set: ' + vf.redrawable[0] + ' to ' + vf.redrawable[vf.redrawable.length - 1] + '; 01 is the style reference and is never redrawn' : ''; })() + '): only those files, and any file a build warning names, are redrawn; every other file goes into the next set unchanged. A revise without valid file ids is refused once; then the job stops for the owner.';
   }
 
 
@@ -666,6 +698,9 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (rec.verdict === 'approved') return { next: def.onApproved, note: 'approved (pass ' + n + ')' };
     const o = def.onRevise, used = (job.loops || {})[o.loop] || 0;
     if (mode && mode.kind === 'listing-only' && kind === 'listing' && used >= o.max) return { modeDone: 'listing-only run finished: QA LISTING pass ' + n + ' ' + rec.verdict + ', no rework left (the owner decides: a text fix, an owner listing approval, or a re-run)' };
+    // L3 (owner, 21/10/2026): a design revise that would go back to DESIGNER must name the files to redraw; without them the job blocks
+    // with the reason (nothing is redrawn, no loop is used)
+    if (kind === 'design' && used < o.max) { const nb = redrawBlock(job, rec); if (nb) { log.warn('QA DESIGN revise names no file to redraw: the job blocks', { jobId: job.id, pass: n, reason: nb }); return { blocked: 'QA DESIGN pass ' + n + ' asked for a revise without naming the files to redraw (' + nb + '): nothing is redrawn; the owner decides (a QA-only run, a redraw-only set, or the owner\'s set approval)' }; } }
     if (used < o.max) { store.updateJob(job.id, { loops: { [o.loop]: used + 1 } }); return { next: o.back, note: 'revise (pass ' + n + '): back to ' + o.back }; }
     const why = (kind === 'design' ? 'QA DESIGN' : 'QA LISTING') + ' did not approve after ' + (used + 1) + ' review(s) (' + o.loop + ' loop limit ' + o.max + '): ' + (rec.reasons || []).join('; ');
     store.updateJob(job.id, { data: { escalation: why } });

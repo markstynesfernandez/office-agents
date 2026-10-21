@@ -14,6 +14,7 @@ QA record schema (qa/design-passN.json and qa-design.json):
   "checks": { "originality": "pass|fail", "trademarks": "pass|fail", "etsyPolicy": "pass|fail", "briefFit": "pass|fail", "complete": "pass|fail", "usable": "pass|fail", "matchesSpec": "pass|fail", "worthThePrice": "pass|fail", "licence": "pass|fail" },
   "worthThePrice": { "verdict": "pass|fail", "reason": "one or two sentences" },
   "reasons": ["one short sentence per failed or borderline check"],
+  "redraw": ["revise only: each file id to redraw, e.g. 10-wooden-sled"],
   "reviewer": "QA DESIGN"
 }
 No timestamp field: reviewers have no clock.

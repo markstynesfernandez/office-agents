@@ -27,7 +27,8 @@ competitor count: not measured
 | # | result title (as shown in the result) | price (as shown) | result URL |
 |---|---|---|---|
 | 1 | <title as the result shows it> | USD 4.99 | <the URL the result gave> |
-(at least 3 rows, non-Etsy results only; price = the raw string exactly as the result showed it: `USD 4.99`; a sale `USD 7.49 (was 9.99)`; a range `USD 4.50–18.75`; or `no price` when the result shows none (an article or a discussion). A note such as "on sale" goes in the title cell. Every number must be one the results showed: the station checks it against the job transcript)
+(at least 3 rows, non-Etsy results only; price = the raw string exactly as the result showed it: `USD 4.99`; a sale `USD 7.49 (was 9.99)`; a range `USD 4.50–18.75`; or `no price` only when the result shows none (an article or a discussion). A price the result shows goes in the price cell, never only in the title. Every number must be one the results showed: the station checks it against the job transcript)
+product fit: same product — <research briefs: how the results sell or discuss the products.json product itself>
 
 ## Genre trend evidence
 - <URL a search returned> — what it shows about the genre as a whole (genre-scout briefs only)
