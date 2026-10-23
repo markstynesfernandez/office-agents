@@ -2597,3 +2597,56 @@ Correction to "Noted while reading": ReplyDesk is cloned at `C:\Users\marks\revi
 are untracked, never committed on any branch, and ignored. The repo already has a weekly drafts-only outreach routine (16
 `outreach/*` branches, US businesses, nothing sent according to its logs) that R3 must replace or absorb. Recorded in
 RESTRUCTURE.md §5.8, §8 R3 and §9 Q3; outreach rules per market, US rules still to be given by the owner.
+
+## R0.2: seven-floor company, executive penthouse (owner decision, 23/10/2026)
+
+Plan only: `RESTRUCTURE.md` updated throughout; no engine or app code changed, dev checkout, no API call, $0.
+
+### The owner's decision
+
+The Station is laid out as a miniature tech company (modelled on companies like Google and Meta), with Headquarters as the top-floor
+penthouse. Floors are display order only: records keep `product_id` and `department_id` and are never keyed on a floor number;
+existing Etsy data keeps `business_id` `etsy-shop`, only its display floor changes.
+
+- **6 Penthouse, Headquarters**: the owner's office (the requests queue), CEO, CTO, COO, COMPLIANCE; Finance stays a ledger
+  calculation shown here, not an agent.
+- **5 Security & Data**: SECURITY, ANALYST. **4 Engineering**: TECH-LEAD, DEVELOPER, REVIEWER, TESTER. **3 Product & Design**:
+  PRODUCT-MANAGER, DESIGNER. **2 Sales & Marketing**: LEAD-RESEARCHER, LEAD-CHECKER, OUTREACH-WRITER, CONTENT-WRITER. **1 Customer
+  Success**: ONBOARDING-GUIDE, SUPPORT-DRAFTER, RETENTION-ANALYST.
+- **G**: lobby, lounge, and the Etsy archive as a trophy room (history, live listings, the read-only Etsy connection; no
+  production; the eight Etsy agents archived, not deleted).
+- 19 active agents. The CEO ("virtual Mark") recommends only; locked in code, it can never approve, reject or act on a request,
+  change the autonomy policy, budgets or caps, or send anything outside the building; the owner is the only approver. The CTO owns
+  Engineering and Security & Data, orders the dev queue within the owner-approved roadmap, reviews large specs, may assign approved
+  issues (auto), cannot merge or deploy. The COO replaces OVERSEER (retired into it): daily operations report, budget and cap watch,
+  routines health, stuck-job triage; may pause a line on a breach (auto), never raise a cap. COMPLIANCE reports to the owner, not
+  the CEO; no one but the owner can override its verdict. TECH-LEAD replaces the plan's PRODUCT agent.
+- Reporting: Engineering and Security & Data to the CTO; Product & Design, Sales & Marketing and Customer Success to the CEO;
+  operations to the COO; every exec and COMPLIANCE to the owner. Every outbound or irreversible action still goes to the owner's
+  requests queue.
+- Phases: R1 engine core (incl. the locked rules, Etsy archived to G, OVERSEER → COO), R2 Engineering + CTO on ReplyDesk, R3
+  penthouse execs, R4 Product & Design, R5 Sales & Marketing (after legal advice, EU and US), R6 Customer Success and ANALYST (once
+  there are paying customers), R7 the 3D office (seven floors, 60 fps). Later-phase agents are in config as "not hired yet" and cost
+  nothing until their phase.
+- Models: Haiku for routine; Sonnet for DEVELOPER, REVIEWER, SECURITY, COMPLIANCE and the execs; Opus only on the owner's choice per
+  issue.
+
+### How the plan records it (proposals, nothing built until "go R1")
+
+- Locked rules in code (`RESTRUCTURE.md` §3.2): owner-only decide path, the CEO's fixed tool set, COMPLIANCE's independence, the COO
+  pause-only rule, and the forbidden items of the old §9 Q7 (now locked; the owner may strike any, new Q7).
+- New actions in the autonomy policy: `issue.assign`, `queue.prioritise`, `line.pause` (auto); `roadmap.approve`, `line.resume`,
+  `site.change` (owner); `request.decide.agent`, `policy/cap/budget.change.agent`, `compliance.override.agent` (forbidden, locked).
+- The CEO reads reports, roadmaps, Finance and ANALYST's aggregates, never tickets, customer records or named-contact drafts.
+- Weekly cost estimates (thinking off; workload stated in §8): R1 USD 0; R2 6.50–10.50; R3 0.70; R4 0.05–0.10; R5 0.90–1.80; R6 0.45;
+  R7 0; all running about USD 9–14.
+
+### Noted while planning
+
+- The archived Etsy DESIGNER owns the agent id `designer` (`config/agents/designer.json` and its records), so the new DESIGNER needs
+  another id: proposed `ux-designer`, shown as "DESIGNER" (§9 Q8).
+- Opus 5.5 has no price in `config/engine.json`, so the guard refuses it today; the owner adds verified prices before any Opus issue.
+- The owner's model rule puts TECH-LEAD, PRODUCT-MANAGER, OUTREACH-WRITER and CONTENT-WRITER on Haiku (earlier the plan had them on
+  Sonnet); flagged for confirmation (§9 Q8), with the cost of moving the writers to Sonnet in R5.
+- Stripe read-only and the product read-only interfaces move from the old R4 to R6 (with ANALYST); each is a GDPR decision recorded
+  before it is built.
