@@ -9,8 +9,13 @@ Owner decision, 23/10/2026 (**R0.2**): the Station is laid out as a **miniature 
 and Meta): seven floors, with Headquarters as the **top-floor penthouse** (the owner's office, CEO, CTO, COO, COMPLIANCE), five
 working floors below it, and the lobby with the Etsy archive as a trophy room on the ground floor. 19 active agents.
 
-This is a plan only (R0, R0.1 and R0.2, all 23/10/2026). No engine or app code changed. Nothing here is built until the owner
-answers §9 and says "go R1". Every cap, budget and cost below is a **proposal or an estimate**, marked as such; the owner sets caps
+Owner answers, 23/10/2026 (**R0.3**): most of the open questions are answered (§9 lists what was answered and what stays open).
+The ones that change the plan: R1 deploys on top of B0, which live already runs, with one migration; Docker isolation for checks;
+the engine never pushes; TECH-LEAD, PRODUCT-MANAGER and both writers on Sonnet; thinking on for DEVELOPER, REVIEWER and
+COMPLIANCE; ReplyDesk USD 60 a month and USD 3.00 per engineering job; a separate outreach mailbox and sending domain for R5.
+
+This is a plan only (R0, R0.1, R0.2 and R0.3, all 23/10/2026). No engine or app code changed. Nothing here is built until the owner
+says "go R1". Every cap, budget and cost below is a **proposal or an estimate**, marked as such; the owner sets caps
 (DECISIONS.md Q7).
 
 Contents: 0 what exists today · 1 org chart · 2 agents and models · 3 autonomy policy and locked rules · 4 ethics and law gates ·
@@ -43,8 +48,12 @@ gates (originality screens for images, the package gate, listing QA, Real-ESRGAN
 deleted: the Etsy work becomes the ground-floor trophy room (§1.1). W6, interrupted mid-build, is parked on branch `w6-wip` (it
 failed 2 of 512 tests; see DECISIONS.md "R0").
 
-Not deployed to live today: W4 (`d342d91`) and B0 (`df1a58d`). Live runs L3.1 (`9122435`). R1's migration must therefore start from
-a pre-B0 data root as well as a B0 one (§8, R1).
+**Live already runs B0** (corrected in R0.3; R0 and R0.2 said W4 and B0 were not deployed). Checked read-only on 23/10/2026: the
+live worktree is on branch `live` at `df1a58d` (B0, with W4 `d342d91` below it); `data/deploys.jsonl` records the deploy
+`9122435` → `df1a58d` at 21/10/2026 15:09 UTC (`--no-start`); `logs/migrate-businesses-2026-10-21.log` records `migrate:businesses`
+applied at 15:10 UTC (jobs 32, runs 47, routines 4, approvals 1, ledger mirror 509 rows; 0 unmapped in the dry run) with its backup at
+`data/.backups/businesses-20261021T151049Z`. Only the dev data root has not run `migrate:businesses`. So R1 deploys on top of B0 with
+one migration (`migrate:products`) from post-B0 data (§1.4, §8 R1).
 
 ---
 
@@ -99,7 +108,7 @@ Every job, run, ledger row, event, request (approval), lead, ticket, memo and ro
 | Product id | Name | Repo | Status |
 |---|---|---|---|
 | `replydesk` | ReplyDesk | `markstynesfernandez/Review-Service` (local clone: `C:\Users\marks\review-reply-service`, env `REPLYDESK_REPO`; main at `d03a9ab`) | active from R2; facts in §5.8 |
-| `emty-inbox` | emty-inbox (package name `inbox-copilot`) | `markstynesfernandez/emty-inbox` (local: `C:\Users\marks\projects\Emty-inbox`, read only for R0) | second; see §9 Q4 before any work |
+| `emty-inbox` | emty-inbox (package name `inbox-copilot`) | `markstynesfernandez/emty-inbox` (local: `C:\Users\marks\projects\Emty-inbox`, read only for R0) | second; synthetic data only, never Stellar or tenant data (owner, R0.3; §9) |
 | `etsy-shop` | TheStationShopFinds | n/a | archived (all history), shown on G |
 | `station` | the Station itself | this repo | HQ and station-wide records (today's "shared"), exec memos and reports |
 
@@ -120,21 +129,21 @@ department works on many products.
 | `allowedOutbound` + owner click | the autonomy policy (§3); the one existing outbound action `etsy:read-own-shop` becomes the action `etsy.read-own-shop` (owner, archived product) |
 | `ownerApprovalRequired: true` (cannot be false) | kept as a building invariant: anything "owner" in the policy can never be lowered to "auto" by a product override |
 | `business_id` column on jobs, runs, routines, approvals, ledger mirror | `product_id` + `department_id` columns; `business_id` kept, read only, for one release (Etsy rows keep `etsy-shop`) |
-| `config/building.json` `foreignDataMarkers` | kept unchanged (see §9 Q4 for emty-inbox) |
+| `config/building.json` `foreignDataMarkers` | kept unchanged (emty-inbox: synthetic data only, §9.1 Q4) |
 | `business.mjs` building check | `building.mjs`: a floor used once (display), an agent in exactly one department, a line in one department, a product id on every product-department job, a product override never looser than the station policy, every locked rule intact (§3.2), COMPLIANCE `reportsTo` the owner, every agent `active`, `not-hired` or `archived`; failure stops the engine with the reason (as B0) |
 | `config/products.json` (Etsy product specs) | moved to `config/archive/etsy/products.json` so `config/products/` is unambiguous |
 | `config/agents/overseer.json` | `retired: true, retiredInto: "coo"`; history keeps agent `overseer`; the COO is a new agent id |
 
 **Agent ids.** The new UX DESIGNER cannot reuse the id `designer`: the archived Etsy DESIGNER owns it (`config/agents/designer.json`
 and every Etsy record). Proposal: the new agent's id is `ux-designer`, shown as "DESIGNER"; the archived one keeps `designer`
-(§9 Q8). Every other new id is the lower-case name (`ceo`, `cto`, `coo`, `tech-lead`, `product-manager`, …).
+(owner: accepted, R0.3). Every other new id is the lower-case name (`ceo`, `cto`, `coo`, `tech-lead`, `product-manager`, …).
 
 **Migration** (`npm run migrate:products`, the B0 pattern): dry run by default; `--apply` takes a full backup first
 (`data/.backups/products-<stamp>/`, SQLite `VACUUM INTO`, nothing deleted), adds the columns, sets every empty value in one
 transaction, logs every change, checks nothing is left, holds the engine lock, is idempotent (a second run changes nothing and takes
-no backup), and refuses to apply while any record cannot be mapped. It accepts a **pre-B0 root** (it runs B0's mapping first, in
-the same transaction) and a B0 root, so live can go from L3.1 straight to R1 with one migration. Mapping: every Etsy record
-(`etsy-shop`, or pre-B0 with an Etsy line or agent) → product `etsy-shop`, department `etsy`; "shared" → product `station`,
+no backup), and refuses to apply while any record cannot be mapped. It takes a **post-B0 root** only (live is one, §0): a pre-B0
+root is refused with the reason "run `migrate:businesses` first" (the dev data root does that before R1's dry runs). Mapping: every Etsy record
+(`business_id` `etsy-shop`) → product `etsy-shop`, department `etsy`; "shared" → product `station`,
 department `hq`; OVERSEER's history stays under agent `overseer`, department `hq`. No floor number is written to any record. The
 ledger and event JSONL files stay append-only and are resolved on read, as B0 does. The old `approvals` table is kept read only for
 the Etsy history; new requests go to a new table (§3), so a rollback to older code still finds its own table.
@@ -168,8 +177,8 @@ the Etsy history; new requests go to a new table (§3), so a rollback to older c
 
 ### 2.2 Every agent (19 active)
 
-Caps are **proposals** (the owner decides, §9 Q8): the station's run cap stays USD 2.00 unless a lower one is stated; department job
-caps are in §8. "Phase" is when the agent is hired; before that it is in config as `"status": "not-hired"`, the engine refuses to
+Caps: the engineering job cap is **USD 3.00** (owner, R0.3); every other cap here is a **proposal** (§9.2 item 3): the station's run cap
+stays USD 2.00 unless a lower one is stated; department job caps are in §8. "Phase" is when the agent is hired; before that it is in config as `"status": "not-hired"`, the engine refuses to
 run it, its desk is shown empty with a "not hired yet" label, and it costs nothing.
 
 | Agent | Floor / dept | Reports to | Purpose | Tools | Limits (proposed) | Inputs → outputs | Phase |
@@ -198,40 +207,44 @@ No agent has a send, post, merge, deploy, push, shell or browser tool. Pushing, 
 are done by the engine's own executors (or by the owner by hand), never by an agent (§3). `line_pause` and `metrics_read` are
 engine-executed tools with declared actions (§3), named to stay outside `FORBIDDEN_TOOL_RE`.
 
-### 2.3 Models and thinking (proposals; the owner decides, §9 Q8)
+### 2.3 Models and thinking (owner decisions R0.2 and R0.3, 23/10/2026)
 
 Model tiers are today's (`config/engine.json` `tiers`): **cheap** = Claude Haiku 5.5, **strong** = Claude Sonnet 5.5. Config prices:
 Haiku USD 0.10 / 0.50 per M input / output (cache read 0.01; above 100k input tokens 0.50 / 2.50), Sonnet USD 2 / 10 (cache read
 0.10, cache write 2.50). Today every agent's thinking is "off" (owner D2; on Sonnet "off" is sent as `between_tools`). "Default"
 means no thinking field: the model's adaptive thinking.
 
-Rule from the owner's instruction: **Haiku for routine work; Sonnet for DEVELOPER, REVIEWER, SECURITY, COMPLIANCE and the execs;
-Opus only on the owner's choice, per issue.**
+Rule (R0.2): **Haiku for routine work; Sonnet for DEVELOPER, REVIEWER, SECURITY, COMPLIANCE and the execs; Opus only on the
+owner's choice, per issue.** R0.3 moves **TECH-LEAD, PRODUCT-MANAGER, OUTREACH-WRITER and CONTENT-WRITER to Sonnet** (a bad issue
+breakdown wastes DEVELOPER runs, and the writers' text goes outside the company): about **USD 2 a week, about USD 8 a month** more
+at the §8 workload (TECH-LEAD +0.55, PRODUCT-MANAGER +0.40, OUTREACH-WRITER +0.85, CONTENT-WRITER +0.10 a week). R0.3 turns
+thinking **on** ("default") for **DEVELOPER, REVIEWER and COMPLIANCE**; every other agent stays "off".
 
 | Agent | Model | Effort | Thinking | Reason |
 |---|---|---|---|---|
-| CEO | Sonnet | medium | default | weighs trade-offs across products and costs; once a week, so thinking costs little |
-| CTO | Sonnet | medium | default | architecture judgement on large specs; low volume |
+| CEO | Sonnet | medium | off | weighs trade-offs across products and costs; once a week |
+| CTO | Sonnet | medium | off | architecture judgement on large specs; low volume |
 | COO | Sonnet | low | off | a daily structured report from engine metrics; the judgement is in triage, which is short |
-| COMPLIANCE | Sonnet | medium | default | legal and ethical judgement on outbound text; a missed problem costs far more than the tokens |
-| SECURITY | Sonnet | medium | default | finding a vulnerability or a leaked secret in a diff needs careful reading |
-| DEVELOPER | Sonnet | medium | default | the hardest work; thinking reduces rework loops, which cost more than the thinking |
-| REVIEWER | Sonnet | medium | default | catching wrong logic against a spec |
-| TECH-LEAD | Haiku | medium | off | routine spec writing from an approved issue; CTO reviews large specs; see §9 Q8 |
+| COMPLIANCE | Sonnet | medium | **default** | legal and ethical judgement on outbound text; a missed problem costs far more than the tokens |
+| SECURITY | Sonnet | medium | off | reading a diff for vulnerabilities and secrets, behind the mechanical secret and dependency gates |
+| DEVELOPER | Sonnet | medium | **default** | the hardest work; thinking reduces rework loops, which cost more than the thinking |
+| REVIEWER | Sonnet | medium | **default** | catching wrong logic against a spec |
+| TECH-LEAD | Sonnet | medium | off | a bad issue breakdown wastes DEVELOPER runs (R0.3) |
+| PRODUCT-MANAGER | Sonnet | medium | off | roadmaps and issues others build on (R0.3) |
+| OUTREACH-WRITER, CONTENT-WRITER | Sonnet | low | off | text that goes outside the company (R0.3) |
 | TESTER | Haiku | low | off | runs checks and reports results |
-| PRODUCT-MANAGER | Haiku | medium | off | structured drafting; the owner approves the roadmap |
 | DESIGNER | Haiku | medium | off | text specs for flows and copy; no images |
 | LEAD-RESEARCHER, LEAD-CHECKER | Haiku | low | off | search and verification |
-| OUTREACH-WRITER, CONTENT-WRITER | Haiku | low | off | short drafts behind the mechanical gate, COMPLIANCE and the owner; see §9 Q8 |
 | ONBOARDING-GUIDE, SUPPORT-DRAFTER | Haiku | low | off | short drafts behind COMPLIANCE and the owner |
 | RETENTION-ANALYST, ANALYST | Haiku | low | off | aggregates the engine has already computed |
 
 **Opus per issue**: the owner may set `model: opus` on one issue (on its intake or request card); it applies to that issue's
-DEVELOPER run only. The guard refuses any model without a price, and Opus 5.5 has none in `config/engine.json` today, so the owner
-must first add its verified prices (§9 Q8). Nothing else can choose Opus.
+DEVELOPER run only. The guard refuses any model without a price, and Opus 5.5 has none in `config/engine.json` today. Its prices
+are added **only from Anthropic's official pricing page** (`https://platform.claude.com/docs/en/about-claude/pricing`, the source the
+existing prices cite), with the date and who verified them, before any Opus issue (R0.3). Nothing else can choose Opus.
 
-The weekly estimates in §8 assume thinking **off** (as today); "default" on the seven Sonnet agents above adds output tokens,
-estimated at +20–50% on those agents' cost. Each phase's first live runs measure the real figure.
+The weekly estimates in §8 assume thinking **off**; "default" on DEVELOPER, REVIEWER and COMPLIANCE adds output tokens, estimated at
++20–50% on those three agents' cost (§8 gives the figure). Each phase's first live runs measure the real figure.
 
 ### 2.4 Retired (archived, not deleted)
 
@@ -288,7 +301,7 @@ Owner's office and the job waits) or **`forbidden`** (refused, logged, the job b
 | `line.resume` | owner | the owner, on the page |
 | `email.send.prospect` | owner | the owner sends from their own mailbox (R5); an engine sender later only on a separate decision |
 | `email.send.customer`, `support.reply.send` | owner | as above |
-| `git.push.branch` (push `dev/<job-id>` to the product repo, open a PR) | owner | engine (refspec `dev/<job-id>` only), §9 Q6 |
+| `git.push.branch` (any push to a product repo, by the engine or an agent) | forbidden (owner, R0.3) | — the owner pulls `dev/<job-id>` from the Station's mirror |
 | `git.merge` | owner | **the owner, by hand on GitHub**; the Station holds no credential that can merge |
 | `deploy` | owner | **the owner, by hand**; the Station holds no deploy credential |
 | `site.change` (any change to a live site or app outside a merge) | owner | the owner |
@@ -333,7 +346,7 @@ start** and says which rule and which file. Changing one needs a code change, it
    (`cap.change.agent`, `budget.change.agent`).
 5. **The legal and safety "forbidden" items** marked locked in §3.1: `secrets.read`, `personal-data.scrape`, `review.fake`,
    `account.fake`, `claim.misleading`, `git.merge.agent`, `deploy.agent`, `email.send.agent` (R0.2 reads the owner's "legal
-   forbidden items" as this list, which was §9 Q7; the owner may strike any that should stay configurable).
+   forbidden items" as this list, the old §9 Q7; confirmed as is by the owner, R0.3).
 6. **`ownerApprovalRequired`** (B0's invariant): nothing at `owner` can be lowered to `auto` by a product override.
 
 ---
@@ -353,7 +366,7 @@ invented figures); `foreignDataMarkers` (§1.4); AI disclosure line present wher
 **COMPLIANCE checks** (judgement): truthful, not misleading by omission; no pressure tactics; respectful tone; AI disclosure where
 relevant (the EU AI Act's transparency duties under Article 50 apply from 2 August 2026 to systems that interact with people and to
 some AI-generated content; COMPLIANCE flags where they bite, e.g. ReplyDesk's own generated review replies; the exact scope is a
-question for legal advice, §9 Q9).
+question for legal advice, §9.2 item 5).
 
 **Sales outreach in Ireland and the EU (GDPR and ePrivacy)**. This is the plan's rule set, **to be confirmed by legal advice before
 R5 runs live** (the Irish ePrivacy Regulations, S.I. 336/2011 Regulation 13, treat email marketing to individuals and to corporate
@@ -369,9 +382,11 @@ subscribers differently, and other EU states are stricter for B2B email, e.g. Ge
    segment (owner-approved), the source URL and the date seen.
 4. **Article 14 notice in the first message**: who we are, where we found the address, why we write, how to object.
 5. **An opt-out in every message**, honoured at once by the owner's action and recorded by the engine.
+   Outreach is sent from a **separate outreach mailbox on a separate sending domain** (owner, R0.3, for R5), so replies, opt-outs
+   and any deliverability damage stay away from the owner's mailbox and the products' own email.
 6. **Suppression list honoured forever**: an objection or opt-out adds the address (stored as a keyed hash plus the date, the minimum
    needed to honour it) to `crm.suppression`; the gate refuses any lead or draft that matches; there is no tool to remove an entry.
-7. **Retention**: an unconverted lead is deleted after a period the owner sets (proposed 12 months from last contact; §9 Q9), by a
+7. **Retention**: an unconverted lead is deleted after a period the owner sets (proposed 12 months from last contact; §9.2 item 5), by a
    logged routine; the suppression entry stays.
 8. **Countries**: Ireland first; each further country is a `lead.source.add` owner decision after its rules are checked.
 
@@ -399,20 +414,21 @@ is built: what, why, how long, which processor. The Stripe read-only connection 
    dependency. SECURITY's audit (§2.2) is a second, judgement layer on top of these mechanical gates, not a replacement.
 4. **`run_check`** (the only process an agent can cause): input is a check name (`test`, `lint`, `typecheck`, `format`) and
    optionally a test-file filter, mapped to a fixed argv in `config/products/<id>.json` `runChecks` (for emty-inbox today: `pnpm
-   test`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`; for ReplyDesk `python -m pytest -q`, as its CI runs it; it has no
-   linter or type check configured, §5.8). Spawned with `execFile` (no
-   shell), cwd the worktree, a minimal environment (no key, no token, no home credentials; proxy variables pointed at a closed local
-   port), a timeout (proposed 300 s, whole process tree killed), output capped at 200 KB, killed by the E-STOP. **No network**: true
-   network isolation on Windows needs an OS boundary; the plan's recommendation is a container with `--network none` per check
-   (§9 Q5). Until then the environment above is best-effort, and the plan says so.
+   test`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`; for ReplyDesk `python -m pytest -q`, as its CI runs it, and `ruff
+   check .` once ruff is added; no type check, owner R0.3, §5.8). Spawned with `execFile` (no shell), a minimal environment (no key,
+   no token, no home credentials), a timeout (proposed 300 s, whole process tree killed), output capped at 200 KB, killed by the
+   E-STOP. **No network: Docker** (owner, R0.3): each check runs in a container with `--network none`, the worktree mounted, no
+   other host path, from a per-product image built by the engine from the locked requirements. Docker Desktop (or Docker in WSL)
+   is installed on this laptop by the owner, outside the repo, **before R2**; R2's checks refuse to run without it rather than fall
+   back to best-effort.
 5. **Dependency installs refused**: no `install`/`add` command is in any allowlist. A change to dependency fields or the lockfile is
    detected in the diff and becomes a `dependency.add` request, with SECURITY's dependency verdict on the card. The worktree's
    `node_modules` come from an engine step (`pnpm install --frozen-lockfile --offline`) from the owner's existing store, against the
    unchanged lockfile only.
-6. **Branches** `dev/<job-id>` only. **The owner merges and deploys**, by hand. The Station holds no merge or deploy credential; the
-   CTO's authority stops at assigning and ordering work. If the owner allows `git.push.branch`, the push token must not be able to
-   write to `main`: a GitHub ruleset protecting `main` (PR required, no bypass for the token) is set by the owner on GitHub before
-   R2's first push.
+6. **Branches** `dev/<job-id>` only, in the Station's mirror. **The engine never pushes** (owner, R0.3: `git.push.branch`
+   forbidden): the owner pulls `dev/<job-id>` from `data/products/<id>/repo.git` into their own clone, then pushes, opens the PR,
+   merges and deploys, by hand. The Station holds no push, merge or deploy credential (its GitHub credential is read only); the
+   CTO's authority stops at assigning and ordering work.
 7. **Prompt injection**: issue text, repo content, test output and web pages are data, never instructions (as today's tool
    descriptions say). Agents have no outbound tool, so an injected instruction can at worst write code in a throwaway worktree that
    REVIEWER, SECURITY, the gates and the owner then see.
@@ -444,10 +460,12 @@ is built: what, why, how long, which processor. The Stripe read-only connection 
      present in it. The path and content refusals (item 3) still apply, in case one is ever committed. Tests run against a fresh
      test database, never `replydesk.db`: `conftest.py` already creates a temporary SQLite file per test client, clears
      `DATABASE_URL` and blanks the Anthropic and Stripe keys, and `run_check` adds the stripped environment on top.
-   - **Python environment**: with no `.venv` in the worktree and installs refused (item 5), `run_check` needs an interpreter with
-     the locked requirements. Options for the owner (§9 Q5): the engine builds one venv per product from `requirements.txt` with
-     `pip install --no-index --find-links <wheel folder the owner fills>` (offline, refused if `requirements.txt` changed), or the
-     check runs inside the container of Q5.
+   - **Python environment**: with no `.venv` in the worktree and installs refused (item 5), `run_check` runs inside the product's
+     Docker image (item 4), built from the locked `requirements.txt`; a change to `requirements.txt` is a `dependency.add` request
+     and rebuilds the image only after the owner's approval.
+   - **Linter** (owner, R0.3): add **ruff** to ReplyDesk; no type check for now. Adding it is a change to ReplyDesk itself (a
+     dev requirement, a config section, and a CI step), so it is one of R2's first issues: a `dependency.add` and a `ci.change`
+     request, merged by the owner. Until it is merged, ReplyDesk's `runChecks` has `test` only.
 
 ---
 
@@ -457,11 +475,11 @@ is built: what, why, how long, which processor. The Stripe read-only connection 
 |---|---|---|---|---|
 | Anthropic API (text, web search/fetch) | every agent | existing key in live `.env` | now | Console limit (USD 200/month) set by the owner |
 | OpenRouter images | Etsy only | — | retired | key can be removed from live `.env` after R1 (owner) |
-| Git / GitHub repos | Engineering, Security | fetch: read-only (fine-grained token or deploy key, contents read, one repo each); push of `dev/*` only if Q6 allows (contents write + `main` ruleset) | R2 | merges, releases, deploys, branch protection |
+| Git / GitHub repos | Engineering, Security | fetch only: read-only (fine-grained token or deploy key, contents read, one repo each); **no push** (R0.3) | R2 | pushes, PRs, merges, releases, deploys, branch protection |
 | GitHub issues | issue intake | issues: read only | R2 | creating, closing, labelling issues |
 | Product read-only interfaces | Customer Success, ANALYST | a Station-only token per product: read one ticket / one account summary / aggregate admin stats, rate-limited, no bulk listing of personal data | R6 (built in each product by Engineering, merged by the owner) | everything else in the product admin |
 | Stripe | MRR and churn for ANALYST and Finance | restricted key, **read only** on subscriptions and prices; the Station stores aggregates (MRR, counts, churn), not customer details | R6 | prices, refunds, coupons, invoices |
-| Mail | outreach and support drafts | R5: none; drafts are in the Owner's office, the owner copies and sends from their own mailbox. Later option: a draft-only connection (e.g. Microsoft Graph `Mail.ReadWrite` without `Mail.Send`, as emty-inbox does) | R5 / later | sending, always |
+| Mail | outreach and support drafts | R5: none; drafts are in the Owner's office, the owner copies and sends from a **separate outreach mailbox on a separate sending domain** (owner decision for R5, R0.3), never their own mailbox or the products' transactional domain. Later option: a draft-only connection (e.g. Microsoft Graph `Mail.ReadWrite` without `Mail.Send`, as emty-inbox does) | R5 / later | sending, always |
 | CRM store | leads, pipeline, lawful basis, suppression, retention | internal SQLite tables in the Station's own store; no external CRM | R5 | — |
 | Official business registers / APIs (e.g. CRO open data) | lead sources | public, within their terms | R5 | each new source is an owner decision |
 | Etsy (own shop) | trophy room | read scopes only, owner click (E7a) | kept | — |
@@ -500,23 +518,28 @@ Each phase is one prompt, built in the dev checkout on the mock provider ($0 bui
 (returns live to the previous commit), plus, where a migration ran, the backup it took first. Agents of later phases exist in config
 as `not-hired` from R1 and cost nothing until their phase.
 
-Costs are **estimates** from config prices and assumed token counts, thinking off (§2.3), not measurements; each phase's first live
+Costs are **estimates** from config prices and assumed token counts, thinking off (the thinking add-on is given separately), with the
+R0.3 models (§2.3), not measurements; each phase's first live
 runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 engineering issues a week** (1 large), **1 CEO memo**,
 **7 COO reports**, **1 CTO triage**, **1 roadmap update and 2 design specs**, **20 leads, 20 outreach drafts and 2 content pieces**,
 **20 support tickets, 2 onboardings, 1 retention report, 2 ANALYST runs** a week.
 
 ### R1: engine core
 
+- **Deploy path** (owner, R0.3): on top of B0, which live already runs (§0), with **one migration**, `migrate:products`, from
+  post-B0 data. The dev data root runs `migrate:businesses` first, so dev and live start R1 from the same shape.
 - **Scope**: `config/products/*.json`, `config/departments/*.json` (floor as display order, `reportsTo`), `building.mjs`
   (replaces `business.mjs`); `product_id` and `department_id` on every record, no floor number on any record; `npm run
-  migrate:products` (pre-B0 and B0 roots; backup, dry run, idempotent; Etsy keeps `etsy-shop`); guard and spend dialog per product
+  migrate:products` (post-B0 roots only, a pre-B0 root refused with the reason; backup, dry run, idempotent; Etsy keeps
+  `etsy-shop`); guard and spend dialog per product
   and department; `config/autonomy.json` + the action table + enforcement before reservation + the change log; **the locked rules**
   (§3.2) in code; the `requests` table and the Owner's office queue (generalised approvals, owner-only decide path); all 19 agents
   in config (all `not-hired`), with the `ux-designer` id; the Etsy lines and agents archived and shown on G (starts
   refused with "archived", routines cannot be armed, history and the own-shop connection viewable); OVERSEER retired into the COO
   (config and history; the COO's routine seeded disabled, its live report is R3); Finance view per product (MRR "not connected");
-  README, DECISIONS, PROGRESS.
-- **Tests**: migration on pre-B0 and B0 fixtures (and a dry run on a scratch copy of live data, read only, as B0 did); every
+  the winter job archived as it is (owner, R0.3); README, DECISIONS, PROGRESS.
+- **Tests**: migration on a post-B0 fixture, a pre-B0 fixture refused with the reason, a second run changing nothing (and a dry run
+  on a scratch copy of live data, read only, as B0 did); every
   existing guard, jail, e-stop and instance test still passes; policy: unknown action forbidden, looser product override stops the
   engine, change logged once, `owner` creates a request and the job waits, payload change voids an approval; locked rules: a config
   loosening any locked item stops the engine, a CEO config with an extra tool stops the engine, an agent or script actor deciding a
@@ -526,8 +549,8 @@ runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 eng
   folders under `jobs/`) leaking into new lines (mitigated: new lines use `products/<id>/`, Etsy paths untouched); a big diff in
   `orchestrator.mjs` (mitigated: new lines in a new module, the Etsy orchestrator frozen); the locked table drifting from the policy
   file (mitigated: a test that every locked action is in the file at `forbidden`).
-- **Rollback**: deploy rollback; the old `approvals` table and `business_id` are untouched, so L3.1 code still reads its data; the
-  backup restores the database if needed.
+- **Rollback**: deploy rollback to `df1a58d`; the old `approvals` table and `business_id` are untouched, so B0 code still reads its
+  data; the backup `migrate:products` takes restores the database if needed.
 - **Weekly cost**: build USD 0; running **USD 0** (no agent is hired in R1).
 
 ### R2: Engineering and the CTO live on ReplyDesk
@@ -536,24 +559,27 @@ runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 eng
   path and content refusals, diff secret and dependency gates; the engineering line (owner-approved issue → CTO assigns and orders
   → TECH-LEAD spec → CTO architecture review if `large` → worktree → DEVELOPER → checks → TESTER → REVIEWER → SECURITY → commit →
   `git.merge` request; revise loops at most 2, then blocked); the request card shows spec, diff, test log, review and security
-  verdicts; the CI wall data; optional `git.push.branch` executor (Q6); ReplyDesk's `runChecks` and the container for checks if Q5
-  says so; per-issue Opus choice (refused until Opus is priced). Until R4 the owner writes and approves issues directly.
-- **Tests**: on a fixture repo: writes outside the worktree refused, `.env` refused by path and a key refused by content, a diff
+  verdicts and the command to pull `dev/<job-id>` from the mirror (the engine never pushes); the CI wall data; the Docker check
+  runner and ReplyDesk's image (`test`, then `lint` with ruff once that issue is merged); per-issue Opus choice (refused until Opus
+  is priced from the official page). Until R4 the owner writes and approves issues directly.
+- **Prerequisite**: Docker installed on this laptop by the owner (§5.4).
+- **Tests**: on a fixture repo: any push refused (no push code path exists; `git.push.branch` forbidden), a check without Docker
+  refused, a check attempting network access fails inside the container, writes outside the worktree refused, `.env` refused by path and a key refused by content, a diff
   with a key refused at commit, a lockfile change becomes a request with SECURITY's verdict, a ref other than `dev/<job-id>`
   refused, `run_check` timeout and E-STOP kill the process tree, no shell metacharacters reach the process, the CTO cannot assign an
   issue the owner has not approved, a SECURITY `refuse` blocks the merge request, the whole line on the mock provider ends in a merge
   request.
 - **Risks**: product tests needing a database or network (emty-inbox uses Postgres; ReplyDesk's pytest suite runs on a temporary
   SQLite file and needs none, but its Postgres smoke job stays in GitHub CI); a Python environment for the worktree (§5.8); Windows
-  path and worktree lock issues; DEVELOPER loops burning the cap (mitigated by the job cap and turn limits); spec quality on Haiku
-  (mitigated by the CTO's review of large specs; §9 Q8); code quality (mitigated by REVIEWER, SECURITY, the owner's merge).
-- **Rollback**: deploy rollback; worktrees and mirrors are under `data/products/` and can be removed; nothing reaches GitHub unless
-  the owner approved a push.
-- **Weekly cost** (5 issues, 1 large): per pass TECH-LEAD (Haiku, ~40k in / 4k out) ≈ USD 0.01; DEVELOPER ~30 turns, ~1.5M input of
-  which ~90% cache reads + ~45k out ≈ USD 0.96; TESTER ≈ 0.01; REVIEWER ~50k in / 4k out ≈ 0.14; SECURITY ~50k in / 3k out ≈ 0.13:
-  **≈ USD 1.25 a pass**, ≈ USD 2.05 with one rework (DEVELOPER ≈ 0.50, TESTER, REVIEWER and SECURITY again). CTO: weekly triage
-  ~40k in / 3k out ≈ 0.11 + one architecture review ~60k in / 4k out ≈ 0.16. **About USD 6.50–10.50 a week.** Proposed engineering
-  job cap USD 3.00 (an Opus issue needs its own cap; owner decides).
+  path, worktree lock and Docker volume-mount issues; DEVELOPER loops burning the cap (mitigated by the job cap and turn limits); spec quality
+  (mitigated: TECH-LEAD on Sonnet, the CTO's review of large specs); code quality (mitigated by REVIEWER, SECURITY, the owner's merge).
+- **Rollback**: deploy rollback; worktrees, mirrors and Docker images are the Station's own and can be removed; nothing reaches
+  GitHub except by the owner's own pull and push.
+- **Weekly cost** (5 issues, 1 large): per pass TECH-LEAD (Sonnet, ~40k in / 4k out) ≈ USD 0.12; DEVELOPER ~30 turns, ~1.5M input
+  of which ~90% cache reads + ~45k out ≈ USD 0.96; TESTER ≈ 0.01; REVIEWER ~50k in / 4k out ≈ 0.14; SECURITY ~50k in / 3k out ≈
+  0.13: **≈ USD 1.36 a pass**, ≈ USD 2.14 with one rework (DEVELOPER ≈ 0.50, TESTER, REVIEWER and SECURITY again). CTO: weekly
+  triage ~40k in / 3k out ≈ 0.11 + one architecture review ~60k in / 4k out ≈ 0.16. **About USD 7–11 a week**, plus about USD 1–4.50
+  for thinking on DEVELOPER and REVIEWER. Engineering job cap **USD 3.00** (owner, R0.3); an Opus issue needs its own cap (§9).
 
 ### R3: Penthouse executives
 
@@ -578,16 +604,16 @@ runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 eng
   approved roadmap; DESIGNER specs attached to issues for TECH-LEAD; the roadmap wall and backlog board.
 - **Tests**: an unapproved roadmap item cannot be assigned; a design spec reaches TECH-LEAD's input; DESIGNER has no path to a live
   site (`site.change` owner, no tool).
-- **Risks**: roadmap churn and backlog bloat (mitigated: the owner approves the roadmap, the CTO orders only approved items); weak
-  specs on Haiku (§9 Q8).
+- **Risks**: roadmap churn and backlog bloat (mitigated: the owner approves the roadmap, the CTO orders only approved items).
 - **Rollback**: deploy rollback; the backlog and roadmap files are additive.
-- **Weekly cost**: PRODUCT-MANAGER ~50k in / 5k out ≈ USD 0.01 plus 5 issue drafts ≈ 0.02; DESIGNER 2 × ≈ 0.01. **About USD
-  0.05–0.10 a week.**
+- **Weekly cost**: PRODUCT-MANAGER (Sonnet) ~50k in / 5k out ≈ USD 0.15 plus 5 issue drafts × ~0.06 ≈ 0.30; DESIGNER (Haiku) 2 ×
+  ≈ 0.01. **About USD 0.45–0.55 a week.**
 
 ### R5: Sales & Marketing (after legal advice, EU and US)
 
-- **Prerequisites**: legal advice on §4 and on the US rules below (Q9); the ideal-customer profile and claims register for
-  ReplyDesk, written by the owner. Hire LEAD-RESEARCHER, LEAD-CHECKER, OUTREACH-WRITER, CONTENT-WRITER and COMPLIANCE.
+- **Prerequisites**: legal advice on §4 and on the US rules below (§9.2 item 5); the company's legal name and address; the **separate
+  outreach mailbox and sending domain** (owner decision, R0.3), set up by the owner with its own SPF, DKIM and DMARC; the
+  ideal-customer profile and claims register for ReplyDesk, written by the owner. Hire LEAD-RESEARCHER, LEAD-CHECKER, OUTREACH-WRITER, CONTENT-WRITER and COMPLIANCE.
 - **ReplyDesk's existing outreach must be replaced or absorbed by Sales & Marketing, never run alongside it.** What exists (read-only
   check, 23/10/2026):
   - **What creates the branches**: a weekly scheduled Claude routine, not a GitHub Action (the repo's only workflow is
@@ -607,7 +633,9 @@ runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 eng
     UNVERIFIED), some owners' or managers' names, and quoted review text, held in git on the `outreach/*` branches and in
     `prospect_austin_rotisserie.json` on `main`. Under §4's rules several of these would not pass (personal-looking addresses,
     named individuals), and the same prospects recur across weeks (one appears in 11 of the 16 batches).
-  - **Absorbing it** (R5 scope): the owner stops the scheduled routine before R5's lead line is armed; the dedup list moves into the
+  - **Paused** (owner, R0.3): the owner pauses the routine, outside the repo (it is not scheduled in either repo), and it stays
+    paused until R5. The Station records this; it does not and cannot touch the routine.
+  - **Absorbing it** (R5 scope): the routine stays paused, and is retired when R5's lead line is armed; the dedup list moves into the
     CRM (`contacted`, and any objection into the suppression list); the owner decides what happens to the prospect data on the 16
     branches and the tracked prospect file (keep under a retention period, or delete); the playbook's good rules (never invent
     reviews, names or contacts; verify the contact on the business's own site; drafts only) carry into LEAD-RESEARCHER's and
@@ -625,7 +653,7 @@ runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 eng
   - *GDPR still applies to the controller*: the company is established in Ireland, so its processing of a US prospect's personal
     data (a named contact, an address) falls under GDPR (Art. 3(1)) wherever the prospect is: lawful basis recorded, Art. 14
     notice, retention and suppression as §4. Whether the Irish ePrivacy rules also reach email sent to US recipients is a question
-    for the legal advice (Q9).
+    for the legal advice (§9.2 item 5).
   - *Contact rule*: published business addresses only, as §4; a free-mail address (`@gmail.com` etc.) only where the business
     itself publishes it as its contact, recorded with the source URL; named individuals only as the business publishes them.
   - *State laws*: state privacy and anti-spam laws to be checked by the legal advice before the first US send.
@@ -638,11 +666,11 @@ runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 eng
   hash; a personal address or blocked-domain source is rejected; a lead without a market entry is refused; a COMPLIANCE `refuse`
   cannot be skipped by any agent.
 - **Risks**: legal (mitigated: legal check first, one market at a time, owner sends every email); reputation from poor outreach
-  (mitigated: COMPLIANCE and owner review, low volume; Haiku drafts, §9 Q8); lead quality from public sources.
+  (mitigated: Sonnet writers, COMPLIANCE and owner review, low volume, a separate sending domain); lead quality from public sources.
 - **Rollback**: deploy rollback; CRM tables are additive; routines disarmed.
 - **Weekly cost**: lead research 2 runs × ~USD 0.16 (12 searches at USD 0.01 + tokens) ≈ 0.32; lead check 2 × ~0.05 ≈ 0.10;
-  outreach 20 × ~0.003 (Haiku) ≈ 0.06; COMPLIANCE 22 × ~0.017 ≈ 0.37; content 2 × ~0.01 ≈ 0.02: ≈ USD 0.87, **about USD 0.90–1.80 a
-  week** with reworks (≈ USD 1.40–3.00 if the writers move to Sonnet).
+  outreach 20 × ~0.045 (Sonnet, ~15k in / 1.5k out) ≈ 0.90; COMPLIANCE 22 × ~0.017 ≈ 0.37; content 2 × ~0.07 (Sonnet) ≈ 0.14: ≈ USD
+  1.83, **about USD 1.85–3.50 a week** with reworks, plus about USD 0.10–0.20 for COMPLIANCE's thinking.
 
 ### R6: Customer Success and ANALYST (once there are paying customers)
 
@@ -673,51 +701,48 @@ runs measure the real figure. Workload assumed (one product, ReplyDesk): **5 eng
 - **Rollback**: deploy rollback (scene only).
 - **Weekly cost**: USD 0.
 
-**All phases running** (R2–R6 at the workloads above, thinking off): about **USD 8.60–13.55 a week**, call it **USD 9–14**, within
-today's USD 10 day cap on any normal day and the USD 200 Console month. Thinking "default" on the seven Sonnet agents (§2.3) could
-add USD 2–5 a week, mostly DEVELOPER. Order: R1 first; R2 straight after; R3 any time after R2; R4 after R3; R5 waits for legal
+**All phases running** (R2–R6 at the workloads above, thinking off): about **USD 10.50–16 a week** (about USD 45–70 a month), plus
+about **USD 1–5 a week** for thinking on DEVELOPER, REVIEWER and COMPLIANCE, within today's USD 10 day cap on any normal day and the
+USD 200 Console month. **Against ReplyDesk's USD 60 month** (owner, R0.3): everything except the CEO's memo and the COO's reports is
+ReplyDesk's at this workload, about USD 42–67 a month before thinking, so the top of the range passes the budget, and the guard then
+refuses ReplyDesk work until the month turns. R2 alone (about USD 30–48 a month, up to about USD 67 with thinking) can reach it at 5
+issues a week with reworks (§9.2 item 4). Order: R1 first; R2 straight after; R3 any time after R2; R4 after R3; R5 waits for legal
 advice; R6 waits for paying customers; R7 any time after R1.
 
 ---
 
-## 9. Open questions for the owner before R1
+## 9. Owner answers and open questions
 
-Answered by the R0.2 decision (23/10/2026) and dropped: the old Q7 (locking the legal levels: locked in code, §3.2, with the list
-read as below) and the model rule (Haiku routine, Sonnet for DEVELOPER, REVIEWER, SECURITY, COMPLIANCE and the execs, Opus per
-issue by the owner).
+### 9.1 Answered (R0.2 and R0.3, 23/10/2026)
 
-1. **Etsy wind-down.** The winter job on live (QA-only on set-v4 was next) and the autumn package in the approval queue: archive them
-   as they are, or finish them by hand first? Do the live listings stay on Etsy? (The Station keeps only the read-only connection,
-   in the trophy room.)
-2. **Deploy path.** Live runs L3.1; W4 and B0 are not deployed. Go from L3.1 straight to R1 with the one migration (recommended), or
-   deploy B0 first? W6 stays parked on `w6-wip` (recommended: not merged, since Etsy stops).
-3. **ReplyDesk facts.** Answered 23/10/2026: the clone is `C:\Users\marks\review-reply-service` (`REPLYDESK_REPO`, main at
-   `d03a9ab`); Python/Flask, pytest, Render, Stripe, Google Business Profile (§5.8). Still open: whether it has users or customer
-   data in production yet (this decides when R6 starts); whether a linter or type check should be added to its checks; confirm or
-   replace the proposed US market rules (§8, R5); stopping the weekly outreach routine and what to do with its prospect data (§8,
-   R5).
-4. **emty-inbox and Stellar.** emty-inbox's PLAN.md names Stellar Corporate Housing as its first pilot tenant, and the repo's text
-   names it. The building rule refuses Stellar's data (`foreignDataMarkers`), so today an agent's write containing that name is
-   refused. Choose: (a) the Station works on emty-inbox code, the marker check applies to data and drafts but not to repo source
-   text, and no tenant data ever enters the Station; or (b) emty-inbox stays outside the Station until it has a non-Stellar customer.
-   Selling to Stellar is a decision for Stellar's own decision-makers, not the Station.
-5. **No network for checks.** Accept a container (Docker Desktop or WSL with `--network none`: an install on this laptop, outside the
-   repo) or best-effort isolation for R2? emty-inbox's tests may need Postgres.
-6. **Branch push.** May the engine push `dev/<job-id>` and open a PR after your approval (needs a token with contents write and a
-   `main` ruleset), or do you pull the branch from the Station's mirror yourself?
-7. **The locked list.** R0.2 locks in code (§3.2): the CEO rules, the owner as only approver, COMPLIANCE's independence, the COO
-   never raising a cap, and the forbidden items `secrets.read`, `personal-data.scrape`, `review.fake`, `account.fake`,
-   `claim.misleading`, `git.merge.agent`, `deploy.agent`, `email.send.agent`. Confirm, or strike any that should stay configurable.
-8. **Budgets, caps and models.** Monthly budget per product (proposal: ReplyDesk USD 60, emty-inbox USD 40, station USD 20); job caps
-   per department (proposal: engineering 3.00, security-data 0.50, product-design 0.50, sales-marketing 0.50, customer-success 0.50)
-   and exec run caps (CEO 0.50, CTO 0.30, COO 0.20, COMPLIANCE 0.10); the day cap (USD 10.00 today). Thinking "default" for the seven
-   Sonnet agents (§2.3), or off as today? Three Haiku placements to confirm, since each writes work others build on: TECH-LEAD
-   (specs), PRODUCT-MANAGER (roadmaps) and OUTREACH-WRITER / CONTENT-WRITER (text that reaches prospects). For Opus per issue, add
-   Opus 5.5's verified prices to config and set the cap for an Opus issue. The new DESIGNER's id `ux-designer` (the archived Etsy
-   DESIGNER keeps `designer`).
-9. **Before R5 (not blocking R1, but long lead time).** Legal advice on B2B email under S.I. 336/2011, the US rules (CAN-SPAM, state
-   laws, whether Irish ePrivacy reaches US recipients) and the AI Act's Article 50 for ReplyDesk; the lead retention period
-   (proposed 12 months); the company's legal name and address for the sender identity; whether you send outreach from your own
-   mailbox.
-10. **Names.** The company's name (the Station is a placeholder, Q14), and the public product names (ReplyDesk; emty-inbox or Inbox
-    Copilot).
+| # | Question | Owner's answer |
+|---|---|---|
+| 1 | Etsy wind-down | The winter job is **archived as it is**. The live listings **stay on Etsy**. **Owner action, not a Station task**: the owner adds to each live listing, by hand on Etsy, an unretouched photo of the product on a real screen against a real background. The Station keeps only the read-only connection (no Etsy write exists). |
+| 2 | Deploy path | Live already runs B0 (`df1a58d`, `migrate:businesses` applied 21/10/2026, checked read-only, §0). **R1 deploys on top of B0 with one migration, `migrate:products`, from post-B0 data.** W6 stays parked on `w6-wip`. |
+| 3 | ReplyDesk (part) | The weekly outreach routine is **paused by the owner, outside the repo, pending R5** (§8 R5). **Add ruff** as ReplyDesk's linter; **no type check** for now (§5.8). |
+| 4 | emty-inbox and Stellar | Option (a) with **synthetic data only**: the Station may work on emty-inbox code, its fixtures and test data are synthetic, and **no Stellar or tenant data ever enters the Station**. `foreignDataMarkers` applies to data, drafts and fixtures; repo source text that names the pilot is read, never copied into drafts or records. Selling to Stellar stays a decision for Stellar's own decision-makers. |
+| 5 | Isolation for checks | **Docker** with `--network none`, needed for R2; installed by the owner before R2 (§5.4). |
+| 6 | Branch push | **The engine never pushes**: `git.push.branch` forbidden; the owner pulls `dev/<job-id>` from the Station's mirror (§5.6). |
+| 7 | Locked list | **Confirmed as is**, nothing struck (§3.2). |
+| 8 (part) | Budgets, caps, models | ReplyDesk **USD 60 a month**; engineering job cap **USD 3.00**. Thinking **on** for DEVELOPER, REVIEWER, COMPLIANCE. TECH-LEAD, PRODUCT-MANAGER, OUTREACH-WRITER and CONTENT-WRITER on **Sonnet** (about USD 2 a week, about USD 8 a month more). Opus prices **only from Anthropic's official pricing page**. The new DESIGNER's id is **`ux-designer`**. |
+| 9 (part) | Outreach sending | A **separate outreach mailbox and sending domain** for R5 (§4, §6). |
+| — | Model rule (R0.2) | Haiku routine; Sonnet for DEVELOPER, REVIEWER, SECURITY, COMPLIANCE and the execs; Opus per issue by the owner. |
+
+### 9.2 Still open
+
+1. **ReplyDesk's paying users.** Does ReplyDesk have paying users or customer data in production? Only Stripe or the production
+   database can say; the repo cannot. This decides when R6 starts.
+2. **The autumn package** in the old approval queue (from E6): archive it as it is, like the winter job? (R0.3 answered the winter
+   job only.)
+3. **Remaining budgets and caps (proposals).** emty-inbox USD 40 a month and station USD 20 a month; the day cap (USD 10.00 today);
+   job caps for security-data, product-design, sales-marketing and customer-success (USD 0.50 each); exec run caps (CEO 0.50, CTO
+   0.30, COO 0.20, COMPLIANCE 0.10); the cap for an Opus issue.
+4. **ReplyDesk's month against the workload.** At the §8 workload (5 issues a week with reworks, thinking on) ReplyDesk's spend can
+   reach USD 60 a month in R2 alone (about USD 30–67) and passes it with every phase running (about USD 42–67 before thinking). The
+   guard refuses at the budget, so either fewer issues a week, a higher budget, or accept the stop until the month turns.
+5. **Before R5 (not blocking R1, long lead time).** Legal advice on B2B email under S.I. 336/2011, the US rules (CAN-SPAM, state
+   laws, whether Irish ePrivacy reaches US recipients) and the AI Act's Article 50 for ReplyDesk; the company's legal name and
+   address for the sender identity; setting up the separate outreach mailbox and sending domain; the lead retention period
+   (proposed 12 months); the market rules for the US (§8 R5, still a proposal).
+6. **Names.** The company's name (the Station is a placeholder, Q14), and the public product names (ReplyDesk; emty-inbox or Inbox
+   Copilot). These are the owner's to choose.

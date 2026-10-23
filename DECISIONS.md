@@ -2650,3 +2650,51 @@ existing Etsy data keeps `business_id` `etsy-shop`, only its display floor chang
   Sonnet); flagged for confirmation (§9 Q8), with the cost of moving the writers to Sonnet in R5.
 - Stripe read-only and the product read-only interfaces move from the old R4 to R6 (with ANALYST); each is a GDPR decision recorded
   before it is built.
+
+## R0.3: owner answers (23/10/2026)
+
+Plan only: `RESTRUCTURE.md` updated (§0, §1.4, §2.3, §3.1, §4, §5, §6, §8, §9); no engine or app code changed, dev checkout, no API
+call, $0.
+
+### Correction: live already runs B0
+
+R0 and R0.2 said W4 and B0 were not deployed. The owner corrected this, and a read-only check of the live worktree on 23/10/2026
+(file reads and `git log` from the dev checkout only; nothing written, the database not opened) confirms it:
+
+- The live worktree (`office-agents-live`, branch `live`) is at **`df1a58d`** (B0; W4 `d342d91` and L3.1 `9122435` below it).
+- `data/deploys.jsonl`: deploy `9122435` → `df1a58d` at 21/10/2026 15:09 UTC, `--no-start`, ok.
+- `logs/migrate-businesses-2026-10-21.log`: dry run with **0 unmapped**, then **`migrate:businesses` applied** at 15:10 UTC (jobs
+  32, runs 47, routines 4, approvals 1, **ledger mirror 509**), backup `data/.backups/businesses-20261021T151049Z`.
+- Only the dev data root has not run `migrate:businesses`.
+
+### The owner's answers
+
+| # | Decision |
+|---|---|
+| Etsy | The winter job is archived as it is. The live listings stay on Etsy. **Owner action, not a Station task**: an unretouched photo of the product on a real screen against a real background, added by hand to each live listing. |
+| Deploy | R1 deploys on top of B0 with one migration (`migrate:products`) from post-B0 data; a pre-B0 root is refused with the reason. |
+| ReplyDesk outreach | The weekly outreach routine is paused by the owner outside the repo, pending R5. (The repo shows drafts only, nothing sent; the pause is because it collects prospect data without the legal check.) |
+| ReplyDesk checks | Add ruff (an R2 issue: `dependency.add` + `ci.change`, merged by the owner); no type check for now. |
+| emty-inbox | Synthetic data only; no Stellar or tenant data ever in the Station. |
+| Isolation | Docker with `--network none` for every check, needed for R2; the owner installs it. |
+| Push | The engine never pushes: `git.push.branch` forbidden; the owner pulls `dev/<job-id>` from the Station's mirror. |
+| Locked list | Confirmed as is (RESTRUCTURE.md §3.2), nothing struck. |
+| Budgets | ReplyDesk USD 60 a month; engineering job cap USD 3.00. emty-inbox USD 40, station USD 20, the day cap, the other department job caps and the exec run caps stay **proposals**. |
+| Thinking | On ("default") for DEVELOPER, REVIEWER and COMPLIANCE; off for every other agent. |
+| Models | TECH-LEAD, PRODUCT-MANAGER, OUTREACH-WRITER and CONTENT-WRITER on Sonnet instead of Haiku: about **USD 2 a week, about USD 8 a month** more at the planned workload (TECH-LEAD +0.55, PRODUCT-MANAGER +0.40, OUTREACH-WRITER +0.85, CONTENT-WRITER +0.10 a week). |
+| Opus | Prices added only from Anthropic's official pricing page, before any Opus issue. |
+| DESIGNER | New id `ux-designer`; the archived Etsy DESIGNER keeps `designer`. |
+| Outreach mailbox | A separate outreach mailbox and sending domain, a decision for R5 (set up by the owner before R5). |
+
+### Re-estimated (RESTRUCTURE.md §8; estimates, thinking off unless stated)
+
+R1 USD 0; R2 about 7–11 a week (+1–4.50 thinking); R3 about 0.70; R4 about 0.45–0.55; R5 about 1.85–3.50; R6 about 0.45; R7 0. All
+running about USD 10.50–16 a week (about 45–70 a month) plus about 1–5 for thinking.
+
+### Noted
+
+- At the planned workload ReplyDesk's spend can reach its USD 60 month in R2 alone with reworks and thinking (about USD 30–67 a
+  month) and passes it with every phase running; the guard would then refuse ReplyDesk work until the month turns. Open for the
+  owner (RESTRUCTURE.md §9.2 item 4).
+- Still open (§9.2): ReplyDesk's paying users; the autumn package in the old approval queue; the remaining budgets and caps; the
+  legal advice, legal name and address, mailbox set-up and retention before R5; names.
