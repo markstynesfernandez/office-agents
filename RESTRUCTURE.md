@@ -63,7 +63,7 @@ Every job, run, ledger row, event, request (approval), lead, ticket and routine 
 
 | Product id | Name | Repo | Status |
 |---|---|---|---|
-| `replydesk` | ReplyDesk | `markstynesfernandez/Review-Service` | active from R2 (not cloned locally today) |
+| `replydesk` | ReplyDesk | `markstynesfernandez/Review-Service` (local clone: `C:\Users\marks\review-reply-service`, env `REPLYDESK_REPO`; main at `d03a9ab`) | active from R2; facts in §5.8 |
 | `emty-inbox` | emty-inbox (package name `inbox-copilot`) | `markstynesfernandez/emty-inbox` (local: `C:\Users\marks\projects\Emty-inbox`, read only for R0) | second; see §9 Q4 before any work |
 | `etsy-shop` | TheStationShopFinds | n/a | archived (all history) |
 | `station` | the Station itself | this repo | HQ and station-wide records (today's "shared") |
@@ -254,7 +254,8 @@ DECISIONS.md before it is built: what, why, how long, which processor.
    dependency.
 4. **`run_check`** (the only process an agent can cause): input is a check name (`test`, `lint`, `typecheck`, `format`) and
    optionally a test-file filter, mapped to a fixed argv in `config/products/<id>.json` `runChecks` (for emty-inbox today: `pnpm
-   test`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`; ReplyDesk's to be confirmed, §9 Q3). Spawned with `execFile` (no
+   test`, `pnpm lint`, `pnpm typecheck`, `pnpm format:check`; for ReplyDesk `python -m pytest -q`, as its CI runs it; it has no
+   linter or type check configured, §5.8). Spawned with `execFile` (no
    shell), cwd the worktree, a minimal environment (no key, no token, no home credentials; proxy variables pointed at a closed local
    port), a timeout (proposed 300 s, whole process tree killed), output capped at 200 KB, killed by the E-STOP. **No network**: true
    network isolation on Windows needs an OS boundary; the plan's recommendation is a container with `--network none` per check
@@ -268,6 +269,38 @@ DECISIONS.md before it is built: what, why, how long, which processor.
 7. **Prompt injection**: issue text, repo content, test output and web pages are data, never instructions (as today's tool
    descriptions say). Agents have no outbound tool, so an injected instruction can at worst write code in a throwaway worktree that
    REVIEWER, the gates and the owner then see.
+8. **ReplyDesk, the first product repo** (read-only check, 23/10/2026; nothing in the clone was changed):
+   - **Where**: `C:\Users\marks\review-reply-service`, an existing clone of `markstynesfernandez/Review-Service`, branch `main` at
+     `d03a9ab` ("Production hardening: secure billing webhooks, AI output safety, multi-tenant + ops fixes"), level with
+     `origin/main`; one uncommitted local change (`stripe_smoke.py`), which is the owner's. The engine reads the path from
+     `REPLYDESK_REPO=C:\Users\marks\review-reply-service`; it fetches into its own mirror (item 1) and never writes to this clone.
+   - **Stack**: Python with Flask (`app.py`, `requirements.txt`); tests with pytest (`test_replydesk.py`, `conftest.py`); deployed on
+     Render (`render.yaml`, `Procfile`); Stripe billing (`billing.py`); Google Business Profile integration (`google_business.py`);
+     SQLite locally, Postgres in production (`DATABASE_URL`); SMTP mail for the product's own emails (`email_util.py`). CI
+     (`.github/workflows/ci.yml`) runs `python -m pytest -q` and a Postgres smoke job on GitHub (the CI notes Postgres cannot run
+     locally on Windows).
+   - **Data safety** (git ls-files, git log --all, git check-ignore):
+
+     | File | Tracked now | In any commit (all branches) | In `.gitignore` |
+     |---|---|---|---|
+     | `replydesk.db` | no | no | yes (`*.db`) |
+     | `.env` | no | no | yes (`.env`) |
+     | `.venv/` | no | no | yes (`.venv/`) |
+     | any other `*.db`, `*.sqlite*` | no | no | `*.db` yes; `*.sqlite`/`*.sqlite3` not listed (none exist) |
+     | credential or key files (`*.pem`, `*.key`, `credentials*`, `secret*`, `token*`) | none | none | n/a |
+
+     Tracked and worth knowing: `.env.example` (a template), `prospect.example.json`, and `prospect_austin_rotisserie.json` on
+     `main` (a real US business's published contact and two review texts, added by the owner on 12/06/2026); further prospect data
+     sits on the 16 `outreach/*` branches (§8, R3). `.pytest_cache/` is not ignored, but it is untracked. `replydesk.db` was not
+     opened: 45,056 bytes, last modified 06/06/2026 15:57 (Irish time).
+   - **So**: the DEVELOPER worktree is created from a commit, so the untracked files (`.env`, `replydesk.db`, `.venv/`) are never
+     present in it. The path and content refusals (item 3) still apply, in case one is ever committed. Tests run against a fresh
+     test database, never `replydesk.db`: `conftest.py` already creates a temporary SQLite file per test client, clears
+     `DATABASE_URL` and blanks the Anthropic and Stripe keys, and `run_check` adds the stripped environment on top.
+   - **Python environment**: with no `.venv` in the worktree and installs refused (item 5), `run_check` needs an interpreter with
+     the locked requirements. Options for the owner (§9 Q5): the engine builds one venv per product from `requirements.txt` with
+     `pip install --no-index --find-links <wheel folder the owner fills>` (offline, refused if `requirements.txt` changed), or the
+     check runs inside the container of Q5.
 
 ---
 
@@ -340,7 +373,8 @@ prices and assumed token counts, not measurements; each phase's first live runs 
 - **Tests**: on a fixture repo: writes outside the worktree refused, `.env` refused by path and a key refused by content, a diff
   with a key refused at commit, a lockfile change becomes a request, a ref other than `dev/<job-id>` refused, `run_check` timeout and
   E-STOP kill the process tree, no shell metacharacters reach the process, the whole line on the mock provider ends in a merge request.
-- **Risks**: product tests needing a database or network (emty-inbox uses Postgres; ReplyDesk unknown); Windows path and worktree
+- **Risks**: product tests needing a database or network (emty-inbox uses Postgres; ReplyDesk's pytest suite runs on a temporary
+  SQLite file and needs none, but its Postgres smoke job stays in GitHub CI); a Python environment for the worktree (§5.8); Windows path and worktree
   lock issues; DEVELOPER loops burning the cap (mitigated by the job cap and turn limits); code quality (mitigated by REVIEWER, the
   owner's merge).
 - **Rollback**: deploy rollback; worktrees and mirrors are under `data/products/` and can be removed; nothing reaches GitHub unless
@@ -352,6 +386,36 @@ prices and assumed token counts, not measurements; each phase's first live runs 
 ### R3: Sales & Marketing
 
 - **Prerequisites**: legal advice on §4 (Q9); the ideal-customer profile and claims register for ReplyDesk, written by the owner.
+- **ReplyDesk's existing outreach must be replaced or absorbed by Sales & Marketing, never run alongside it.** What exists (read-only
+  check, 23/10/2026):
+  - **What creates the branches**: a weekly scheduled Claude routine, not a GitHub Action (the repo's only workflow is
+    `ci.yml`, tests). From 22/06/2026 every `outreach/YYYY-MM-DD` branch is a commit authored `Claude <noreply@anthropic.com>`
+    on a Monday at about 08:15 UTC; the first, `outreach/2026-06-15`, was committed by the owner. It follows
+    `outreach/WEEKLY_PROSPECTING.md` (the playbook) on `main`. 16 branches on GitHub, 15/06 to 05/10/2026; none for 12/10 or
+    19/10, so the routine may have stopped or failed (to check where it is scheduled; it is not in this repo).
+  - **What it does**: finds 2–3 US small businesses (restaurants, dental, home services, med spas, agencies) with visible
+    review problems, by web search of press, Reddit and the businesses' own sites; drafts a personalised email per prospect with
+    `prospect.py` (live Claude if `ANTHROPIC_API_KEY` is set, else templates); writes `outreach/batches/<date>.md`, appends to
+    `outreach/contacted.md` (the dedup list) and commits on a branch for the owner to review.
+  - **Sends or drafts**: drafts only. The playbook says "YOU DO NOT SEND ANY EMAIL"; `prospect.py` has no send path (the SMTP
+    sender, `email_util.py`, is used only by the product itself: `app.py`, `auth.py`, `digest.py`). Every row in every branch's
+    `contacted.md` says "not sent" / "drafted". The repo shows no message sent; only the owner's Sent folder can confirm that none
+    went out by hand.
+  - **Prospect data**: business names, cities, contact emails (several are free-mail addresses such as `@gmail.com`, many marked
+    UNVERIFIED), some owners' or managers' names, and quoted review text, held in git on the `outreach/*` branches and in
+    `prospect_austin_rotisserie.json` on `main`. Under §4's rules several of these would not pass (personal-looking addresses,
+    named individuals), and the same prospects recur across weeks (one appears in 11 of the 16 batches).
+  - **Absorbing it** (R3 scope): the owner stops the scheduled routine before R3's lead line is armed; the dedup list moves into the
+    CRM (`contacted`, and any objection into the suppression list); the owner decides what happens to the prospect data on the 16
+    branches and the tracked prospect file (keep under a retention period, or delete); the playbook's good rules (never invent
+    reviews, names or contacts; verify the contact on the business's own site; drafts only) carry into LEAD-RESEARCHER's and
+    OUTREACH-WRITER's prompts.
+- **Outreach rules are per market.** Each market is a config entry (`config/markets/<id>.json`: lawful-basis rule, contact rule,
+  required message content, opt-out handling and deadline, retention) that the mechanical gate and COMPLIANCE apply; a lead
+  without a market is refused, and a market is added only by `lead.source.add` (owner). **EU / Ireland**: GDPR and ePrivacy, as §4
+  (to be confirmed by legal advice). **United States** (the existing outreach targets US businesses only): the rules are to be
+  recorded by the owner (the R0 follow-up instruction was cut off at this point); until then no US market entry exists and the
+  lead line refuses US leads.
 - **Scope**: CRM tables (leads, pipeline, lawful basis, suppression, retention routine); the lead line (LEAD-RESEARCHER → LEAD-CHECKER
   → dedupe/suppression gate); the outreach line (OUTREACH-WRITER → mechanical gate → COMPLIANCE → `email.send.prospect` request; the
   owner sends by hand and marks it sent); opt-out recording; the content line (CONTENT-WRITER → gate → COMPLIANCE → `public.post`
@@ -401,8 +465,10 @@ time after R1.
    as they are, or finish them by hand first? Do the live listings stay on Etsy? (The Station keeps only the read-only connection.)
 2. **Deploy path.** Live runs L3.1; W4 and B0 are not deployed. Go from L3.1 straight to R1 with the one migration (recommended), or
    deploy B0 first? W6 stays parked on `w6-wip` (recommended: not merged, since Etsy stops).
-3. **ReplyDesk facts.** Its stack, test/lint/typecheck commands, whether it has users or customer data yet, where it is hosted, and
-   a local clone path (it is not cloned on this laptop).
+3. **ReplyDesk facts.** Answered 23/10/2026: the clone is `C:\Users\marks\review-reply-service` (`REPLYDESK_REPO`, main at
+   `d03a9ab`); Python/Flask, pytest, Render, Stripe, Google Business Profile (§5.8). Still open: whether it has users or customer
+   data in production yet; whether a linter or type check should be added to its checks; the US outreach rules (§8, R3); stopping
+   the weekly outreach routine and what to do with its prospect data (§8, R3).
 4. **emty-inbox and Stellar.** emty-inbox's PLAN.md names Stellar Corporate Housing as its first pilot tenant, and the repo's text
    names it. The building rule refuses Stellar's data (`foreignDataMarkers`), so today an agent's write containing that name is
    refused. Choose: (a) the Station works on emty-inbox code, the marker check applies to data and drafts but not to repo source

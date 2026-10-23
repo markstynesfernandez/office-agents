@@ -2589,3 +2589,11 @@ and main is clean. Recommendation: leave it parked, since Etsy production stops.
   `foreignDataMarkers` refuses Stellar's data in the Station: RESTRUCTURE.md §9 Q4 asks the owner to decide before any emty-inbox work.
 - ReplyDesk's repo is not cloned on this laptop; its stack and check commands are unknown (§9 Q3).
 - Live runs L3.1 (`9122435`); W4 and B0 are not deployed.
+
+### R0 addendum (23/10/2026): ReplyDesk facts
+
+Correction to "Noted while reading": ReplyDesk is cloned at `C:\Users\marks\review-reply-service` (`REPLYDESK_REPO`; main at
+`d03a9ab`). Read-only checks only (git status, log, ls-files, show, check-ignore; file reads): `replydesk.db`, `.env` and `.venv/`
+are untracked, never committed on any branch, and ignored. The repo already has a weekly drafts-only outreach routine (16
+`outreach/*` branches, US businesses, nothing sent according to its logs) that R3 must replace or absorb. Recorded in
+RESTRUCTURE.md §5.8, §8 R3 and §9 Q3; outreach rules per market, US rules still to be given by the owner.
