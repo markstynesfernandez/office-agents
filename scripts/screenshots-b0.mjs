@@ -31,12 +31,12 @@ const { createJail } = await import('../src/engine/store/jail.mjs');
 const { openScriptEngine } = await import('../src/engine/script-engine.mjs');
 const { createEngineServer } = await import('../src/server/engine-server.mjs');
 const tmp = TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'station-b0-engine-'));
-// a temp copy of config/ with a capture-only second business on floor 2 (no lines yet: the empty, labelled floor)
+// a temp copy of config/. R1: config/businesses/ is retired (the seven-floor company has no spare floor), so the B0 capture-only second
+// business, and its empty floor 2, are no longer drawn; the 'empty' shot is skipped
 const configDir = path.join(tmp, 'config');
 fs.cpSync(path.join(ROOT, 'config'), shotJail('config', tmp), { recursive: true });
-fs.writeFileSync(shotJail(path.join('config', 'businesses', 'second-shop.json'), tmp), JSON.stringify({ id: 'second-shop', name: 'Second Shop (capture only)', floor: 2, departments: [], lines: [], agents: [], monthlyBudgetUsd: 50, dataDir: 'businesses/second-shop/' }, null, 2));
 const J = createJail({ dataRoot: path.join(tmp, 'data'), extraRoots: [path.join(ROOT, 'logs')] });
-const engine = openScriptEngine({ J, configDir, log: makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-b0-engine', jail: J }), purpose: 'screenshots-b0', startsJobs: true });
+const engine = openScriptEngine({ archiveSandbox: true, J, configDir, log: makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-b0-engine', jail: J }), purpose: 'screenshots-b0', startsJobs: true });
 if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
 const es = createEngineServer({ engine, log }), server = es.server;
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -109,7 +109,7 @@ async function walkRow(theme) {
 try {
   if (want('floor1')) for (const th of ['light', 'dark']) await shoot({ name: 'floor 1 etsy-shop ' + th, floor: 1, theme: th, file: 'floor1-' + th + '.png' });
   if (want('floor0')) for (const th of ['light', 'dark']) await shoot({ name: 'floor 0 shared ' + th, floor: 0, theme: th, file: 'floor0-' + th + '.png' });
-  if (want('empty')) await shoot({ name: 'floor 2 empty light', floor: 2, theme: 'light', file: 'floor2-empty-light.png' });
+  // R1: the B0 'empty' floor 2 shot is retired with config/businesses/ (no capture-only second business)
   if (want('building')) await shoot({ name: 'whole building light', floor: 1, theme: 'light', file: 'building-light.png', building: true });
   if (want('walk')) for (const th of ['dark', 'light']) await walkRow(th);
   for (const r of fpsRows) if (r.full && (r.full.throttled || r.moving.throttled)) problems.push('fps ' + r.view + ': throttled after four tries: no reading');

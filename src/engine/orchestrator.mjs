@@ -73,6 +73,9 @@ const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); }
 const niche = (t) => { const m = /^# Niche\s*\n([^\n]+)/m.exec(t || ''); return m ? m[1].trim() : ''; };
 const titleOf = (id) => id.slice(12).replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+// R1 (owner, 22/10/2026; RESTRUCTURE.md §8 R1): this orchestrator is the Etsy line's, frozen with the Etsy archive. Every job creation and
+// start asks engine.lineHold first: an archived line (outside the mock-only archive sandbox) or a line the COO or the owner paused starts
+// nothing, with the reason. New departments' lines get their own module from R2.
 export function createOrchestrator(engine, { hooks = {} } = {}) {
   const { store, bus, log, cfg, J, halt, ledger } = engine;
   // observer hooks (the dry run's screenshots): a failing hook is logged and never changes the job
@@ -177,6 +180,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   function createJob({ briefText, line = 'room1-digital', by = 'owner', idempotencyKey = null, ownerFile1 = false }) {
     if (idempotencyKey) { const prev = store.idem.get('createJob:' + idempotencyKey); if (prev) return prev; }
     const L = lineOf(line), t = String(briefText || '').replace(/\r\n/g, '\n'), id = briefField(t, 'id'), reasons = [];
+    const hold = engine.lineHold ? engine.lineHold(L.id) : null;
+    if (hold) { log.warn('intake refused a brief: the line cannot start', { id, line: L.id, hold, by }); return { ok: false, id, reasons: [hold], code: /^archived/.test(hold) ? 'ARCHIVED' : 'PAUSED' }; }
     // E7a.1 (owner decision 4, 20/10/2026): only an indicative or an owner brief starts a job; a legacy one is refused with the one reason
     if (isLegacyBrief(t)) { log.warn('intake refused a brief', { id, reasons: [LEGACY_BRIEF_REASON], by }); return { ok: false, id, reasons: [LEGACY_BRIEF_REASON] }; }
     if (!isListingId(id)) reasons.push('the brief has no valid id (YYYY-MM-DD--slug)');
@@ -209,6 +214,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     const job = store.getJob(id); if (!job) throw new Error('no such job: ' + id);
     if (!['queued'].includes(job.state)) throw new Error('job ' + id + ' is ' + job.state + ', not queued');
     if (halt.isHalted()) throw new Error('e-stop is on');
+    const hold = engine.lineHold ? engine.lineHold(job.line) : null;
+    if (hold) throw Object.assign(new Error(hold), { code: /^archived/.test(hold) ? 'ARCHIVED' : 'PAUSED' });
     const sr = engine.scriptRun;
     if (sr && !sr.startsJobs) { const e = new Error('no job starts from this script (' + sr.purpose + '): it opens the engine for maintenance only'); e.code = 'SCRIPT'; throw e; }
     if (sr) sr.own.add(id);
@@ -1043,6 +1050,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // productKey), never anything from prompt wording; it is checked against products.json when the job starts (runSteps)
   function createResearchJob({ input = 'Run your standing orders for this batch.', by = 'owner', line = 'research', productKey } = {}) {
     const L = lineOf(line); if (L.kind !== 'research') throw new Error('not a research line: ' + line);
+    const hold = engine.lineHold ? engine.lineHold(L.id) : null;
+    if (hold) throw Object.assign(new Error(hold), { code: /^archived/.test(hold) ? 'ARCHIVED' : 'PAUSED' });
     const day = dublinDay(), n = store.listJobs().filter((j) => j.kind === 'research' && (j.line || 'research') === line && j.id.startsWith(day)).length + 1, id = day + '--' + line + '-' + n;
     const key = L.requiresProductKey ? (productKey !== undefined ? productKey : L.productKey) ?? null : null;
     store.insertJob({ id, line, kind: 'research', title: (L.label || 'Research') + ' batch ' + n, product_key: key, state: 'queued', step: L.start, data: { day, input, createdBy: by, ...(L.requiresProductKey ? { productKey: key, productKeySource: productKey !== undefined ? 'given' : 'line config' } : {}) } });

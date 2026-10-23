@@ -33,7 +33,7 @@ const notesJson = (day, games) => JSON.stringify({ day, entries: games.map((g) =
 
 function boot(t, script = createScoutScript({ bad: false }), root = null) {
   const r = root || tempRoot('b3');
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} if (!root) r.cleanup(); });
   return { e, r };
 }
@@ -133,12 +133,12 @@ test('outcome the owner\'s Stop: stopped mid-run after the notes -> names added'
 
 test('outcome crash on restart recovery: a job interrupted again after its notes is blocked at engine start -> names added', async (t) => {
   const r = tempRoot('b3-recover'); t.after(() => r.cleanup());
-  let e = createEngine({ J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
+  let e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
   const id = e.orchestrator.createResearchJob({ line: 'genre-scout', by: 'test' }).id, day = e.store.getJob(id).data.day;
   e.J.put(notesFile(research(e), day, id), notesJson(day, FIXTURE_GAMES));
   e.store.updateJob(id, { state: 'running', step: 'trend-scout', resumes: 1 });   // its one resume already used
   e.close();
-  e = createEngine({ J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
+  e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} });
   const job = e.store.getJob(id);
   assert.equal(job.state, 'blocked'); assert.match(job.reason, /restart it by hand/);
@@ -148,13 +148,13 @@ test('outcome crash on restart recovery: a job interrupted again after its notes
 
 test('restart recovery that resumes: the earlier attempt\'s notes are passed first and moved aside, never overwritten', async (t) => {
   const r = tempRoot('b3-resume'); t.after(() => r.cleanup());
-  let e = createEngine({ J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
+  let e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
   const id = e.orchestrator.createResearchJob({ line: 'genre-scout', by: 'test' }).id, day = e.store.getJob(id).data.day;
   const earlier = notesJson(day, OTHER_GAMES);
   e.J.put(notesFile(research(e), day, id), earlier);
   e.store.updateJob(id, { state: 'running', step: 'trend-scout' });   // interrupted mid-step, resumes once
   e.close();
-  e = createEngine({ J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
+  e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createScoutScript({ bad: false }), startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} });
   const job = await until(() => { const j = e.store.getJob(id); return ['research-done', 'blocked', 'incomplete', 'stopped'].includes(j.state) && !e.orchestrator.isActive(id) ? j : null; });
   assert.equal(job.state, 'research-done', job.reason);

@@ -1,0 +1,30 @@
+{
+  "$comment": "R1 (RESTRUCTURE.md §2.2, §2.3): in config from R1, \"not hired yet\" until R3. The engine refuses to run a not-hired agent and it costs nothing; its prompt, maxOutputTokens and write paths are set when it is hired. Model, effort and thinking are the owner's (R0.2, R0.3); every limit here is a proposal (§2.2 \"Limits (proposed)\").",
+  "key": "coo",
+  "name": "COO",
+  "department": "hq",
+  "reportsTo": "owner",
+  "status": "not-hired",
+  "phase": "R3",
+  "tier": "strong",
+  "effort": "low",
+  "thinking": "off",
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "line_pause"
+  ],
+  "folder": "products/station/reports",
+  "writes": [
+    "*.md"
+  ],
+  "limits": {
+    "maxTurns": 20,
+    "runCapUsd": 0.2
+  },
+  "proposals": [
+    "limits"
+  ],
+  "enabled": false,
+  "role": "Daily operations report, budget and routine watch, stuck-job triage; may pause a line on a breach, never raise a cap (locked). Replaces OVERSEER."
+}

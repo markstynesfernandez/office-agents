@@ -1,0 +1,27 @@
+{
+  "$comment": "R1 (RESTRUCTURE.md §2.2, §2.3): in config from R1, \"not hired yet\" until R2. The engine refuses to run a not-hired agent and it costs nothing; its prompt, maxOutputTokens and write paths are set when it is hired. Model, effort and thinking are the owner's (R0.2, R0.3); every limit here is a proposal (§2.2 \"Limits (proposed)\").",
+  "key": "developer",
+  "name": "DEVELOPER",
+  "department": "engineering",
+  "status": "not-hired",
+  "phase": "R2",
+  "tier": "strong",
+  "effort": "medium",
+  "thinking": "default",
+  "tools": [
+    "fs_read",
+    "fs_list",
+    "fs_write",
+    "code_search",
+    "run_check"
+  ],
+  "limits": {
+    "maxTurns": 60,
+    "maxChecks": 10
+  },
+  "proposals": [
+    "limits"
+  ],
+  "enabled": false,
+  "role": "Writes the code and tests on dev/<job-id> in a git worktree; never pushes."
+}

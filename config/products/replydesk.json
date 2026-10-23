@@ -1,0 +1,20 @@
+{
+  "$comment": "R1 (RESTRUCTURE.md §1.3, §8 R1): a product owns its budget, repo, data, roadmap and policy overrides; departments work on many products. Every job, run, routine, request, ledger row and event carries product_id and department_id. Figures marked in `proposals` are proposals awaiting the owner (RESTRUCTURE.md §9.2 item 3); the rest are owner decisions with their source in `decided`. A product's `policy` may only make an action stricter than config/autonomy.json (auto < owner < forbidden): a looser override stops the engine.",
+  "id": "replydesk",
+  "name": "ReplyDesk",
+  "status": "active",
+  "phase": "R2",
+  "repo": "markstynesfernandez/Review-Service",
+  "localRepoEnv": "REPLYDESK_REPO",
+  "monthlyBudgetUsd": 60,
+  "dailyCapUsd": null,
+  "jobCapUsdByDepartment": { "engineering": 3, "security-data": 0.5, "product-design": 0.5, "sales-marketing": 0.5, "customer-success": 0.5 },
+  "decided": { "monthlyBudgetUsd": "owner, R0.3 (23/10/2026)", "jobCapUsdByDepartment.engineering": "owner, R0.3 (23/10/2026)" },
+  "proposals": ["jobCapUsdByDepartment.security-data", "jobCapUsdByDepartment.product-design", "jobCapUsdByDepartment.sales-marketing", "jobCapUsdByDepartment.customer-success"],
+  "runChecks": { "test": ["python", "-m", "pytest", "-q"] },
+  "runChecksNote": "R2 runs these inside Docker with --network none (owner, R0.3); lint (ruff) is added once its R2 issue is merged by the owner. Nothing runs them in R1.",
+  "readOnlyApi": null,
+  "policy": {},
+  "dataDir": "products/replydesk/",
+  "ownerApprovalRequired": true
+}

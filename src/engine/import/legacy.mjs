@@ -22,6 +22,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createJail, realResolve, defaultLegacyRoot, APP_ROOT } from '../store/jail.mjs';
 import { openStore } from '../store/db.mjs';
+import { company } from '../building.mjs';
 import { takeLock } from '../engine.mjs';
 import { loadConfig } from '../config.mjs';
 import { building, DEFAULT_BUSINESS } from '../business.mjs';
@@ -109,7 +110,8 @@ export function readSource(src, cfg) {
 
   // agents: legacy agentId -> roster name -> engine agent key (letters and digits compared, DECISIONS.md 10/D4)
   const names = src.rosterNames();
-  const keyOfName = Object.fromEntries(Object.values(cfg.agents).map((a) => [nameKey(a.name), a.key]));
+  // R1: the legacy history is the Etsy shop's, so a legacy name maps to an archived agent, never to a not-hired one (the new DESIGNER is ux-designer)
+  const keyOfName = Object.fromEntries(Object.values(cfg.agents).filter((a) => a.status !== 'not-hired').map((a) => [nameKey(a.name), a.key]));
   const agentMap = Object.fromEntries(Object.entries(names).map(([id, name]) => [id, { name, agentKey: keyOfName[nameKey(name)] || null }]));
   const agentOf = (id) => agentMap[id] || { name: null, agentKey: null };
   out.agents = agentMap;
@@ -298,6 +300,8 @@ export async function runImport({ from = DEFAULT_FROM, dataRoot, configDir, prom
     const cfg = loadConfig({ configDir: configDir || path.join(APP_ROOT, 'config'), promptsDir: promptsDir || path.join(APP_ROOT, 'prompts') });
     // B0 (owner, 21/10/2026): the legacy history is the Etsy shop's: an imported job or routine belongs to its line's business, else etsy-shop
     const B = building(cfg); store.setBusinessResolver((rec) => (rec && (rec.business_id || rec.businessId)) || (rec && rec.line && B.ofLine(rec.line)) || DEFAULT_BUSINESS);
+    // R1: and to product etsy-shop, department etsy (the archive), through the same resolver the engine uses
+    const C = company(cfg); store.setProductResolver((rec) => C.resolve({ businessId: DEFAULT_BUSINESS, ...rec }));
     // 1. the backup, before anything changes
     const backup = backupData({ J, store, stamp, log });
 

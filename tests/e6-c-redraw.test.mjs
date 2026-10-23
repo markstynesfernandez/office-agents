@@ -76,7 +76,7 @@ test('strict clean-up of a file: the record names what was removed; the same inp
 
 test('decision 1: the mock never runs an agent on a job with live spend: run modes and restart refused, any other start stopped; package and mock-only jobs unaffected', async (t) => {
   const r = tempRoot('guard'); t.after(r.cleanup);
-  const e = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan });
   t.after(() => e.close());
   assert.equal(e.providers.mode, 'mock');
   const add = (id, provider, state = 'stopped') => {
@@ -124,7 +124,7 @@ async function redrawEngine(t, script) {
   let engine = null;
   const image = createOpenRouterImage({ engineCfg: CFG.engine, env: LIVE, log: r.log, fetchImpl });
   const providers = { mode: 'live', text: createMockText({ script: (ctx, params) => script(ctx, params, engine) }), image, web: Object.assign(async () => ({ text: '', usd: 0 }), { plan: () => ({ maxUses: 1, extraUsd: 0 }), settings: {} }) };
-  engine = createEngine({ J: r.J, log: r.log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan });
+  engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan });
   engine.sleep = async () => {};
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   // the job as the live run left it: file 1 approved (set-v1), the full set-v2 built, QA DESIGN pass 1 revise, stopped at designer (loop 1 used)

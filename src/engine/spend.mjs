@@ -38,7 +38,12 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
   const caps = cfg.engine.caps, ttl = ttlMs ?? (cfg.engine.runtime || {}).confirmTtlMs ?? 600000;
   const tokens = new Map();   // token -> { bound, exp }
   const O = () => engine.orchestrator;
-  const jobCapOf = (line) => ((caps.perJobUsdByLine || {})[line] ?? caps.perJobUsd);
+  // the job cap of a line, and (R1) of its product's department when the product sets one (the lowest wins, as the guard checks)
+  const jobCapOf = (line) => {
+    const base = (caps.perJobUsdByLine || {})[line] ?? caps.perJobUsd, lp = engine.company ? engine.company.ofLine(line) : null, p = lp && lp.productId ? engine.company.product(lp.productId) : null;
+    const dc = p && p.jobCapUsdByDepartment ? p.jobCapUsdByDepartment[lp.departmentId] : null;
+    return dc > 0 && dc < base ? dc : base;
+  };
   const lineDayCapOf = (line) => ((caps.perLineDayUsd || {})[line] ?? (caps.perLineDayUsd || {}).default ?? 0);
   // the worst case still open on a job: its cap less what it has spent
   const remaining = (j) => Math.max(0, jobCapOf(j.line) - ledger.spent.job(j.id));
@@ -106,14 +111,15 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     // the Console estimate's worst case: this month's Anthropic rows + every open job's worst case + this one (an open job's worst case
     // counts in full: its images are not split out, so the estimate errs high)
     const consoleWorst = r6(consoleUsed + committed + headroomUsd);
-    // B0 (owner, 21/10/2026): the business level: its monthly budget (the Dublin month) and, when it sets one, its day cap, with its own
-    // open jobs at their worst case; the station's caps above stay the outer limit (the lowest limit wins)
-    const B = engine.building, bid = B ? B.ofLine(line) : null, b = bid ? B.get(bid) : null;
-    let business = null;
-    if (b) {
-      const mine = others.filter((j) => (j.business_id || B.ofLine(j.line)) === bid), bc = r6(mine.reduce((s, j) => s + remaining(j), 0));
-      const monthSpent = r6(ledger.spent.businessMonth(bid, month)), daySpent = r6(ledger.spent.businessDay(bid, day)), dayCap = b.dailyCapUsd > 0 ? Math.min(b.dailyCapUsd, caps.perDayUsd) : null;
-      business = { id: bid, name: b.name, floor: b.floor, month, monthSpentUsd: monthSpent, budgetUsd: b.monthlyBudgetUsd, openJobsUsd: bc, monthWorstUsd: r6(monthSpent + bc + headroomUsd), dayCapUsd: dayCap, daySpentUsd: daySpent, dayWorstUsd: r6(daySpent + bc + headroomUsd) };
+    // B0 (owner, 21/10/2026), R1: the product level (B0's business level, renamed): its monthly budget (the Dublin month) and, when it sets
+    // one, its day cap, with its own open jobs at their worst case; the station's caps above stay the outer limit (the lowest limit wins)
+    const C = engine.company, lp = C ? C.ofLine(line) : null, pid = lp ? lp.productId : null, p = pid ? C.product(pid) : null;
+    let product = null;
+    if (p) {
+      const mine = others.filter((j) => (j.product_id || (C.ofLine(j.line) || {}).productId) === pid), bc = r6(mine.reduce((s, j) => s + remaining(j), 0));
+      const monthSpent = r6(ledger.spent.productMonth(pid, month)), daySpent = r6(ledger.spent.productDay(pid, day)), dayCap = p.dailyCapUsd > 0 ? Math.min(p.dailyCapUsd, caps.perDayUsd) : null;
+      const dept = C.department(lp.departmentId);
+      product = { id: pid, name: p.name, status: p.status, department: lp.departmentId, departmentName: dept ? dept.name : null, floor: dept ? dept.floor : null, month, monthSpentUsd: monthSpent, budgetUsd: p.monthlyBudgetUsd, budgetProposal: (p.proposals || []).includes('monthlyBudgetUsd'), openJobsUsd: bc, monthWorstUsd: r6(monthSpent + bc + headroomUsd), dayCapUsd: dayCap, daySpentUsd: daySpent, dayWorstUsd: r6(daySpent + bc + headroomUsd) };
     }
     const refusals = [];
     if (halt.isHalted()) refusals.push('e-stop is on: nothing starts until you resume');
@@ -121,10 +127,10 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     if (worst > caps.perDayUsd + 1e-9) refusals.push('the daily cap would be exceeded: spent today ' + usd(spentToday) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(worst) + ', over ' + usd(caps.perDayUsd));
     if (lineCap > 0 && lineWorst > lineCap + 1e-9) refusals.push('the ' + line + ' line\'s daily cap would be exceeded: ' + usd(lineWorst) + ' worst case, over ' + usd(lineCap));
     if (consoleLimit && consoleWorst > consoleLimit + 1e-9) refusals.push('the Anthropic Console\'s monthly limit could be passed (estimate from the station ledger): this month ' + usd(consoleUsed) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(consoleWorst) + ', over ' + usd(consoleLimit));
-    if (business && business.monthWorstUsd > business.budgetUsd + 1e-9) refusals.push(business.name + '\'s monthly budget would be exceeded: this month ' + usd(business.monthSpentUsd) + ' + its open jobs up to ' + usd(business.openJobsUsd) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(business.monthWorstUsd) + ', over ' + usd(business.budgetUsd));
-    if (business && business.dayCapUsd != null && business.dayWorstUsd > business.dayCapUsd + 1e-9) refusals.push(business.name + '\'s daily cap would be exceeded: ' + usd(business.dayWorstUsd) + ' worst case, over ' + usd(business.dayCapUsd));
+    if (product && product.monthWorstUsd > product.budgetUsd + 1e-9) refusals.push(product.name + '\'s monthly budget would be exceeded: this month ' + usd(product.monthSpentUsd) + ' + its open jobs up to ' + usd(product.openJobsUsd) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(product.monthWorstUsd) + ', over ' + usd(product.budgetUsd));
+    if (product && product.dayCapUsd != null && product.dayWorstUsd > product.dayCapUsd + 1e-9) refusals.push(product.name + '\'s daily cap would be exceeded: ' + usd(product.dayWorstUsd) + ' worst case, over ' + usd(product.dayCapUsd));
     const openJobs = others.map((j) => ({ id: j.id, line: j.line, lineLabel: (cfg.lines[j.line] || {}).label || j.line, state: j.state === 'running' || O().isActive(j.id) ? 'running' : 'next', step: j.step || null, spentUsd: r6(ledger.spent.job(j.id)), capUsd: jobCapOf(j.line), worstUsd: r6(remaining(j)) }));
-    return { day, g, month, business, consoleLimit, consoleUsed, consoleWorst, openJobs, committed, lineCommitted, spentToday, lineSpent, lineCap, worst, lineWorst, refusals };
+    return { day, g, month, product, consoleLimit, consoleUsed, consoleWorst, openJobs, committed, lineCommitted, spentToday, lineSpent, lineCap, worst, lineWorst, refusals };
   }
 
   // the quote (no token): every figure the dialog shows, and why it cannot go ahead (refusals)
@@ -154,8 +160,8 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       openrouterDailyUsd: ol.openrouterDailyUsd ?? null, openrouter: ol.openrouterDailyUsd != null ? { limitUsd: ol.openrouterDailyUsd, usedTodayUsd: orToday, note: 'every job\'s image calls today (station ledger); the engine refuses an image call that would pass the key\'s limit' } : null,
       // L3: the other open jobs (running, or next): line, spend so far, worst case still open
       otherJobs: sc.openJobs,
-      // B0: the business line: the business, its spend this month against its budget (and its day cap, when it sets one)
-      business: sc.business,
+      // R1: the product line (B0: business): the product and its department, its spend this month against its budget (and its day cap)
+      product: sc.product,
       queue: { running, maxRunning: max, startsAsNext: !!nextFor, nextFor },
       routine: t.routine || null,
       refusals

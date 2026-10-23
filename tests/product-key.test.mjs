@@ -23,7 +23,7 @@ function boot(t) {
   const base = createScoutScript({ bad: false });
   const script = (ctx, params) => { seen.push({ agent: ctx.agentKey, input: String(params.messages[0].content) }); return base(ctx, params); };
   script.web = base.web;
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, seen };
 }

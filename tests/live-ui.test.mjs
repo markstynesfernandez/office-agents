@@ -27,7 +27,7 @@ const SPENDING = { '/api/tasks/research': () => 'research', '/api/tasks/brief': 
 async function boot(t, { mockDelayMs = 0, startScheduler = false, tag = 'live', wrap = (s) => s } = {}) {
   const r = tempRoot(tag);
   const station = loadConfig({ configDir: path.join(APP_ROOT, 'config'), promptsDir: path.join(APP_ROOT, 'prompts'), overrides: OVERRIDES }).station;
-  const engine = createEngine({ J: r.J, log: r.log, script: wrap(createDryRunScript({ cfg: station })), overrides: OVERRIDES, startScheduler, mockDelayMs });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: wrap(createDryRunScript({ cfg: station })), overrides: OVERRIDES, startScheduler, mockDelayMs });
   // the research line's output: the two fixture briefs, verified, waiting in research/briefs/
   for (const id of [JOB_A, JOB_B]) r.J.put(path.join(r.dataRoot, 'research', 'briefs', id + '.md'), briefText(id));
   const es = createEngineServer({ engine, log: r.log });

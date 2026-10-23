@@ -11,7 +11,7 @@ import { createEngineServer } from '../src/server/engine-server.mjs';
 
 async function boot(t) {
   const r = tempRoot('server');
-  const engine = createEngine({ J: r.J, log: r.log, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false });
   const { server, closeAll, token } = createEngineServer({ engine, log: r.log });
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   const port = server.address().port, host = '127.0.0.1:' + port;

@@ -16,7 +16,7 @@ export function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')
 const BASE = fs.existsSync(path.join(CONFIG_DIR, 'station.config.json')) ? readJson(path.join(CONFIG_DIR, 'station.config.json')) : {};
 export const config = { ...BASE, productType: 'digital' };
 export const isPod = () => false;
-export const productsFile = () => path.join(CONFIG_DIR, 'products.json');
+export const productsFile = () => path.join(CONFIG_DIR, 'archive', 'etsy', 'products.json');   // R1: the Etsy product specs, archived
 export const loadProductList = () => readJson(productsFile()).products;
 export const BLOCKLIST_FILE = path.join(CONFIG_DIR, 'blocklist.txt');
 

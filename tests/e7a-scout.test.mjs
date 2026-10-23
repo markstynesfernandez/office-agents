@@ -40,7 +40,7 @@ function boot(t, draft, { file = DAY + '--genre-lofi-study-desk-props.md' } = {}
     return base(ctx, params);
   };
   script.web = base.web;
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, r, writes };
 }

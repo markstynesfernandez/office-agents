@@ -2698,3 +2698,142 @@ running about USD 10.50–16 a week (about 45–70 a month) plus about 1–5 for
   owner (RESTRUCTURE.md §9.2 item 4).
 - Still open (§9.2): ReplyDesk's paying users; the autumn package in the old approval queue; the remaining budgets and caps; the
   legal advice, legal name and address, mailbox set-up and retention before R5; names.
+
+## R1: engine core (owner's go, 23/10/2026; built 23/10/2026)
+
+Built in the dev checkout only (`STATION_INSTANCE=dev`, mock provider), $0, no API call, no new dependency. The live worktree, every
+`.env` and the network were not touched. Not deployed: the deploy plan is in PROGRESS.md "R1 deploy plan (the owner runs it)".
+
+### Before the build
+
+- **Baseline**: main clean at `97cfafc`; W6 still parked on `w6-wip` (`56adc5f`, not in main). `npm test` on main: **512 passed, 0
+  failed**. The two W4 tests that failed in R0 fail only with W6's working tree (`w6-wip`); on main they pass, so nothing needed fixing.
+- **Dev data root**: `office-agents\data` (instance dev, stamped dev; not the live checkout). Backed up through the engine's store (the
+  lock held, SQLite `VACUUM INTO`) to `data\.backups\dev-pre-r1-20261023T175115Z` (`station.db`, `events/`, `INSTANCE.json`); closing the
+  store folded the 168,952-byte -wal into `station.db` (98,304 bytes), so no -wal or -shm remained. Then `npm run migrate:businesses`
+  (dry run) and `-- --apply`: jobs 0, runs 0, routines 1 (etsy-shop), approvals 0, ledger mirror 0; the column added to all five tables;
+  the events file's 1 row resolves to shared; **0 unmapped**; its own backup `data\.backups\businesses-20261023T175123Z`; a second run:
+  nothing to change. `migrate:products` was run on dev as a dry run only (1 routine to etsy-shop/etsy, the 1 event to station/hq, 0
+  unmapped); not applied (the R1 prompt asked for migrate:businesses on dev).
+
+### As built
+
+1. **Products x departments** (`src/engine/building.mjs`, which replaces `business.mjs` as the source of truth):
+   `config/products/{replydesk,emty-inbox,station,etsy-shop}.json` and `config/departments/{hq,security-data,engineering,product-design,
+   sales-marketing,customer-success,etsy}.json` (`_template.json` never loaded). Floors 6 to 1 and G are display order only. The building
+   check stops the engine with every reason: a floor used twice, an agent or line in no department or two, a department reporting to
+   anyone but the owner, CEO, CTO or COO, an agent status other than active, not-hired or archived, an active agent without its prompt,
+   output limit or with a tool not built yet, a product dataDir outside `products/<id>/` (`.` for the archived Etsy layout only),
+   `ownerApprovalRequired` false, a day cap above the station's. `config/businesses/` is retired; `config/products.json` (the Etsy product
+   specs) moved to `config/archive/etsy/products.json` (read as before, `cfg.products`).
+2. **Every record carries product_id and department_id** (jobs, runs, routines, approvals, the ledger mirror; `productId` and
+   `departmentId` on new ledger rows and events). One resolver: the record's own, else its job's, line's, agent's (an HQ or not-hired
+   agent: station/hq), an own-shop Etsy call's (etsy-shop/etsy), its B0 business's (etsy-shop -> etsy-shop/etsy, shared -> station/hq),
+   else station/hq. No record carries a floor. The append-only ledger and events are never rewritten; older rows are resolved on read.
+   `business_id` is kept and still filled (B0's view: etsy-shop or shared) so a rollback to B0 reads the data.
+3. **19 agents in config, all not hired yet** (`status: "not-hired"`, `phase` R2 to R6, `enabled: false`), with the R0.2/R0.3 models,
+   effort and thinking (thinking "default" for DEVELOPER, REVIEWER, COMPLIANCE), the §2.2 tools and limits (`proposals: ["limits"]`), the
+   execs and COMPLIANCE `reportsTo: "owner"`; the new DESIGNER is `ux-designer`. The engine refuses to run a not-hired agent before
+   anything is recorded or reserved, and the page cannot change it. The eight Etsy agents are `archived`; OVERSEER is `retired`,
+   `retiredInto: "coo"`, in department hq (its history stays under agent overseer).
+4. **The Etsy archive** (G): every job creation and start on the Etsy lines is refused with "archived" (`engine.lineHold`), their
+   routines cannot be armed and skip, the Etsy agents and OVERSEER cannot run. History, packages, the old approval queue, the ledger and
+   the own-shop connection (E7a) stay viewable.
+5. **The autonomy policy** (`config/autonomy.json`, `src/engine/policy.mjs`): the §3.1 levels; every tool declares its action in code
+   (`TOOL_ACTIONS`; a tool with no declared action stops the engine); an action not in the file is forbidden; a product, department or
+   agent override may only be stricter. The runtime checks the policy before the guard reserves anything (a run whose tool is forbidden
+   for its product is refused at USD 0) and again on every tool call. At every start the engine logs one row per changed action to
+   `data/policy/autonomy-log.jsonl` (time, action, old -> new, sha256, commit, instance; the first start records every action once).
+6. **The locked rules in code** (`src/engine/locked.mjs`): checked when the config loads (a config that loosens one stops the engine,
+   naming the rule and the file) and on every action (`assertActor`, `src/engine/actions.mjs`). See "R1: the locked rules and their
+   tests" below.
+7. **The spend guard per product and department** (`guard.mjs`, `spend.mjs`): `productMonth[<id>]` (monthly budget), `productDay[<id>]`
+   (day cap, when set), `perJob[<department>@<product>]` (the product's job cap for that department), `perRun[<agent>]` (an agent's
+   `limits.runCapUsd`), with every station cap; the lowest limit wins. B0's business-level checks are replaced by the product level. The
+   spend dialog shows the product line (department, floor, this month against the budget, "proposal" when it is one).
+8. **Opus stays refused**: an Anthropic price counts only when it cites `https://platform.claude.com/docs/en/about-claude/pricing` with
+   who verified it (`guard.mjs` `OFFICIAL_PRICING`); Claude Opus 5.5 has no price, so every Opus call is refused before it is made.
+   No price was added.
+9. **The Owner's office** (`src/engine/requests.mjs`, the `requests` table): an owner-level action files a request (product,
+   department, job, action, summary, the payload's sha256 with the payload in `data/requests/<id>/payload.txt`, COMPLIANCE's verdict where
+   required, SECURITY's) and the job waits; only the owner's page session decides one (`POST /api/requests/decide`: same origin, the
+   per-launch token, JSON, an idempotency key, the owner's words, the version); each decision goes to the row,
+   `data/requests/decisions.jsonl` (fsync), the log and the event stream. An approved request runs its action once; a payload changed
+   after approval voids it and a new request is filed. The old `approvals` table stays for the Etsy history.
+10. **Lines**: the COO (once hired) or the owner pauses a line with the reason; nothing starts on it and its routines skip; only the
+    owner resumes it (`POST /api/lines/resume`, with words).
+11. **`npm run migrate:products`** (`scripts/migrate-products.mjs`, `src/engine/lib/migrate-products.mjs`): dry run by default; `--apply`
+    takes a full backup first (`data/.backups/products-<stamp>/`), then in one transaction adds the two columns, creates the requests
+    table and sets every value; logs every change to `logs/migrate-products-<date>.log`; refuses while anything is unmapped, while an
+    engine holds the lock, and on a pre-B0 root ("run npm run migrate:businesses first"); idempotent (a second run changes nothing, no
+    backup); safe to restart (an error or a killed process mid-transaction leaves nothing half-written; a rerun completes). The engine
+    refuses an unmigrated root (MIGRATE, with the command). The dry run writes nothing (the store creates the requests table only once
+    the columns exist).
+12. **Snapshot and page**: `snapshot.company` (the floors top to bottom with each agent's status, the products, the Owner's office:
+    requests, decisions, the policy and its log, paused lines) and `spend.byProduct` (Finance; MRR "not connected"). The whole-building
+    view (`G`) shows the penthouse: the requests with Approve and Reject (your words required), Finance, the policy, the seven floors.
+    The 3D office keeps B0's two drawn floors until R7; a not-hired agent is not drawn (no desk yet).
+13. **The COO's daily report routine** is seeded disabled (`rt_seed_coo-daily-report`, target `agent:coo`); it skips while the COO is
+    not hired and cannot be armed before R3.
+
+### R1: the locked rules and their tests
+
+Each has a config test (the engine refuses to start, naming the rule and the file) and a runtime test (`tests/r1-locked.test.mjs`).
+
+| Locked rule | Refused in config | Refused at runtime |
+|---|---|---|
+| owner-only-approver | `request.decide.agent` loosened or missing; a product override of it | an agent, the engine, a caller without the page session, a script run, a page request without the token or from another origin; only the page decides; the decision log is written |
+| ceo-recommends-only | an extra CEO tool, a folder outside `products/station/memos`, writes outside it, another reporting line, `policy.change.agent` loosened, a hired CEO with a fourth tool | deciding, filing a request, changing policy, a budget or a cap, sending, merging, deploying, pricing, posting, pausing, assigning; a run outside its memos folder; a not-hired CEO cannot run |
+| coo-pause-only | an extra COO tool, another folder, `cap.change.agent` or `budget.change.agent` loosened (file or product) | a hired COO pauses a line and nothing starts on it; it cannot resume it or change a cap, budget or the policy; caps and budgets unchanged; only the owner's page resumes; a not-hired COO cannot pause |
+| compliance-independent | COMPLIANCE `reportsTo` not the owner; COMPLIANCE in a department under the CEO; `compliance.override.agent` loosened | an outbound draft with a revise, a refuse, no verdict or a "pass" from anyone but COMPLIANCE never becomes a request, whoever files it (the CEO included); no caller can override it |
+| no-merge-deploy-push | `git.push.branch` owner or auto, `git.merge.agent` loosened, `deploy.agent` missing, a product override, a tool named `git_push` or `deploy_site` | push, agent merge and agent deploy refused for every caller, the owner included; no built tool is named for them |
+| secrets-refused | `secrets.read` loosened (file or a department override) | `.env*`, `*.db` (and -wal/-shm), `.venv/`, `*.pem`, `*.key`, `id_*`, `.npmrc`, `credentials*`, `secrets/`, `.git/` refused on read and write; a file with a key is withheld (the key never reaches the agent or the log); a write holding a key, private key or password connection string is not written; an agent reading `.env` in a run ends it refused and its job blocks |
+| legal-forbidden | `personal-data.scrape`, `review.fake`, `account.fake`, `claim.misleading`, `email.send.agent` loosened (file, product or agent override); a tool named for scraping | each refused for every caller; no tool can be named for scraping, reviews, accounts or sending |
+| outbound-needs-owner | any of the 12 outbound actions at auto, in the file or a product override | a merge files a request and the job waits (nothing runs); approved, it runs once; a payload changed after approval is voided, refused and filed again; a rejected one never runs |
+| owner-never-lowered | an owner action lowered to auto by a product, department or agent override; `ownerApprovalRequired` false | (a stricter override is accepted: tested) |
+
+### Measured
+
+- **Tests**: npm test **552 passed, 0 failed** (512 before R1; new: `r1-locked` 21/21, `r1-company` 13/13, `r1-migrate` 6/6; changed: `b0` for
+  the derived business view and the product-level guard, `engine-line`, `e6-c0`, `live-web`, `people-looks`, `import-legacy`,
+  `demo`, `write-guard` and `engine-server` for the R1 config, and every test that runs the Etsy line now opens the archive sandbox).
+  `npm run dry-run` and `npm run dry-run:scout` pass (mock, $0).
+- **migrate:products on the live-shaped fixture** (32 jobs, 47 runs, 4 routines, 1 approval, 509 ledger rows, 1,148 events in 6 files):
+  the dry run sets jobs 32, runs 47, routines 4 and the approval to etsy-shop/etsy, the ledger mirror 508 to etsy-shop/etsy and 1 (the
+  station-level smoke call) to station/hq; the ledger file resolves 508/1 and the events 1,050 to etsy-shop/etsy and 98 to station/hq;
+  **0 unmapped**; nothing written. Apply: one backup, 593 values and 10 columns in one transaction, every change logged; the ledger and
+  events byte for byte unchanged. A second run: nothing to change, no backup. An error after 300 of 593 updates, and a process killed
+  after 400: nothing visible, the rerun completes. The engine then starts (and seeds the COO report routine, disabled).
+
+### Choices made in the build (for the owner to confirm or change)
+
+1. **Two items locked beyond RESTRUCTURE.md §3.2**, as the R1 prompt lists them: `git.push.branch` (§3.1 had it forbidden but not
+   locked), and "anything leaving the building needs owner approval" (outbound actions can be owner or forbidden, never auto; §3.1 let
+   the owner change those levels in the file). Changing either is now a code change.
+2. **Five action names added** to the policy, at auto, because existing tools need a declared action: `file.read` (fs_read, fs_list),
+   `image.generate`, `image.analyze` (archived Etsy line only), `verdict.submit` (submit_verdict), and `code.search` (the planned
+   code_search). `report_blocked` maps to `report.write`.
+3. **The archive sandbox** (`archiveSandbox`, mock provider only): the dry runs, the demo, the capture scripts and the existing Etsy
+   regression tests run the archived line in it; `line:live`, `scout:live` and the owner CLI's run modes are refused with "archived".
+4. **Data jail per product**: a run is jailed to its product's data (`products/<id>/`; the Etsy archive keeps today's layout minus
+   `businesses/` and `products/`). B0's view stays for the 3D page and `business_id`.
+5. **Not set, so not invented**: the HQ department's job cap (the station's USD 7.00 applies; the exec run caps are lower), each
+   not-hired agent's `maxOutputTokens` and write paths (set when it is hired), emty-inbox's engineering job cap (3.00, copied from ReplyDesk
+   and marked a proposal), and the COO report's hour (08:00 Dublin, marked a proposal).
+6. **A department job cap above the station's** is accepted (the lowest wins in the guard); a day cap above the station's is refused,
+   as in B0.
+7. **An approved request does not restart its job** in R1 (no new line exists yet); the job's reason records the decision and R2's lines
+   continue from it.
+8. **A secret path read ends the run** (secrets.read is forbidden: the job blocks with the rule); secret content found in a file is
+   withheld with a note and the run goes on; a write holding a secret is refused back to the agent.
+
+### Open points for the owner
+
+- The R1 choices above, in particular the two extra locked items (1).
+- Still open from RESTRUCTURE.md §9.2: ReplyDesk's paying users; the autumn package in the old approval queue (its Approve/Reject still
+  work on the page: they record a decision on Etsy history and send nothing); the remaining budgets and caps (emty-inbox 40, station 20,
+  the department job caps, the exec run caps, the day cap); the legal and mailbox items before R5; names.
+- The dev data root is post-B0 but not yet migrated to products: the dev Station refuses to start until `npm run migrate:products --
+  --apply` runs on dev (dry run: 0 unmapped).
+- RESTRUCTURE.md §8 R1 also lists a dry run on a scratch copy of live data; it was not done (the R1 prompt: do not touch the live
+  worktree). The live dry run is step 4 of the deploy plan, and the fixture test reproduces live's shape.

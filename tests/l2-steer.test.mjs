@@ -44,7 +44,7 @@ async function boot(t, { mockDelayMs = 0, tag = 'l2', proposalUsd = null, limitJ
   const r = tempRoot(tag);
   const station = loadConfig({ configDir: path.join(APP_ROOT, 'config'), promptsDir: path.join(APP_ROOT, 'prompts'), overrides: OVERRIDES }).station;
   const base = createDryRunScript({ cfg: station });
-  const engine = createEngine({ J: r.J, log: r.log, script: proposalUsd != null ? withProposal(proposalUsd)(base) : base, overrides: OVERRIDES, startScheduler: false, mockDelayMs, limitJobs });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: proposalUsd != null ? withProposal(proposalUsd)(base) : base, overrides: OVERRIDES, startScheduler: false, mockDelayMs, limitJobs });
   r.J.put(path.join(r.dataRoot, 'research', 'briefs', JOB_A + '.md'), briefText(JOB_A));
   const es = createEngineServer({ engine, log: r.log });
   await new Promise((res) => es.server.listen(0, '127.0.0.1', res));
@@ -298,7 +298,7 @@ test('steering: amendment, set rejection, the file-1 decision\'s controls; the r
 
 test('Design card: sets and the QA pass rate come from every line job (a packaged set\'s zip counts; file-1 checks count)', (t) => {
   const r = tempRoot('l2design');
-  const engine = createEngine({ J: r.J, log: r.log, startScheduler: false, resume: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false, resume: false });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const ID = '2026-10-17--cozy-autumn-like', jd = path.join(r.dataRoot, 'jobs', ID);
   engine.store.insertJob({ id: ID, line: 'room1-digital', kind: 'line', title: 'like the autumn job', product_key: 'pngtuber-prop-pack', state: 'approval', step: 'package', data: {} });

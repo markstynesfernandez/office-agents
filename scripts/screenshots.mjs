@@ -89,7 +89,7 @@ async function engineMain(arg, headed) {
   fs.mkdirSync(outJail(outDir), { recursive: true });
   const J = createJail();
   const log = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-engine', jail: J });
-  const engine = openScriptEngine({ J, log, purpose: 'screenshots', startsJobs: true });
+  const engine = openScriptEngine({ archiveSandbox: true, J, log, purpose: 'screenshots', startsJobs: true });
   if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
   const { server, closeAll } = createEngineServer({ engine, log });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -159,7 +159,7 @@ async function main() {
     const { openScriptEngine } = await import('../src/engine/script-engine.mjs');
     const { createEngineServer } = await import('../src/server/engine-server.mjs');
     const J = createJail(), elog = makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-engine', jail: J });
-    const engine = openScriptEngine({ J, log: elog, purpose: 'screenshots', startsJobs: true });
+    const engine = openScriptEngine({ archiveSandbox: true, J, log: elog, purpose: 'screenshots', startsJobs: true });
     if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
     const es = createEngineServer({ engine, log: elog });
     await new Promise((r) => es.server.listen(0, '127.0.0.1', r));

@@ -86,7 +86,7 @@ test('decision 5: an owner brief is accepted with evidence level "owner"; intake
   assert.equal(c.ok, true, c.reasons.join('; ')); assert.equal(c.evidence.level, 'owner'); assert.equal(evidenceLevelOf(OWNER), 'owner');
   assert.deepEqual(c.price.bounds, { min: 3.5, max: 9, date: '2026-10-17' });
   const r = tempRoot('c-owner'); t.after(r.cleanup);
-  const e = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false }); t.after(() => e.close());
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false }); t.after(() => e.close());
   const s = e.orchestrator.saveOwnerBrief({ text: OWNER, by: 'test' });
   assert.equal(s.ok, true, (s.reasons || []).join('; ')); assert.equal(s.changed, true); assert.equal(s.file, 'research/briefs/2026-10-17--cozy-autumn-desk-props.md');
   assert.equal(e.orchestrator.saveOwnerBrief({ text: OWNER, by: 'test' }).changed, false, 'the same text again: unchanged');
@@ -116,7 +116,7 @@ test('decision 5: an owner brief naming a game, brand or character is refused (w
   assert.match(ocheck(named('A lantern in the style of a famous artist.')).reasons.join(' '), /derivative/);
   // a game the scouts found (the scouting blocklist) is refused at save and at intake
   const r = tempRoot('c-owner-scouted'); t.after(r.cleanup);
-  const e = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false }); t.after(() => e.close());
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false }); t.after(() => e.close());
   const scouted = (e.cfg.station.sloganScreen.lists['scouted-games'] = ['glimmerfall quest']);
   assert.ok(scouted.length);
   const s = e.orchestrator.saveOwnerBrief({ text: named('A Glimmerfall Quest lantern.'), by: 'test' });

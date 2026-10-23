@@ -1,0 +1,17 @@
+{
+  "$comment": "R1: the Station itself. HQ and station-wide records (B0's \"shared\"): exec memos and reports, the engine's own events, the COO's report. A job on HQ (department hq) belongs to this product. Its budget is a proposal (RESTRUCTURE.md §9.2 item 3).",
+  "id": "station",
+  "name": "The Station",
+  "status": "active",
+  "phase": "R1",
+  "repo": "office-agents (this repository)",
+  "monthlyBudgetUsd": 20,
+  "dailyCapUsd": null,
+  "jobCapUsdByDepartment": {},
+  "decided": {},
+  "proposals": ["monthlyBudgetUsd"],
+  "readOnlyApi": null,
+  "policy": {},
+  "dataDir": "products/station/",
+  "ownerApprovalRequired": true
+}

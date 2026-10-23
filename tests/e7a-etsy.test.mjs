@@ -214,7 +214,7 @@ test('the ledger: one row per Etsy call, kind etsy, USD 0, the operation and sta
 
 async function server(t) {
   const r = tempRoot('e7a-srv');
-  const engine = createEngine({ J: r.J, log: r.log, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false });
   const etsy = createMockEtsyClient({ engineCfg: engine.cfg.engine, J: r.J, ledger: engine.ledger, log: r.log });
   const es = createEngineServer({ engine, log: r.log, etsy });
   await new Promise((res) => es.server.listen(0, '127.0.0.1', res));
@@ -256,7 +256,7 @@ test('server: GET /api/etsy (status, never a token); connect start and finish wi
 
 test('server without a usable Etsy client: GET says why; the actions refuse; the Station still runs', async (t) => {
   const r = tempRoot('e7a-none');
-  const engine = createEngine({ J: r.J, log: r.log, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false });
   const es = createEngineServer({ engine, log: r.log, etsy: { unavailable: 'not set in the .env: ETSY_TOKEN_KEY' } });
   await new Promise((res) => es.server.listen(0, '127.0.0.1', res));
   t.after(async () => { es.closeAll(); await new Promise((res) => es.server.close(res)); try { engine.close(); } catch (_) {} r.cleanup(); });

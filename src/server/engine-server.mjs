@@ -27,6 +27,10 @@ const MAX_BODY = 16 * 1024;
 // page reads GET /api/etsy (status, never a token) and connects, refreshes or disconnects through the POST actions below
 export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = null, etsy = null }) {
   const token = crypto.randomBytes(24).toString('hex');   // per launch; only the page on our own origin can read it
+  // R1 (locked rule owner-only-approver): this token is the owner's page session; the engine accepts a request decision, a line resume and
+  // an owner pause only with it (requests.mjs). A server on a script engine has no session, so it cannot decide anything.
+  const unregisterOwner = engine.requests && !engine.scriptRun ? engine.requests.registerOwnerSession(token) : () => {};
+  const owner = { kind: 'owner', session: token };
   const hostLabel = 'Node ' + process.version + ' · ' + os.platform() + ' ' + os.release() + ' (station host)';
   let cache = { at: 0, seq: -1, snap: null };
   const clients = new Set();
@@ -105,7 +109,12 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     // L2.1 (owner, 19/10/2026): arming a routine needs the confirm token like every spending action; disarming needs none
     'POST /api/routines/enable': (body) => (body.enabled === true && engine.spend.gate('routine-arm', body), engine.routines.enable(str(body.id), body.enabled === true, { expectedVersion: ver(body) })),
     'POST /api/routines/delete': (body) => engine.routines.remove(str(body.id), { expectedVersion: ver(body) }),
-    // the approval queue: approvals and tracker rows only; nothing is sent anywhere
+    // R1: the Owner's office: the owner decides a request (approve or reject, with the owner's words); nothing is sent anywhere. Pausing a
+    // line is the COO's or the owner's; resuming it is the owner's only
+    'POST /api/requests/decide': (body) => engine.requests.decide(str(body.id, 60), { decision: str(body.decision, 20), words: str(body.words, 2000), expectedVersion: ver(body), actor: owner }),
+    'POST /api/lines/pause': (body) => engine.actions.pauseLine(str(body.line, 60), { actor: owner, reason: str(body.reason, 500) }),
+    'POST /api/lines/resume': (body) => engine.actions.resumeLine(str(body.line, 60), { actor: owner, words: str(body.words, 2000) }),
+    // the approval queue (B0's, the Etsy history): approvals and tracker rows only; nothing is sent anywhere
     'POST /api/approvals/decide': (body) => O.decide(str(body.jobId), { action: str(body.action, 20), reason: str(body.reason, 600), etsyUrl: str(body.etsyUrl, 300), publishedOn: str(body.publishedOn, 10), finalTitle: str(body.finalTitle, 200), finalPriceEur: body.finalPriceEur == null || body.finalPriceEur === '' ? null : Number(body.finalPriceEur), sku: str(body.sku, 40), expectedVersion: ver(body), by: BY }),
     // the owner's decisions and owner-started mechanical steps on a job (src/engine/owner.mjs; port batch 17/10/2026). Each checks the job's
     // version; an override applies only to a QA judgement verdict, never to the originality screen
@@ -178,7 +187,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
             log.info('action', { path: p, key, ...who }); audit(true, p, who);
             return { status: 200, body: { ok: true, result: out ?? null } };
           } catch (e) {
-            const status = e.code === 'STALE' ? 409 : e.code === 'HALTED' ? 423 : e.code === 'CONFIRM_REQUIRED' ? 428 : e.code === 'DAY_CAP' ? 422 : 400;
+            const status = e.code === 'STALE' ? 409 : e.code === 'HALTED' ? 423 : e.code === 'CONFIRM_REQUIRED' ? 428 : e.code === 'DAY_CAP' ? 422 : e.code === 'LOCKED' ? 403 : 400;
             const error = e.code === 'STALE' ? 'Not saved: ' + e.message.replace(/ \(version .*\)$/, '') + '. The page has been refreshed; check it and try again.' : e.message;
             log.warn('action refused', { path: p, key, status, error: e.message }); audit(false, p, { status, error, code: e.code || null, jobId: body.jobId || null });
             return { status, body: { error, code: e.code || null } };
@@ -221,7 +230,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
   const server = http.createServer(handler);
   server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); } catch (_) {} });
   const closeAll = () => { for (const c of clients) { try { c.end(); } catch (_) {} } clients.clear(); };
-  const dispose = () => { clearInterval(beat); unsub(); closeAll(); };
+  const dispose = () => { clearInterval(beat); unsub(); closeAll(); unregisterOwner(); };
   server.on('close', dispose);
   return { server, handler, snapshot, token, closeAll, dispose };
 }

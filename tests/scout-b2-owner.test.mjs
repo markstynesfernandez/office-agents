@@ -24,7 +24,7 @@ const DAY_MS = 86400000;
 const turnOf = (params) => params.messages.filter((m) => m.role === 'assistant').length;
 function boot(t, script = createScoutScript({ bad: false })) {
   const r = tempRoot('b2o');
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, r };
 }

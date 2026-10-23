@@ -39,7 +39,18 @@ const calendar = createCalendar({ root: $('#calendar'), onOpenJob: openJob, ctl 
 const ledger = createLedgerView({ root: $('#ledger') });
 // B0 (owner, 21/10/2026): the building's floors. The page shows one floor at a time (its office, task list, routines, board, calendar
 // and spend); the whole-building view lists every floor's totals. ?floor=N for this page only, else the remembered floor
-const building = createBuildingView({ root: $('#building'), onFloor: (n) => setFloor(n) });
+// R1: the penthouse's Owner's office in the building view: the owner decides a request (approve or reject, with their words) and resumes a
+// paused line; the server checks the page session again (only the owner decides)
+const building = createBuildingView({ root: $('#building'), onFloor: (n) => setFloor(n),
+  onDecide: async (r, decision) => {
+    const ok = decision === 'approve';
+    const v = await ctl.dialog({ title: (ok ? 'Approve' : 'Reject') + ' this request', intro: '<b>' + esc(r.summary) + '</b><br><span class="mono">' + esc(r.action) + ' · ' + esc(r.productId) + ' · ' + esc(r.departmentId) + '</span><br><br>' + (ok ? 'Records your approval of this exact payload (sha256 ' + esc(String(r.payloadSha256).slice(0, 12)) + '…); if the payload changes, the approval no longer matches. Nothing is sent from here.' : 'Records your rejection; nothing runs.'), fields: [{ name: 'words', label: 'Your words (logged with the decision)', type: 'textarea', required: true, rows: 3 }], confirm: ok ? 'Approve' : 'Reject', danger: !ok });
+    if (v) await ctl.act('/api/requests/decide', { id: r.id, decision, words: v.words.trim(), expectedVersion: r.version }, { ok: (ok ? 'Approved: ' : 'Rejected: ') + r.summary });
+  },
+  onResume: async (line) => {
+    const v = await ctl.dialog({ title: 'Resume the ' + line + ' line', intro: 'The line starts jobs again from now on.', fields: [{ name: 'words', label: 'Your words (logged)', type: 'textarea', required: true, rows: 2 }], confirm: 'Resume' });
+    if (v) await ctl.act('/api/lines/resume', { line, words: v.words.trim() }, { ok: 'Resumed: ' + line });
+  } });
 let floorChoice = q.get('floor') != null ? q.get('floor') : store.get('office-floor'), curFloor = null, view = null;
 // E7a: the own-shop Etsy connection (top-bar button; the API Terms' notice is in the footer)
 const etsyPanel = createEtsyPanel({ ctl, button: $('#etsy-btn') });
@@ -274,7 +285,7 @@ function connectLive() {
   live.onopen = () => { liveOk = true; };
   live.onerror = () => { liveOk = false; };
   const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; try { presenter.onEvent(JSON.parse(e.data)); } catch (_) { /* not JSON */ } if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
-  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused']) live.addEventListener(t, onEv);
+  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused', 'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed']) live.addEventListener(t, onEv);
 }
 // the e-stop (ENGINE-PLAN.md §5.5): one click and a confirmation stops everything; resuming is a second, explicit action
 // with the typed word, against the e-stop state the page loaded (a stale page is refused)

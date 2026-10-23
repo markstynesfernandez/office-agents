@@ -14,7 +14,7 @@ import { fireDecision, missedFires, validSchedule } from '../src/engine/schedule
 import { tempRoot, until } from './helpers/engine.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const engineOn = (t, o = {}) => createEngine({ J: t.J, log: t.log, mockDelayMs: 0, ...o });
+const engineOn = (t, o = {}) => createEngine({ archiveSandbox: true, J: t.J, log: t.log, mockDelayMs: 0, ...o });
 
 test('button/API press: an in-flight call is aborted, the guard refuses new calls, the state survives a restart', async () => {
   const t = tempRoot('halt');
@@ -72,7 +72,7 @@ test('engine lock: a second engine on the same data root refuses to start', () =
   const t = tempRoot('lock');
   try {
     const e = engineOn(t);
-    const child = spawnSync(process.execPath, ['--input-type=module', '-e', "import { createEngine } from './src/engine/engine.mjs'; import { createJail } from './src/engine/store/jail.mjs'; try { createEngine({ J: createJail({ dataRoot: process.argv[1], extraRoots: [] }), log: { info() {}, warn() {}, error() {} } }); console.log('started'); } catch (e) { console.log(e.code); }", t.dataRoot], { cwd: ROOT, encoding: 'utf8' });
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', "import { createEngine } from './src/engine/engine.mjs'; import { createJail } from './src/engine/store/jail.mjs'; try { createEngine({ archiveSandbox: true, J: createJail({ dataRoot: process.argv[1], extraRoots: [] }), log: { info() {}, warn() {}, error() {} } }); console.log('started'); } catch (e) { console.log(e.code); }", t.dataRoot], { cwd: ROOT, encoding: 'utf8' });
     assert.match(child.stdout, /LOCKED/);
     e.close();
     assert.ok(!fs.existsSync(path.join(t.dataRoot, '.lock')), 'lock released on close');

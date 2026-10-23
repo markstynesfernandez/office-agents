@@ -23,7 +23,7 @@ import { createDryRunScript } from '../fixtures/engine/mock-script.mjs';
 const FIX = path.join(APP_ROOT, 'fixtures', 'engine'), CONFIG = path.join(APP_ROOT, 'config'), PROMPTS = path.join(APP_ROOT, 'prompts');
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 // the real products (pngtuber-prop-pack, floor USD 3.50) and the dry run's 5-sticker pack (what the dry-run design replies deliver)
-const OVERRIDES = { productsFile: { products: [...readJson(path.join(CONFIG, 'products.json')).products, ...readJson(path.join(FIX, 'products.json')).products] }, stationSet: readJson(path.join(FIX, 'station-config-patch.json')).set };
+const OVERRIDES = { productsFile: { products: [...readJson(path.join(CONFIG, 'archive', 'etsy', 'products.json')).products, ...readJson(path.join(FIX, 'products.json')).products] }, stationSet: readJson(path.join(FIX, 'station-config-patch.json')).set };
 const STICKERS = 'dry-run-sticker-pack-5';
 const DAY = dublinDay();
 const LOFI = { slug: 'lofi-study', genre: 'lofi study', segment: 'students who stream study sessions', props: 'a desk lamp, a stack of notebooks, a mug of tea, a cassette player, a potted fern and a sleeping cat bed', palette: 'dusty rose, cream and teal', price: 9 };
@@ -46,7 +46,7 @@ function boot(t, { draft = null, searches = [], web = {} } = {}) {
     return scout(ctx, params);
   };
   script.web = (name, args) => (name === 'web_search' && web[args.query]) || scout.web(name, args);
-  const e = createEngine({ J: r.J, log: r.log, script, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false });
   t.after(async () => { await idle(e); try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, r };
 }

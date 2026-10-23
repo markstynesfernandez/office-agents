@@ -38,7 +38,7 @@ if (engineView) {
   const { createEngineServer } = await import('../src/server/engine-server.mjs');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'station-r3b-engine-'));
   const J = createJail({ dataRoot: path.join(tmp, 'data'), extraRoots: [path.join(ROOT, 'logs')] });
-  const engine = openScriptEngine({ J, log: makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-r3b-engine', jail: J }), purpose: 'screenshots-r3b', startsJobs: true });
+  const engine = openScriptEngine({ archiveSandbox: true, J, log: makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-r3b-engine', jail: J }), purpose: 'screenshots-r3b', startsJobs: true });
   if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
   const es = createEngineServer({ engine, log });
   server = es.server;

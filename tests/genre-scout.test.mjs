@@ -25,7 +25,7 @@ const walk = (d) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true 
 
 function boot(t, { script = createScoutScript(), J = null, log = null, root = null } = {}) {
   const r = root || tempRoot('scout');
-  const e = createEngine({ J: J || r.J, log: log || r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: J || r.J, log: log || r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} if (!root) r.cleanup(); });
   return { e, r };
 }
@@ -196,7 +196,7 @@ test('TREND-SCOUT gets 12 web calls a run, enforced by the engine (the 13th is r
 test('"Weekly genre scout" is seeded disabled, once; a deleted seed stays deleted; it runs the genre-scout line', async (t) => {
   const r = tempRoot('scout-routine');
   t.after(() => r.cleanup());
-  let { e } = { e: createEngine({ J: r.J, log: r.log, script: createScoutScript(), startScheduler: false }) };
+  let { e } = { e: createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createScoutScript(), startScheduler: false }) };
   const id = 'rt_seed_weekly-genre-scout';
   let rt = e.store.getRoutine(id);
   assert.ok(rt, 'seeded');
@@ -208,11 +208,11 @@ test('"Weekly genre scout" is seeded disabled, once; a deleted seed stays delete
   assert.equal(out.state, 'research-done', out.reason);
   assert.equal(out.line, 'genre-scout');
   e.close();
-  e = createEngine({ J: r.J, log: r.log, startScheduler: false });
+  e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false });
   assert.equal(e.store.listRoutines().filter((x) => x.id === id).length, 1, 'not seeded twice');
   e.routines.remove(id, { expectedVersion: e.store.getRoutine(id).version });
   e.close();
-  e = createEngine({ J: r.J, log: r.log, startScheduler: false });
+  e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false });
   assert.equal(e.store.getRoutine(id), null, 'a deleted seed is not brought back');
   e.close();
 });

@@ -13,6 +13,7 @@ import { loadConfig } from '../src/engine/config.mjs';
 import { APP_ROOT } from '../src/engine/store/jail.mjs';
 import { dublinDay } from '../src/engine/time.mjs';
 import { TOOL_NAMES, FORBIDDEN_TOOL_RE, toolDefs, validateVerdict } from '../src/engine/tools/index.mjs';
+import { PLANNED_TOOLS } from '../src/engine/policy.mjs';
 import { createDryRunScript, JOB_A, JOB_B } from '../fixtures/engine/mock-script.mjs';
 
 const FIX = path.join(APP_ROOT, 'fixtures', 'engine');
@@ -29,7 +30,7 @@ function lineEngine(t, { wrap = (s) => s, configDir = CONFIG, tag = 'line' } = {
   const r = tempRoot(tag);
   const station = loadConfig({ configDir, promptsDir: PROMPTS, overrides: OVERRIDES }).station;
   const script = wrap(createDryRunScript({ cfg: station }));
-  const engine = createEngine({ J: r.J, log: r.log, script, configDir, overrides: OVERRIDES, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, configDir, overrides: OVERRIDES, startScheduler: false });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const run = async (id) => { const c = engine.orchestrator.createJob({ briefText: brief(id), by: 'test' }); assert.ok(c.ok, 'intake: ' + (c.reasons || []).join('; ')); await engine.orchestrator.startJob(id); return engine.store.getJob(id); };
   return { engine, r, run, jobDir: (id) => path.join(r.dataRoot, 'jobs', id) };
@@ -206,12 +207,13 @@ test('submit_verdict: the QA record is checked before the engine writes it', (t)
 test('no agent has, or can be given, a messaging, shell or browser tool', () => {
   const cfg = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS });
   assert.ok(Object.keys(cfg.agents).length >= 8);
+  // R1: a not-hired agent may list a planned tool (built in its phase; policy.mjs PLANNED_TOOLS), never a forbidden one, and cannot run
   for (const a of Object.values(cfg.agents)) {
     for (const n of a.tools) {
-      assert.ok(TOOL_NAMES.includes(n), a.key + ' has unknown tool ' + n);
+      assert.ok(TOOL_NAMES.includes(n) || (a.status === 'not-hired' && PLANNED_TOOLS.includes(n)), a.key + ' has unknown tool ' + n);
       if (n !== 'submit_verdict') assert.doesNotMatch(n, FORBIDDEN_TOOL_RE, a.key + ': ' + n);
     }
-    assert.doesNotThrow(() => toolDefs(a.tools));
+    if (a.status !== 'not-hired') assert.doesNotThrow(() => toolDefs(a.tools));
   }
   for (const n of ['send_email', 'slack_post', 'shell_exec', 'browser_click', 'notify_owner', 'mcp_call']) assert.throws(() => toolDefs([n]));
 });
@@ -219,12 +221,13 @@ test('no agent has, or can be given, a messaging, shell or browser tool', () => 
 test('every agent prompt builds within the owner budget (and target) and carries the originality rules where required', () => {
   const cfg = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS });
   const budgets = cfg.station.promptBudgetChars || {};
-  for (const a of Object.values(cfg.agents)) {
+  // R1: a not-hired agent gets its prompt when it is hired (building.mjs refuses an active agent without one)
+  for (const a of Object.values(cfg.agents).filter((x) => x.status !== 'not-hired')) {
     const files = [path.join(PROMPTS, 'agents', a.key + '.md')];
     for (const f of files) assert.ok(fs.existsSync(f), f);
   }
   return import('../src/engine/prompts.mjs').then(({ buildAgentPrompt, NEEDS_ORIGINALITY }) => {
-    for (const a of Object.values(cfg.agents)) {
+    for (const a of Object.values(cfg.agents).filter((x) => x.status !== 'not-hired')) {
       const p = buildAgentPrompt(a, { promptsDir: PROMPTS, budgets });
       // the owner's per-agent cap and tighter target (station.config.json promptBudgetChars); agents without one keep the
       // inherited 16,000-char clamp of the legacy build

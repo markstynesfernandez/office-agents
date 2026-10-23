@@ -122,29 +122,80 @@ Keys: **Space** pauses or resumes, **1 / 2 / 4** set the speed, **R** restarts (
 
 The **E-STOP** button in the page aborts every in-flight model and image call, stops the scheduler and refuses new calls. To resume, type `RESUME`. Stopped jobs are not restarted on their own. `npm run estop` does the same from a terminal by writing `data/HALT` (of the checkout it is run in), which works even when the page or server is stuck. The state survives a restart.
 
-## The building: businesses as floors (B0)
+## The company: products and departments (R1)
 
-The Station is one building that runs several businesses. Each business is a floor with its own departments, lines, agents, budget, data and rules (`config/businesses/<id>.json`). The shared services sit on floor 0: Finance (the ledger and budgets), Compliance (originality, platform terms, privacy rules), OVERSEER, and the lounge (`config/office.json` `shared`). Today there is one business, **etsy-shop** ("TheStationShopFinds", floor 1), with today's lines, agents and departments. Its files stay where they were (`dataDir` "." is today's layout).
+Since R1 (RESTRUCTURE.md, owner decisions R0–R0.3) the Station is a software company on seven floors. **Departments** own floors (display
+order only), rooms, agents, lines and a reporting line (`config/departments/<id>.json`); **products** own budgets, repos, data and policy
+overrides (`config/products/<id>.json`). Every job, run, routine, request, ledger row and event carries `product_id` and
+`department_id`; no record carries a floor, so moving a department to another floor changes its config and nothing else.
 
-- **Every record carries its business**: each job, run, routine, approval, ledger row and event has `business_id` (`businessId` in the JSONL logs; "shared" for the shared floor and for station-wide records). A data root from before B0 is refused until it is migrated: with the server stopped, `npm run migrate:businesses` (a dry run: what would be set, per table and business, and anything it cannot map), then `npm run migrate:businesses -- --apply` (a full backup to `data\.backups\businesses-<stamp>\` first; a second run changes nothing). The ledger and the event log are append-only and are never rewritten: their older rows get their business when they are read (their job's, line's or agent's).
-- **Spend**: a job's spend counts against its business's monthly budget (`monthlyBudgetUsd`, the Dublin month; etsy-shop USD 200) and its own day cap when it sets one (`dailyCapUsd`, at most the station's), as well as the station's caps; the lowest limit wins. The spend dialog shows the business line (spent this month, budget).
-- **Data**: an agent's file tools are jailed to its business's `dataDir` (and its run folder inside it). Another business's data is never reachable. A new business keeps its files in `data\businesses\<id>\`.
-- **The page**: a floor switcher in the top bar (Building, 0, 1, …; `[` and `]` change floor, `G` opens the whole-building view, `?floor=N` for one page). Each floor shows its own office, task list, routines, board, calendar and spend. The whole-building view lists every floor's totals. A business with no lines yet shows as an empty, labelled floor. Floor 1 is baked; floor 0 is drawn procedurally.
-- **Building rules** (DECISIONS.md "B0: building rules") apply to every business: no outbound action unless the business lists it in `allowedOutbound` and the owner approves it each time; spend caps per run, job, business and station; every agent output is a draft until the owner approves it (`ownerApprovalRequired` cannot be false); originality and IP rules for anything published; personal data only as the business strictly needs it; never another company's data in the Station (`config/building.json` `foreignDataMarkers`: an agent's write or a brief that holds one is refused).
+| Floor | Department (id) | Reports to | Agents (all "not hired yet" in R1, hired phase by phase) |
+|---|---|---|---|
+| 6 | Penthouse: Headquarters (`hq`) | owner | CEO (R3), CTO (R2), COO (R3), COMPLIANCE (R5); OVERSEER retired into the COO |
+| 5 | Security & Data (`security-data`) | CTO | SECURITY (R2), ANALYST (R6) |
+| 4 | Engineering (`engineering`) | CTO | TECH-LEAD, DEVELOPER, REVIEWER, TESTER (R2) |
+| 3 | Product & Design (`product-design`) | CEO | PRODUCT-MANAGER, DESIGNER (`ux-designer`) (R4) |
+| 2 | Sales & Marketing (`sales-marketing`) | CEO | LEAD-RESEARCHER, LEAD-CHECKER, OUTREACH-WRITER, CONTENT-WRITER (R5) |
+| 1 | Customer Success (`customer-success`) | CEO | ONBOARDING-GUIDE, SUPPORT-DRAFTER, RETENTION-ANALYST (R6) |
+| G | Lobby: Etsy archive (`etsy`, archived) | owner | the eight Etsy agents, archived |
 
-### Adding a business
+Products: `replydesk` (USD 60 a month, USD 3.00 per engineering job: owner, R0.3), `emty-inbox` (synthetic data only), `station` (HQ and
+station-wide records), `etsy-shop` (archived). Figures still under discussion are listed in each file's `proposals`.
 
-1. Copy `config/businesses/_template.json` to `config/businesses/<id>.json`. The id is lowercase letters, digits and hyphens, and the same as the file name. The template is never loaded.
-2. Choose a floor: a whole number from 1 up that no other business uses (floor 0 is the shared floor).
-3. List its lines (`config/lines/<id>.json`; each line belongs to one business), its departments (`config/office.json`; each department belongs to one business or the shared floor) and its budget: `monthlyBudgetUsd`, and optionally `dailyCapUsd` (at most the station's day cap). Set `dataDir` to `businesses/<id>/`, `allowedOutbound` to `[]` unless the owner has approved an outbound action, and leave `ownerApprovalRequired` true.
-4. Add its agents (`config/agents/<key>.json`, each with a desk in `config/office.json`) and list them in `agents`. Every agent its lines use must be listed; each agent belongs to one business.
-5. Run the checks: `npm test`, `npm run dry-run`, `npm run dry-run:scout`, `npm run parity -- --rebuild` and `npm run port-drift`. A business that breaks a rule (a floor taken, a line or agent in two businesses, a day cap above the station's, an unknown outbound action) stops the engine with the reason. Then commit, `npm run test:record`, and deploy on the owner's go.
+- **A not-hired agent cannot run or spend**: the engine refuses it before anything is recorded, and the page cannot put it on duty. An
+  agent is hired by setting `status: "active"` with its prompt, `limits.maxOutputTokens` and only built tools; the building check refuses
+  anything less.
+- **The Etsy archive** (G): every start on the Etsy lines is refused with "archived", their routines cannot be armed, the Etsy agents and
+  OVERSEER cannot run. History, packages, the old approval queue, the ledger and the read-only own-shop connection stay viewable. The dry
+  runs, the demo and the Etsy regression tests run the archived line in an **archive sandbox** (`archiveSandbox`: the mock provider only,
+  $0; an engine that builds a live provider refuses it).
+- **Spend**: a call counts against its product's monthly budget (`monthlyBudgetUsd`, the Dublin month) and day cap (`dailyCapUsd`, at
+  most the station's), a job's call against its department's job cap for that product (`jobCapUsdByDepartment`), and an agent's call
+  against its own run cap (`limits.runCapUsd`), as well as every station cap; the lowest limit wins. An Anthropic price counts only when it
+  cites Anthropic's official pricing page with who verified it, so Claude Opus 5.5 is refused until the owner adds a verified price.
+- **The autonomy policy** (`config/autonomy.json`): every action is `auto`, `owner` (a request in the Owner's office; the job waits) or
+  `forbidden`. An action not in the file is forbidden; every tool declares its action (`src/engine/policy.mjs` `TOOL_ACTIONS`) and the
+  runtime checks the policy before the guard reserves anything. A product override may only be stricter. The file is the owner's (the page
+  shows it, cannot edit it); each start logs the changed actions to `data\policy\autonomy-log.jsonl`.
+- **The locked rules** (`src/engine/locked.mjs`), in code: the owner is the only approver; the CEO recommends only; the COO pauses a line
+  and never raises a cap; COMPLIANCE reports to the owner and no agent overrides it; no agent merges, deploys or pushes; secrets are
+  refused by path and by content; personal-data scraping, fake reviews or accounts, misleading claims and direct sends are forbidden;
+  anything leaving the building needs the owner. A config that loosens one stops the engine with the rule and the file.
+- **The Owner's office** (the whole-building view, `G`): the requests queue (approve or reject with your words; each decision is
+  logged to `data\requests\decisions.jsonl`), Finance per product (MRR "not connected" until R6), the seven floors with every agent's
+  status, the policy and its log, and paused lines (resume them there). The 3D office keeps B0's two drawn floors until R7.
+- **Migration**: a data root from before R1 is refused until `npm run migrate:products` (a dry run) and `npm run migrate:products --
+  --apply` (a backup to `data\.backups\products-<stamp>\` first, one transaction, a second run changes nothing; a pre-B0 root runs
+  `npm run migrate:businesses` first). Every change is logged to `logs\migrate-products-<date>.log`.
+
+### B0: the building view the page still draws
+
+B0's business view (one floor per business, the shared floor 0 with Finance, Compliance, OVERSEER and the lounge) is now derived from the
+departments and products (`src/engine/building.mjs` `compatBuilding`); `config/businesses/` is retired. The page's floor switcher still
+shows floor 0 (shared) and floor 1 (the Etsy archive, baked) until R7 draws the seven floors; `business_id` stays on every record (etsy-shop
+or shared) for one release, so a rollback to B0 still reads the data. Another company's data never enters the Station
+(`config/building.json` `foreignDataMarkers`).
+
+### Adding a product, hiring an agent
+
+1. A product: copy `config/products/_template.json` to `config/products/<id>.json` (never loaded itself), with `dataDir`
+   `products/<id>/`, its budget and job caps (owner decisions; anything proposed goes in `proposals`), and `policy` overrides only stricter
+   than `config/autonomy.json`.
+2. An agent: its file in `config/agents/<key>.json` and its key in exactly one department's `agents`. Hiring it (`status: "active"`) needs
+   its prompt in `prompts/agents/<key>.md`, `limits.maxTurns` and `limits.maxOutputTokens`, and only tools that exist.
+3. Run the checks (`npm test`, `npm run dry-run`, `npm run dry-run:scout`); a building that does not hold stops the engine with the reason.
+   Then commit, `npm run test:record`, and deploy on the owner's go.
 
 ## Layout
 
 ```
 src/engine/            the engine
   engine.mjs           assembles one engine per data root (lock, store, ledger, bus, e-stop, guard, scheduler, providers)
+  building.mjs         R1: products x departments, the building check, product/department of every record (business.mjs: B0's view)
+  policy.mjs           R1: config/autonomy.json, the tools' declared actions, the change log
+  locked.mjs           R1: the locked rules, in code
+  actions.mjs          R1: every action through the locked rules and the policy; line pause (COO, owner) and resume (owner)
+  requests.mjs         R1: the Owner's office queue; only the owner's page session decides
   orchestrator.mjs     the written lines (config/lines/*.json): agent steps, mechanical steps, loops, the package
   runtime.mjs          one agent run: reserve -> call -> settle -> tools, the guard and e-stop before every call
   guard.mjs            the spend guard (every cap, every call; crash-safe reservations)
@@ -159,7 +210,8 @@ src/engine/            the engine
   prompts.mjs, config.mjs, bus.mjs, time.mjs
 src/server/            engine-server.mjs (engine mode, SSE, write actions), index.mjs (entry, legacy view), log.mjs
 src/web/               the office page (Three.js scene, panels); talks only to its own origin
-config/                engine.json (caps, prices, tiers), agents/, lines/, station.config.json, products.json, office.json
+config/                engine.json (caps, prices, tiers), autonomy.json, products/, departments/, agents/, lines/, station.config.json,
+                       office.json, archive/etsy/products.json (the archived Etsy product specs)
 prompts/               agents/<key>.md and skills/<name>.md (edited as files only, Q8)
 fixtures/engine/       dry-run fixtures (FIXTURE product, config patch, briefs, scripted mock replies)
 demo/                  demo mode: pacing.json (the timing), script.mjs (scripted replies), DEMO product, config patch, briefs
@@ -174,3 +226,4 @@ scripts/               dry-run, demo, demo-record, estop, port-drift, screenshot
 - POST actions need the page's own origin, a per-launch action token and JSON. The page never receives keys, prompts or provider responses.
 - No messaging: agents cannot send mail, chat or anything else. They draft, and a person sends.
 - New or automated entries are drafts. Nothing auto-publishes: the approval queue is the only way out.
+- R1: the locked rules (`src/engine/locked.mjs`) and the autonomy policy sit in front of every action; anything that leaves the building waits for the owner's decision in the Owner's office, and no agent can merge, deploy or push. Secret files (`.env`, `*.db`, `.venv`, keys) are refused by path, and secret content is withheld or refused.

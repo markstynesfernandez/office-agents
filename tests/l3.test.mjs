@@ -51,7 +51,7 @@ function bootLines(t, { tag = 'l3', mockDelayMs = 0, limitJobs = true } = {}) {
   const station = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS, overrides: OVERRIDES }).station;
   const base = createDryRunScript({ cfg: station });
   const script = async (ctx, params) => { const g = gates[ctx.agentKey]; if (g) await g.p; return base(ctx, params); };
-  const engine = createEngine({ J: r.J, log: r.log, script, overrides: OVERRIDES, startScheduler: false, mockDelayMs, limitJobs });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, overrides: OVERRIDES, startScheduler: false, mockDelayMs, limitJobs });
   for (const id of [JOB_A, JOB_B]) r.J.put(path.join(r.dataRoot, 'research', 'briefs', id + '.md'), briefText(id));
   t.after(() => { for (const g of Object.values(gates)) g.open(); try { engine.close(); } catch (_) {} r.cleanup(); });
   const hold = (k) => (gates[k] = gate()), release = (k) => { const g = gates[k]; delete gates[k]; if (g) g.open(); };
@@ -323,12 +323,12 @@ test('3: a maintenance script\'s engine: no scheduler (not even after an e-stop 
   const r = tempRoot('l3maint');
   t.after(() => r.cleanup());
   // a job left running by a stopped Station and an enabled routine on the data root
-  const e0 = createEngine({ J: r.J, log: r.log, startScheduler: false, resume: false });
+  const e0 = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false, resume: false });
   e0.store.insertJob({ id: '2026-10-21--research-1', line: 'research', kind: 'research', title: 'Research batch 1', state: 'running', step: 'demand-researcher', data: { day: DAY, input: 'x', createdBy: 'test' } });
   e0.store.insertRoutine({ id: 'rt_x', name: 'research', target: 'line:research', input: '', schedule: '* * * * *', max_runs_per_day: 5, per_run_cap_usd: null });
   e0.store.setRoutineEnabled('rt_x', true, { expectedVersion: e0.store.getRoutine('rt_x').version });
   e0.close();
-  const e = openScriptEngine({ J: r.J, log: r.log, purpose: 'settle:failed', startScheduler: true, resume: true });   // a caller cannot turn them back on
+  const e = openScriptEngine({ archiveSandbox: true, J: r.J, log: r.log, purpose: 'settle:failed', startScheduler: true, resume: true });   // a caller cannot turn them back on
   t.after(() => { try { e.close(); } catch (_) {} });
   assert.deepEqual(e.scriptRun && [e.scriptRun.purpose, e.scriptRun.startsJobs], ['settle:failed', false]);
   assert.equal(e.scheduler.started, false); assert.match(e.scheduler.locked, /^script: settle:failed$/);
@@ -349,7 +349,7 @@ test('3: a line script starts only its own job: a queued "next" job it did not s
   const r = tempRoot('l3own');
   t.after(() => r.cleanup());
   const station = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS, overrides: OVERRIDES }).station;
-  const e = openScriptEngine({ J: r.J, log: r.log, script: createDryRunScript({ cfg: station }), overrides: OVERRIDES, purpose: 'line:live', startsJobs: true });
+  const e = openScriptEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createDryRunScript({ cfg: station }), overrides: OVERRIDES, purpose: 'line:live', startsJobs: true });
   t.after(() => { try { e.close(); } catch (_) {} });
   // a research job the Station had queued as next (not this script's)
   const other = e.orchestrator.createResearchJob({ by: 'station' }).id;
@@ -382,7 +382,7 @@ function bootResearch(t, draft, { checker = null } = {}) {
     return base(ctx, params);
   };
   script.web = base.web;
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, r, results };
 }

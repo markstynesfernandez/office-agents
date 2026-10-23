@@ -93,7 +93,7 @@ test('owner amendment: a sampled colour lightened to just under the near-white r
 // a rejected job at the end of design loop 2: file 1 approved (set-v1), set-v2 built from raw, QA DESIGN pass 1 revise (originality pass)
 async function fixJob(t, { originality = 'pass' } = {}) {
   const r = tempRoot('fixtools'); t.after(r.cleanup);
-  const e = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan }); t.after(() => e.close());
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan }); t.after(() => e.close());
   // the test images are 96 px: the build's "enlarged over 4x" warning would fire on every file; this engine only raises that threshold
   e.cfg.station.digital.build.maxUpscaleWarn = 50;
   useJail(r.J);

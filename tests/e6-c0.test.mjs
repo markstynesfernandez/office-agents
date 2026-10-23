@@ -145,7 +145,7 @@ function liveEngine(t, { reply, script, text = null, hooks = {}, tag = 'c0' } = 
   let engine = null;
   const textProvider = text || createMockText({ script: (ctx, params) => script(ctx, params, engine) });
   const providers = { mode: 'live', text: textProvider, image, web: Object.assign(async () => ({ text: '', usd: 0 }), { plan: () => ({ maxUses: 1, extraUsd: 0 }), settings: {} }) };
-  engine = createEngine({ J: r.J, log: r.log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
+  engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
   engine.sleep = async () => {};
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const addJob = (id = ID, brief = BRIEF, step = 'designer', data = {}) => { engine.store.insertJob({ id, line: 'room1-digital', kind: 'line', title: 'C0 desk props', product_key: 'pngtuber-prop-pack', state: 'queued', step, data: { createdBy: 'test', ...data } }); r.J.put(path.join(r.dataRoot, 'jobs', id, 'brief.md'), brief); return engine.store.getJob(id); };
@@ -392,7 +392,7 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
   // intake (createJob): E7a.1 (owner decision 4, 20/10/2026) refuses a brief in the ported Etsy format before any price check; an
   // owner brief's bounds meet the same floor there (3.49 refused, 3.50 taken)
   const r = tempRoot('c0-floor'); t.after(r.cleanup);
-  const engine = createEngine({ J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false });
   t.after(() => engine.close());
   assert.deepEqual(engine.orchestrator.createJob({ briefText: brief('3.50'), by: 'test' }).reasons, ['legacy Etsy-format brief: no Etsy data in the station until Etsy authorises it in writing (owner, 20/10/2026); restate it as an owner brief']);
   const OB = fs.readFileSync(path.join(APP_ROOT, 'fixtures', 'engine', 'owner-brief.md'), 'utf8').replace(/\r\n/g, '\n');
@@ -419,7 +419,9 @@ test('D1: floor USD 3.50 for pngtuber-prop-pack at every check (3.49 fails, 3.50
 // ---- D2 / D3: thinking off for every agent; forced tool choice per model
 
 test('D2: thinking is off for every agent in config; sent per model (Haiku disabled, Sonnet between_tools); a model without a setting refuses before the call', async () => {
-  for (const a of Object.values(CFG.agents)) assert.equal(a.thinking, 'off', a.key);
+  // R0.3 (owner, 23/10/2026): thinking "default" for DEVELOPER, REVIEWER and COMPLIANCE (not hired yet); every other agent stays off
+  const THINKING_ON = ['developer', 'reviewer', 'compliance'];
+  for (const a of Object.values(CFG.agents)) assert.equal(a.thinking, THINKING_ON.includes(a.key) ? 'default' : 'off', a.key);
   const off = CFG.engine.thinking.off;
   for (const tier of ['cheap', 'strong']) assert.ok(off[CFG.engine.tiers[tier].model], tier + ' model has an off setting');
   assert.deepEqual(off['claude-haiku-5-5'], { type: 'disabled' }); assert.deepEqual(off['claude-sonnet-5-5'], { type: 'between_tools' });

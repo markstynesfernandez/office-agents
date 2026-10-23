@@ -180,7 +180,7 @@ test('import refuses while an engine holds the data root, and refuses a source t
   await assert.rejects(runImport({ from: L.root, J, log }), LockError);
   assert.ok(!fs.existsSync(path.join(J.dataRoot, '.backups')), 'refused before the backup');
   J.remove(path.join(J.dataRoot, '.lock'));
-  const engine = createEngine({ J, log, startScheduler: false }); engine.close();
+  const engine = createEngine({ archiveSandbox: true, J, log, startScheduler: false }); engine.close();
   await assert.rejects(runImport({ from: path.join(base, 'nothing-here'), J, log }), ImportError);
   const inner = path.join(L.root, 'data');
   assert.throws(() => createJail({ dataRoot: inner, extraRoots: [], legacyRoots: [L.root] }), /overlap/);
@@ -190,7 +190,7 @@ test('after an import the engine shows the legacy jobs, lanes and memory, and le
   const { L, J, log } = setup(t);
   await runImport({ from: L.root, J, log });
   const { buildEngineSnapshot } = await import('../src/server/engine-model.mjs');
-  const engine = createEngine({ J, log, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J, log, startScheduler: false });
   t.after(() => engine.close());
   const s = buildEngineSnapshot(engine);
   // E5 item 0b: every legacy job is in the Legacy lane only, never in a stage column or the engine's lanes

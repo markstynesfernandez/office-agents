@@ -107,7 +107,7 @@ test('web: USD 0.01 reserved per search, USD 0 per fetch (their tokens are price
 
 test('images: USD 0.08 reserved; settled to the cost OpenRouter reports, or at the reservation marked estimated when none is reported', async (t) => {
   const r = tempRoot('e6-img');
-  const e = createEngine({ J: r.J, log: r.log, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   const ledger = createLedger({ J: e.J, log: r.log });
   const guard = createGuard({ J: e.J, ledger, halt: e.halt, caps: CAPS, pricing: PRICING, log: r.log, bus: e.bus });
@@ -148,7 +148,7 @@ test('the scout line on a priced mock never spends past USD 0.50 for the run', a
   const e6 = JSON.parse(fs.readFileSync(path.join(dir, 'engine.json'), 'utf8'));
   e6.pricing.mock.models['*'] = { inPerM: 6, outPerM: 30, perImage: 0, perCall: 0.05, source: 'test' };
   fs.writeFileSync(path.join(dir, 'engine.json'), JSON.stringify(e6));
-  const e = createEngine({ J: r.J, log: r.log, script: createScoutScript(), configDir: dir, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createScoutScript(), configDir: dir, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   const hits = []; e.bus.subscribe((x) => { if (x.type === 'cap.hit') hits.push(x.data.cap); });
   const c = e.orchestrator.createResearchJob({ line: 'genre-scout', by: 'test' });

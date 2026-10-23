@@ -3,6 +3,9 @@
 // block of config/office.json: Finance, Compliance, OVERSEER and the lounge). Today there is one business, "etsy-shop". This module
 // loads and checks the businesses (a bad file stops the engine: fail closed) and answers "which business" for a line, an agent, a
 // department or a record. Station-level caps stay the outer limit (guard.mjs, spend.mjs).
+// R1 (RESTRUCTURE.md §1.4): building.mjs is now the source of truth (products x departments). This module stays as B0's view for the
+// 3D page, the agents' data jail and the business_id column until R7: cfg.businesses is derived from config/products and
+// config/departments (building.mjs compatBuilding), not read from files; config/businesses/ is retired.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -99,11 +102,11 @@ export function building(cfg) {
   };
 }
 
-// a business's data area: { root, excludes } (absolute). "." (etsy-shop) is the data root minus businesses/, where every other business
-// keeps its own dataDir; a new business has businesses/<id>/ alone
+// a business's data area: { root, excludes } (absolute). "." (etsy-shop) is the data root minus businesses/ and (R1) products/, where every
+// other business or product keeps its own dataDir; a new business has businesses/<id>/ alone
 export function businessDataArea(dataRoot, b) {
   const dir = normDir(b && b.dataDir);
-  if (dir === LEGACY_DATA_DIR) return { root: path.resolve(dataRoot), excludes: [path.resolve(dataRoot, 'businesses')] };
+  if (dir === LEGACY_DATA_DIR) return { root: path.resolve(dataRoot), excludes: [path.resolve(dataRoot, 'businesses'), path.resolve(dataRoot, 'products')] };   // R1: never a product's data
   return { root: path.resolve(dataRoot, dir), excludes: [] };
 }
 const inside = (p, root) => { const n = (x) => (process.platform === 'win32' ? x.toLowerCase() : x); const a = n(path.resolve(p)), r = n(path.resolve(root)); return a === r || a.startsWith(r.endsWith(path.sep) ? r : r + path.sep); };

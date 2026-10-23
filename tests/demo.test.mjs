@@ -177,23 +177,23 @@ test('demo values are applied only by scripts/demo.mjs to the demo engine; a rea
   assert.ok(marks.some((m) => /demo-sticker-pack-5/.test(m)), 'the demo product');
   // at runtime: a real engine (no demo flag) refuses the demo overrides, and refuses a config folder holding any demo value
   const a = tempRoot('demo-guard'); t.after(a.cleanup);
-  assert.throws(() => createEngine({ J: a.J, log: a.log, overrides, startScheduler: false }), (e) => e instanceof DemoConfigError && /DEMO values are in the config/.test(e.message));
+  assert.throws(() => createEngine({ archiveSandbox: true, J: a.J, log: a.log, overrides, startScheduler: false }), (e) => e instanceof DemoConfigError && /DEMO values are in the config/.test(e.message));
   assert.ok(!fs.existsSync(path.join(a.dataRoot, 'station.db')), 'refused before the store opened');
   assert.ok(!fs.existsSync(path.join(a.dataRoot, '.lock')), 'the lock was released');
   const cfgDir = path.join(a.base, 'config'); fs.cpSync(path.join(ROOT, 'config'), cfgDir, { recursive: true });
   const st = JSON.parse(fs.readFileSync(path.join(cfgDir, 'station.config.json'), 'utf8')); st.digital.listingNoticeStatus = readDemo('station-patch.json').set['digital.listingNoticeStatus'];
   fs.writeFileSync(path.join(cfgDir, 'station.config.json'), JSON.stringify(st));
-  assert.throws(() => createEngine({ J: a.J, log: a.log, configDir: cfgDir, startScheduler: false }), DemoConfigError, 'a DEMO value copied into the real config');
-  const pr = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'products.json'), 'utf8')); pr.products.push(readDemo('products.json').products[0]);
-  fs.cpSync(path.join(ROOT, 'config', 'station.config.json'), path.join(cfgDir, 'station.config.json')); fs.writeFileSync(path.join(cfgDir, 'products.json'), JSON.stringify(pr));
-  assert.throws(() => createEngine({ J: a.J, log: a.log, configDir: cfgDir, startScheduler: false }), DemoConfigError, 'the demo product copied into the real products');
+  assert.throws(() => createEngine({ archiveSandbox: true, J: a.J, log: a.log, configDir: cfgDir, startScheduler: false }), DemoConfigError, 'a DEMO value copied into the real config');
+  const pr = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'archive', 'etsy', 'products.json'), 'utf8')); pr.products.push(readDemo('products.json').products[0]);
+  fs.cpSync(path.join(ROOT, 'config', 'station.config.json'), path.join(cfgDir, 'station.config.json')); fs.writeFileSync(path.join(cfgDir, 'archive', 'etsy', 'products.json'), JSON.stringify(pr));
+  assert.throws(() => createEngine({ archiveSandbox: true, J: a.J, log: a.log, configDir: cfgDir, startScheduler: false }), DemoConfigError, 'the demo product copied into the real products');
   // the demo flag never opens the station's data root
   const { checkDemoConfig } = await import('../src/engine/engine.mjs');
   assert.throws(() => checkDemoConfig(withDemo, { demo: true, dataRoot: path.join(ROOT, 'data') }), /station data root/);
   assert.throws(() => checkDemoConfig(withDemo, { demo: true, dataRoot: path.join(ROOT, 'data', 'x') }), /station data root/);
   assert.deepEqual(checkDemoConfig(withDemo, { demo: true, dataRoot: path.join(a.base, 'data-demo') }), marks);
   // and the plain engine still starts on the real config
-  const e = createEngine({ J: a.J, log: a.log, startScheduler: false }); e.close();
+  const e = createEngine({ archiveSandbox: true, J: a.J, log: a.log, startScheduler: false }); e.close();
 });
 
 test('DEMAND-RESEARCHER and EVIDENCE-CHECKER desks show working for the length of each research run, then idle', async (t) => {

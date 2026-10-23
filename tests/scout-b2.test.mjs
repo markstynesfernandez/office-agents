@@ -31,7 +31,7 @@ const tool = (id, name, input) => ({ type: 'tool_use', id: 'tu_' + id, name, inp
 
 function boot(t, script = createScoutScript({ bad: false })) {
   const r = tempRoot('b2');
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, r };
 }
@@ -130,7 +130,7 @@ test('D2: report_blocked with 0 drafts ends the job incomplete with the reason: 
   assert.equal(e.store.runsOf({ agentKey: 'trend-scout', limit: 1 })[0].status, 'incomplete');
   // the tool only appears for an agent with an output contract, and refuses an empty reason
   const r2 = tempRoot('b2-rb'); t.after(() => r2.cleanup());
-  const e2 = createEngine({ J: r2.J, log: r2.log, script: createScoutScript(), startScheduler: false }); t.after(() => e2.close());
+  const e2 = createEngine({ archiveSandbox: true, J: r2.J, log: r2.log, script: createScoutScript(), startScheduler: false }); t.after(() => e2.close());
   const plain = createToolbox({ J: e2.J, folder: path.join(e2.J.dataRoot, 'research'), agent: e2.cfg.agents['trend-scout'], job: { id: 'x' }, cfg: { ...e2.cfg }, guard: e2.guard, providers: e2.providers, run: { runId: 'r' }, halt: e2.halt, log: r2.log, bus: e2.bus, line: 'genre-scout' });
   assert.ok(!plain.defs.some((d) => d.name === 'report_blocked'));
   let got = null;

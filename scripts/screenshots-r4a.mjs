@@ -38,7 +38,7 @@ const { openScriptEngine } = await import('../src/engine/script-engine.mjs');
 const { createEngineServer } = await import('../src/server/engine-server.mjs');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'station-r4a-engine-'));
 const J = createJail({ dataRoot: path.join(tmp, 'data'), extraRoots: [path.join(ROOT, 'logs')] });
-const engine = openScriptEngine({ J, log: makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-r4a-engine', jail: J }), purpose: 'screenshots-r4a', startsJobs: true });
+const engine = openScriptEngine({ archiveSandbox: true, J, log: makeLogger({ dir: path.join(ROOT, 'logs'), name: 'screenshots-r4a-engine', jail: J }), purpose: 'screenshots-r4a', startsJobs: true });
 if (engine.providers.mode !== 'mock') { engine.close(); throw new Error('the engine did not start on the mock provider'); }
 const es = createEngineServer({ engine, log }), server = es.server;
 await new Promise((r) => server.listen(0, '127.0.0.1', r));

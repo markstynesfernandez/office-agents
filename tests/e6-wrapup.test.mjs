@@ -50,7 +50,7 @@ function boot(t, tag = 'wrap') {
   const r = tempRoot(tag), station = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS, overrides: OVERRIDES }).station;
   const base = createDryRunScript({ cfg: station }), inputs = [];
   const script = (ctx, params) => { if (params.messages.length === 1 && ctx.purpose !== 'image_analyze') inputs.push({ agent: ctx.agentKey, text: firstText(params) }); return base(ctx, params); };
-  const engine = createEngine({ J: r.J, log: r.log, script, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   return { engine, r, inputs, O: engine.orchestrator, jd: (id) => path.join(r.dataRoot, 'jobs', id) };
 }
@@ -167,7 +167,7 @@ function gateEngine(t, tag) {
   const providers = { mode: 'live', text: createMockText({ script: gateScript() }), image, web: Object.assign(async () => ({ text: '', usd: 0 }), { plan: () => ({ maxUses: 1, extraUsd: 0 }), settings: {} }) };
   // the job stops when DESIGNER is done (the set review is not part of these tests)
   const hooks = { onStep: ({ job, step, phase, result }) => { if (step === 'designer' && phase === 'end' && result && result.next === 'prep') engine.orchestrator.stopJob(job.id, { expectedVersion: engine.store.getJob(job.id).version }); } };
-  const engine = createEngine({ J: r.J, log: r.log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
   engine.sleep = async () => {};
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const addJob = (data = {}) => { engine.store.insertJob({ id: ID, line: 'room1-digital', kind: 'line', title: 'Wrap desk props', product_key: 'pngtuber-prop-pack', state: 'queued', step: 'designer', data: { createdBy: 'test', ...data } }); r.J.put(path.join(r.dataRoot, 'jobs', ID, 'brief.md'), BRIEF); };
@@ -243,7 +243,7 @@ test('DESIGNER: its orders no longer copy the brief; on the mock it writes only 
   for (const p of writes) assert.match(p.replace(/^work\/[^/]+\//, ''), /^set-v\d+\//, p);
   // a DESIGNER that tries anyway: the role guard refuses it, and the frozen brief is unchanged
   const r2 = tempRoot('wrapde2');
-  const engine = createEngine({ J: r2.J, log: r2.log, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false, script: (ctx, params) => (turnOf(params) === 0 ? { content: [tool('b', 'fs_write', { path: 'brief.md', content: 'copied' }), tool('c', 'fs_write', { path: 'inputs/brief.md', content: 'copied' })] } : { content: [{ type: 'text', text: 'done' }] }) });
+  const engine = createEngine({ archiveSandbox: true, J: r2.J, log: r2.log, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false, script: (ctx, params) => (turnOf(params) === 0 ? { content: [tool('b', 'fs_write', { path: 'brief.md', content: 'copied' }), tool('c', 'fs_write', { path: 'inputs/brief.md', content: 'copied' })] } : { content: [{ type: 'text', text: 'done' }] }) });
   t.after(() => { try { engine.close(); } catch (_) {} r2.cleanup(); });
   assert.ok(engine.orchestrator.createJob({ briefText: fixtureBrief(JOB_A), by: 'test' }).ok);
   const before = readInputs(r2.dataRoot, JOB_A).brief;
@@ -272,7 +272,7 @@ test('QA-DESIGN: at most 10,500 characters (owner target); the owner\'s original
 // ---- 6. settling estimated image rows from OpenRouter's generation lookup
 
 test('settle-images: an estimated image row with a generation id gets one correction row from total_cost; no id, Anthropic rows and reruns write nothing', async (t) => {
-  const r = tempRoot('settle'), engine = createEngine({ J: r.J, log: r.log, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
+  const r = tempRoot('settle'), engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, overrides: OVERRIDES, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const L = engine.ledger, ts = Date.parse('2026-10-18T10:00:00Z');
   const base = { ts, jobId: 'j1', runId: 'run1', agentKey: 'designer', line: 'room1-digital', provider: 'openrouter', model: MODEL, kind: 'image', count: 1, usd: 0.08, estimated: true, priceSource: 'config/engine.json' };

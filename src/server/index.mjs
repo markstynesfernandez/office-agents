@@ -128,7 +128,7 @@ export async function startEngine({ git = null } = {}) {
   const shutdownFile = path.join(J.dataRoot, SHUTDOWN_FILE);
   if (fs.existsSync(shutdownFile)) { log.warn('a stale shutdown request was removed at start'); J.remove(shutdownFile); }
   let engine;
-  try { engine = createEngine({ J, log, limitJobs: true }); } catch (e) { log.error('engine did not start', { error: e.message, code: e.code || null }); console.error('engine did not start: ' + e.message); process.exit(2); }
+  try { engine = createEngine({ J, log, limitJobs: true, instance: { name: inst.name, commit: inst.commit } }); } catch (e) { log.error('engine did not start', { error: e.message, code: e.code || null }); console.error('engine did not start: ' + e.message); process.exit(2); }
   engine.instance = { name: inst.name, commit: inst.commit, branch: inst.branch, port };
   if (stampDataRoot(J, inst)) log.info('data root stamped for the ' + inst.name + ' instance', { dataRoot: J.dataRoot });
   // E7a: the own-shop Etsy connection. Live: the real client (keys from .env by name; without them Etsy stays unavailable,
@@ -137,7 +137,7 @@ export async function startEngine({ git = null } = {}) {
   let etsy;
   const etsyOwner = outboundOwner(engine.cfg, 'etsy:read-own-shop');
   try {
-    if (!etsyOwner) throw new Error('no business lists etsy:read-own-shop in allowedOutbound (config/businesses; DECISIONS.md "B0: building rules")');
+    if (!etsyOwner) throw new Error('no product allows etsy.read-own-shop (config/products allowedActions; DECISIONS.md "R1")');
     if (inst.name === 'live') { const { createEtsyClient } = await import('../engine/providers/etsy.mjs'); etsy = createEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log, businessId: etsyOwner }); }
     else { const { createMockEtsyClient } = await import('../engine/providers/etsy-mock.mjs'); etsy = createMockEtsyClient({ engineCfg: engine.cfg.engine, J, ledger: engine.ledger, log, businessId: etsyOwner }); }
     log.info('etsy: ' + etsy.mode + ' client ready', { connected: etsy.status().connected });

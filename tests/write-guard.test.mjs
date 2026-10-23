@@ -72,7 +72,8 @@ test('no HTTP to the legacy system: no 8787, no legacy token header, no /api/ UR
 
 test('outbound hosts: only the provider modules name an external host', () => {
   // URL literals allowed outside providers: loopback (our own server), the URL-parsing base, the SVG namespace
-  const harmless = /^https?:\/\/(127\.0\.0\.1|localhost)([:/]|$)|^http:\/\/www\.w3\.org\/2000\/svg$/;
+  // R1: the guard compares a price's cited source with Anthropic's official pricing page (guard.mjs OFFICIAL_PRICING); nothing fetches it
+  const harmless = /^https?:\/\/(127\.0\.0\.1|localhost)([:/]|$)|^http:\/\/www\.w3\.org\/2000\/svg$|^https:\/\/platform\.claude\.com\/docs\/en\/about-claude\/pricing$/;
   // E7a: the mock Etsy names etsy.com URLs as FIXTURE data only (the authorize page it checks, a shop and listing URLs); it
   // never fetches. The real Etsy client takes its hosts from config/engine.json etsy (https etsy.com URLs, checked there)
   const PROVIDER_HOSTS = { 'src/engine/providers/openrouter.mjs': /^https:\/\/openrouter\.ai\//, 'src/engine/providers/anthropic.mjs': /^https:\/\/api\.anthropic\.com$/, 'src/engine/providers/etsy-mock.mjs': /^https:\/\/www\.etsy\.com\/(oauth\/connect|shop\/|listing\/)/ };

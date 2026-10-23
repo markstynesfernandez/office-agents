@@ -176,7 +176,7 @@ test('the e-stop on a live data root works exactly as on dev: the CLI presses an
   const t = tempRoot('l1-halt');
   try {
     stampDataRoot(t.J, { name: 'live', appRoot: ROOT, commit: null });
-    const e = createEngine({ J: t.J, log: t.log, startScheduler: false });
+    const e = createEngine({ archiveSandbox: true, J: t.J, log: t.log, startScheduler: false });
     try {
       const env = cleanEnv({ STATION_INSTANCE: 'live', STATION_DATA_ROOT: t.dataRoot });
       const on = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'estop.mjs'), '--reason', 'l1 test'], { env, encoding: 'utf8' });

@@ -17,6 +17,13 @@
 // B0 (owner, 21/10/2026): a business level. A call of a business (its job's, else its line's or agent's) also counts against that
 // business's monthly budget (monthlyBudgetUsd, the Dublin month) and, when the business sets one, its day cap (dailyCapUsd, at most
 // the station's); the station's caps stay the outer limit, so the lowest limit wins. The shared floor (OVERSEER) has the station's caps.
+// R1 (owner, R1 prompt; RESTRUCTURE.md §1.3, §2.2): the business level becomes the product level. A call of a product (its job's, else its
+// line's or agent's; HQ and station-wide calls: the station product) counts against that product's monthly budget (productMonth, the
+// Dublin month) and its day cap when it sets one (productDay, at most the station's); a job's call also against its department's job cap
+// for that product (config/products/<id>.json jobCapUsdByDepartment, at most the station's per-job cap), and every call of an agent with
+// limits.runCapUsd against that run cap (at most perRunUsd). Budgets and caps are read from config only; the ones still proposed are
+// listed as proposals in the product and agent files. An Anthropic price is used only when it cites Anthropic's official pricing page and
+// says who verified it (OFFICIAL_PRICING): a model without one (Claude Opus 5.5 today) is refused before any call; nothing here adds one.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -39,6 +46,11 @@ export function priceOf(pricing, provider, model) {
   const p = pricing && pricing[provider] && pricing[provider].models; if (!p) return null;
   return p[model] || p['*'] || null;
 }
+// R1 (owner, R0.3): Anthropic prices come only from the official pricing page, with who verified them and when; any other entry counts
+// as no price (the call is refused)
+export const OFFICIAL_PRICING = 'https://platform.claude.com/docs/en/about-claude/pricing';
+export const VERIFIED_PROVIDERS = ['anthropic', 'anthropic-web'];
+export const unverifiedPrice = (provider, price) => (VERIFIED_PROVIDERS.includes(provider) && price && !(price.source === OFFICIAL_PRICING && String(price.verified || '').trim()) ? 'the price for this model does not cite ' + OFFICIAL_PRICING + ' with who verified it' : null);
 
 // The prompt-size tier (config/engine.json `longPrompt`, owner-verified 17/10/2026): a request whose prompt (input +
 // cache writes + cache reads) is over `overTokens` pays the long-prompt prices for the WHOLE request, output included.
@@ -63,7 +75,7 @@ export function textMax(price, inputTokens, maxOutputTokens) {
   return r6((inputTokens * inMax + maxOutputTokens * p.outPerM) / 1e6);
 }
 
-export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = Date.now, outerLimits = {}, businesses = null }) {
+export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = Date.now, outerLimits = {}, products = null }) {
   const reserved = new Map();
   const pendingDir = path.join(J.dataRoot, 'ledger', 'pending');
   const warned = new Set();
@@ -75,7 +87,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     for (const n of fs.readdirSync(d).filter((x) => x.endsWith('.json'))) {
       const f = path.join(d, n);
       let res = null; try { res = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { log && log.error('pending reservation unreadable; left for a person to check', { file: f }); continue; }
-      const row = ledger.append({ entryId: 'recovered-' + res.id, ts: clock(), jobId: res.jobId ?? null, runId: res.runId || null, agentKey: res.agentKey || null, line: res.line || null, ...(res.businessId ? { businessId: res.businessId } : {}), provider: res.provider, model: res.model, kind: res.kind, count: res.count || 1, usd: res.maxUsd, estimated: true, priceSource: 'reserved-maximum', note: 'call in flight when the engine stopped; charged at its reserved maximum' });
+      const row = ledger.append({ entryId: 'recovered-' + res.id, ts: clock(), jobId: res.jobId ?? null, runId: res.runId || null, agentKey: res.agentKey || null, line: res.line || null, ...(res.businessId ? { businessId: res.businessId } : {}), ...(res.productId ? { productId: res.productId, departmentId: res.departmentId } : {}), provider: res.provider, model: res.model, kind: res.kind, count: res.count || 1, usd: res.maxUsd, estimated: true, priceSource: 'reserved-maximum', note: 'call in flight when the engine stopped; charged at its reserved maximum' });
       J.remove(f); out.push(row);
       log && log.warn('in-flight call charged at its reserved maximum after a restart', { reservation: res.id, usd: res.maxUsd, jobId: res.jobId });
     }
@@ -111,13 +123,17 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     if (call.line && lineCap(call.line) > 0) out.push({ cap: 'perLineDay[' + call.line + ']', limit: lineCap(call.line), used: S.lineDay(call.line, day) + reservedWhere((r) => r.line === call.line) });
     out.push({ cap: 'perDay', limit: caps.perDayUsd, used: S.day(day) + reservedWhere(() => true), required: true });
     if (call.provider === 'openrouter' && orLimit() > 0) { const o = openrouterDay(); out.push({ cap: 'openrouterDay', limit: orLimit(), used: o.usedUsd + o.reservedUsd }); }
-    // B0: the business's month and (when it sets one) its day; a business with no record (the shared floor) has the station's caps only
-    const bid = call.businessId, b = bid && businesses ? businesses.get(bid) : null;
-    if (b) {
-      const mine = (r) => r.businessId === bid;
-      out.push({ cap: 'businessMonth[' + bid + ']', limit: b.monthlyBudgetUsd, used: S.businessMonth(bid, day.slice(0, 7)) + reservedWhere(mine), required: true });
-      if (b.dailyCapUsd > 0 && b.dailyCapUsd < caps.perDayUsd) out.push({ cap: 'businessDay[' + bid + ']', limit: b.dailyCapUsd, used: S.businessDay(bid, day) + reservedWhere(mine), required: true });
+    // R1: the product's month and (when it sets one) its day; the job's department cap for that product; the agent's own run cap
+    const pid = call.productId, p = pid && products ? products.get(pid) : null;
+    if (p) {
+      const mine = (r) => r.productId === pid;
+      out.push({ cap: 'productMonth[' + pid + ']', limit: p.monthlyBudgetUsd, used: S.productMonth(pid, day.slice(0, 7)) + reservedWhere(mine), required: true });
+      if (p.dailyCapUsd > 0 && p.dailyCapUsd < caps.perDayUsd) out.push({ cap: 'productDay[' + pid + ']', limit: p.dailyCapUsd, used: S.productDay(pid, day) + reservedWhere(mine), required: true });
+      const dc = call.jobId && call.departmentId && products.jobCap ? products.jobCap(pid, call.departmentId) : null;
+      if (dc > 0 && dc < jobCap(call.line).limit) out.push({ cap: 'perJob[' + call.departmentId + '@' + pid + ']', limit: dc, used: S.job(call.jobId) + reservedWhere((r) => r.jobId === call.jobId), required: true });
     }
+    const ac = call.agentKey && products && products.agentRunCap ? products.agentRunCap(call.agentKey) : null;
+    if (ac > 0 && ac < runCap) out.push({ cap: 'perRun[' + call.agentKey + ']', limit: ac, used: S.run(call.runId) + reservedWhere((r) => r.runId === call.runId), required: true });
     return out;
   }
 
@@ -128,13 +144,15 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     if (!call.provider || !call.model || !call.kind) throw new GuardRefusal('a call must name its provider, model and kind', 'BAD_CALL');
     const price = priceOf(pricing, call.provider, call.model);
     if (!price) throw new GuardRefusal('no price in config/engine.json for ' + call.provider + ' ' + call.model + ': call refused', 'PRICE');
+    const uv = unverifiedPrice(call.provider, price); if (uv) throw new GuardRefusal('no verified price for ' + call.provider + ' ' + call.model + ' (' + uv + '): call refused', 'PRICE');
     let maxUsd;
     if (call.kind === 'text') { if (price.inPerM == null || price.outPerM == null) throw new GuardRefusal('no token price for ' + call.model, 'PRICE'); maxUsd = textMax(price, call.inputTokens || 0, call.maxOutputTokens || 0); }
     else if (call.kind === 'image') { if (price.perImage == null) throw new GuardRefusal('no per-image price for ' + call.model, 'PRICE'); maxUsd = r6(price.perImage * (call.count || 1)); }
     else if (call.kind === 'web') { if (price.perCall == null) throw new GuardRefusal('no per-call price for ' + call.model + ' (web price to be confirmed)', 'PRICE'); maxUsd = r6(price.perCall * (call.count || 1)); }
     else throw new GuardRefusal('unknown call kind ' + call.kind, 'BAD_CALL');
     if (call.extraUsd) maxUsd = r6(maxUsd + call.extraUsd);
-    if (businesses && !call.businessId) call = { ...call, businessId: businesses.resolve(call) };
+    if (products && !(call.productId && call.departmentId)) { const pd = products.resolve(call); call = { ...call, productId: call.productId || pd.productId, departmentId: call.departmentId || pd.departmentId }; }
+    if (products && products.businessOf && !call.businessId) call = { ...call, businessId: products.businessOf(call) };
     for (const c of ['perRunUsd', 'perJobUsd', 'perDayUsd']) if (!(caps[c] > 0)) throw new GuardRefusal('cap ' + c + ' is not set in config/engine.json: every call is refused', 'CAPS');
     for (const c of checks(call, day)) {
       if (c.used + maxUsd > c.limit + EPS) {
@@ -148,7 +166,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
       const used = ledger.spent.imagesDay(day) + reservedWhere((r) => r.kind === 'image', 'count');
       if (used + (call.count || 1) > caps.imagesPerDay) { const err = new CapError({ cap: 'imagesPerDay', limit: caps.imagesPerDay, spent: used, next: call.count || 1, unit: 'images' }); bus && bus.emit('cap.hit', { jobId: call.jobId || null, agentKey: call.agentKey || null, data: { cap: 'imagesPerDay', message: err.message } }); throw err; }
     }
-    const res = { id: crypto.randomUUID(), at: now, runId: call.runId || null, jobId: call.jobId ?? null, agentKey: call.agentKey || null, line: call.line || null, ...(call.businessId ? { businessId: call.businessId } : {}), provider: call.provider, model: call.model, kind: call.kind, count: call.count || 1, maxUsd, price };
+    const res = { id: crypto.randomUUID(), at: now, runId: call.runId || null, jobId: call.jobId ?? null, agentKey: call.agentKey || null, line: call.line || null, ...(call.businessId ? { businessId: call.businessId } : {}), ...(call.productId ? { productId: call.productId, departmentId: call.departmentId } : {}), provider: call.provider, model: call.model, kind: call.kind, count: call.count || 1, maxUsd, price };
     J.put(path.join(pendingDir, res.id + '.json'), JSON.stringify(res), { fsync: true });
     reserved.set(res.id, res);
     return res;
@@ -168,7 +186,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     const cost = usd != null ? r6(usd) : textCost(res.price, usage || {});
     const tier = usd == null && res.price.longPrompt ? priceTier(res.price, promptTokens(usage || {})).tier : null;
     const count = web ? (web.searches || 0) + (web.fetches || 0) : res.count;
-    const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, ...(res.businessId ? { businessId: res.businessId } : {}), provider: res.provider, model: res.model, kind: res.kind, count, ...(web ? { searches: web.searches || 0, fetches: web.fetches || 0, via: web.via || null } : {}),
+    const row = ledger.append({ ts: clock(), jobId: res.jobId, runId: res.runId, agentKey: res.agentKey, line: res.line, ...(res.businessId ? { businessId: res.businessId } : {}), ...(res.productId ? { productId: res.productId, departmentId: res.departmentId } : {}), provider: res.provider, model: res.model, kind: res.kind, count, ...(web ? { searches: web.searches || 0, fetches: web.fetches || 0, via: web.via || null } : {}),
       tokens: usage ? { in: usage.input_tokens || 0, out: usage.output_tokens || 0, cacheRead: usage.cache_read_input_tokens || 0, cacheWrite: usage.cache_creation_input_tokens || 0 } : null,
       usd: cost, priceSource: priceSource || (res.provider === 'mock' ? 'mock' : 'config/engine.json'), ...(tier ? { priceTier: tier } : {}), estimated: !!estimated, reservedUsd: res.maxUsd, ...(requestId ? { requestId } : {}), ...(messageId ? { messageId } : {}), ...(generationId ? { generationId } : {}), ...(size ? { size } : {}), ...(reason ? { reason } : {}), ...(note ? { note } : {}) });
     if (cost > res.maxUsd + EPS) log && log.warn('a call cost more than its reservation', { id: res.id, model: res.model, kind: res.kind, usd: cost, reservedUsd: res.maxUsd, jobId: res.jobId });
@@ -184,7 +202,7 @@ export function createGuard({ J, ledger, halt, caps, pricing, log, bus, clock = 
     const day = dublinDay(clock());
     for (const c of checks({ ...res, runCapUsd: null }, day)) {
       if (!(c.limit > 0) || c.used < 0.8 * c.limit) continue;
-      const k = c.cap + '|' + (c.cap === 'perJob' ? res.jobId : c.cap === 'perRun' ? res.runId : c.cap.startsWith('businessMonth') ? day.slice(0, 7) : day);
+      const k = c.cap + '|' + (c.cap.startsWith('perJob') ? res.jobId : c.cap.startsWith('perRun') ? res.runId : c.cap.startsWith('productMonth') ? day.slice(0, 7) : day);
       if (warned.has(k)) continue; warned.add(k);
       bus && bus.emit('cap.warn', { jobId: res.jobId, agentKey: res.agentKey, data: { cap: c.cap, limit: c.limit, spent: r6(c.used) } });
     }

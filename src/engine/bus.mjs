@@ -4,15 +4,18 @@
 // was not stored. Event names are the engine's own.
 // B0 (owner, 21/10/2026): every event carries businessId (its job's or agent's business; "shared" for the shared floor and station-wide
 // events). Events written before B0 are never rewritten (the audit trail is append-only); a reader resolves them the same way.
+// R1: every event also carries productId and departmentId (its job's, else its agent's; the station's HQ for station-wide events); events
+// written before R1 are resolved on read, the same way (never rewritten). New types: the policy log, requests and line pauses.
 import fs from 'node:fs';
 import path from 'node:path';
 import { dublinDay } from './time.mjs';
 
 export const EVENT_TYPES = ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected',
   'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.start', 'engine.recovered',
-  'routine.changed', 'action.done', 'action.refused'];
+  'routine.changed', 'action.done', 'action.refused',
+  'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed'];
 
-export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringSize = 1000, businessOf = null }) {
+export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringSize = 1000, businessOf = null, productOf = null }) {
   const ring = [], subs = new Set();
   // carry the sequence on across restarts: the last line of the newest events file
   let seq = 0;
@@ -26,7 +29,8 @@ export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringS
 
   function emit(type, { jobId = null, agentKey = null, data = {} } = {}) {
     if (!EVENT_TYPES.includes(type)) throw new Error('unknown event type: ' + type);
-    const ev = { seq: ++seq, ts: Date.now(), type, jobId, agentKey, ...(businessOf ? { businessId: businessOf({ jobId, agentKey, businessId: data && data.businessId }) } : {}), data };
+    const pd = productOf ? productOf({ jobId, agentKey, productId: data && data.productId, departmentId: data && data.departmentId }) : null;
+    const ev = { seq: ++seq, ts: Date.now(), type, jobId, agentKey, ...(businessOf ? { businessId: businessOf({ jobId, agentKey, businessId: data && data.businessId }) } : {}), ...(pd ? { productId: pd.productId, departmentId: pd.departmentId } : {}), data };
     try { J.add(path.join(dir, dublinDay(ev.ts) + '.jsonl'), JSON.stringify(ev) + '\n'); } catch (e) { log && log.error('event not written', { type, error: e.message }); }
     ring.push(ev); if (ring.length > ringSize) ring.shift();
     for (const fn of subs) { try { fn(ev); } catch (e) { log && log.warn('event subscriber failed', { type, error: e.message }); } }

@@ -41,7 +41,7 @@ function scripted({ skip = true, obey = true, keep = null, replyText = 'done for
 }
 function boot(t, script) {
   const r = tempRoot('contract');
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, r };
 }

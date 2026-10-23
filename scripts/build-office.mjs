@@ -53,10 +53,12 @@ const SEEDS = { design: 20261017, office: 20261118, research: 20261219, lounge: 
 // B0 (owner, 21/10/2026): the building has floors; the bake is floor 1 (BAKED_FLOOR), the business on it (config/businesses: etsy-shop),
 // with its lounge corner open (the lounge is on floor 0, the shared floor, which is drawn procedurally)
 export const BAKED_FLOOR = 1;
+// R1: config/businesses/ is retired; the bake is the Etsy archive, the archived department with rooms in config/departments (B0's floor 1 on
+// the page until R7 moves it to G)
 export function bakedBusiness() {
-  const dir = path.join(ROOT, 'config', 'businesses');
-  for (const n of fs.readdirSync(dir).filter((x) => x.endsWith('.json') && !x.startsWith('_')).sort()) { const b = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); if (b.floor === BAKED_FLOOR) return b; }
-  throw new Error('no business on floor ' + BAKED_FLOOR + ' in config/businesses');
+  const dir = path.join(ROOT, 'config', 'departments');
+  for (const n of fs.readdirSync(dir).filter((x) => x.endsWith('.json') && !x.startsWith('_')).sort()) { const d = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); if (d.status === 'archived' && (d.rooms || []).length) return { id: d.product, floor: BAKED_FLOOR, departments: d.rooms }; }
+  throw new Error('no archived department with rooms in config/departments (the baked floor)');
 }
 export function stationDepartments() {
   const dir = path.join(ROOT, 'config', 'agents'), byDept = {}, mine = bakedBusiness().departments;

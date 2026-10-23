@@ -33,6 +33,10 @@
 // NOT REACHABLE that this run did not fetch is not written (lib/scout-brief.mjs evidenceCheckProblems); an agent's limits.maxWebFetches
 // (EVIDENCE-CHECKER: 6) caps its fetches a run, inside its web-call cap.
 // Not provided at all: messaging, channels, notifications, email, shell, code execution, browser, MCP, plugins.
+// R1 (locked rule secrets-refused; RESTRUCTURE.md §5.3): a path that names a secret file (.env*, *.db, .venv/, key and credential files,
+// secrets/, .git/: lib/secrets.mjs) is refused for every file tool and ends the run refused (secrets.read is forbidden and locked); a file
+// whose content matches a secret pattern is withheld with a note; a write whose content holds one is not written. Locked rule
+// no-merge-deploy-push: no tool named for merging, deploying, pushing, installing, publishing, accounts or prices can be given to an agent.
 import fs from 'node:fs';
 import path from 'node:path';
 import { realResolve } from '../store/jail.mjs';
@@ -47,6 +51,8 @@ import { imageSize, visionTokens, visionSettings } from '../lib/vision.mjs';
 import { validateScoutBrief, isScoutDraftPath, FORMAT_HINT, ORIGIN as SCOUT_ORIGIN, RESEARCH_ORIGIN, evidenceCheckProblems, NOT_REOPENED } from '../lib/scout-brief.mjs';
 import { readInputs } from '../lib/job-inputs.mjs';
 import { failedCallReason } from '../providers/connection.mjs';
+import { secretPathHit, secretContentHits } from '../lib/secrets.mjs';
+import { LockedRefusal, FORBIDDEN_TOOL_WORDS } from '../locked.mjs';
 
 export const TOOL_NAMES = ['fs_read', 'fs_list', 'fs_write', 'image_generate', 'image_analyze', 'web_search', 'web_fetch', 'submit_verdict', 'report_blocked'];
 export const FORBIDDEN_TOOL_RE = /send|notify|notification|channel|email|mail|sms|message|post|shell|exec|browser|click|mcp|plugin/i;
@@ -93,7 +99,7 @@ const DEFS = {
   submit_verdict: { description: 'Record your QA verdict: the full QA record from your orders. Call it once, as your last action.', input_schema: { type: 'object', properties: { record: { type: 'object' } }, required: ['record'] } },
   report_blocked: { description: 'Report that you cannot produce your required outputs honestly (for example: no evidence for them), and why. It ends the job as incomplete with your reason; nothing after your step runs. Use it instead of writing outputs without evidence.', input_schema: { type: 'object', properties: { reason: { type: 'string', description: 'What you could not produce, and why.' } }, required: ['reason'] } }
 };
-export const toolDefs = (names) => names.map((n) => { if (!DEFS[n]) throw new Error('unknown tool in agent config: ' + n); if (FORBIDDEN_TOOL_RE.test(n) && n !== 'submit_verdict') throw new Error('forbidden tool: ' + n); return { name: n, ...DEFS[n] }; });
+export const toolDefs = (names) => names.map((n) => { if (!DEFS[n]) throw new Error('unknown tool in agent config: ' + n); if ((FORBIDDEN_TOOL_RE.test(n) && n !== 'submit_verdict') || FORBIDDEN_TOOL_WORDS.test(n)) throw new Error('forbidden tool: ' + n); return { name: n, ...DEFS[n] }; });
 
 const globRe = (g) => new RegExp('^' + g.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]+') + '$');
 
@@ -135,6 +141,9 @@ export function createToolbox(ctx) {
   function inFolder(p, { forWrite = false } = {}) {
     const rel = normalisePath(p, job && job.id);
     if (path.isAbsolute(rel) || /^[a-z]:/i.test(rel) || rel.split('/').includes('..')) throw new ToolError('path must be relative to your folder, without "..": ' + p);
+    // R1: locked rule secrets-refused, by path (before anything is resolved or read; the run ends refused and the job blocks)
+    const sp = secretPathHit(rel);
+    if (sp) { log.warn('secret path refused', { runId: run.runId, agent: agent.key, kind: sp }); bus.emit('action.refused', { jobId: job ? job.id : null, agentKey: agent.key, data: { action: 'secrets.read', rule: 'secrets-refused', what: sp } }); throw new LockedRefusal('secrets-refused', 'the path names a ' + sp + '; no agent reads or writes it'); }
     const abs = realResolve(path.resolve(root, rel));
     if (!agent.scoutingNotes && isScoutPath(path.relative(root, abs))) throw new ToolError('the scouting notes are internal to TREND-SCOUT: ' + p);
     if (!(abs === root || abs.toLowerCase().startsWith(root.toLowerCase() + path.sep))) throw new ToolError('outside your folder: ' + p);
@@ -156,7 +165,10 @@ export function createToolbox(ctx) {
       if (IMAGE_EXT.test(abs)) return 'image file ' + rel + ' (' + st.size + ' bytes); use image_analyze to look at it';
       const max = cfg.engine.runtime.maxReadBytes || 200000;
       if (st.size > max) throw new ToolError(rel + ' is ' + st.size + ' bytes, over the read limit of ' + max);
-      return fs.readFileSync(abs, 'utf8');
+      const text = fs.readFileSync(abs, 'utf8'), hits = secretContentHits(text);
+      // R1: by content, the file is withheld with a note (the kinds found, never the value)
+      if (hits.length) { log.warn('secret content withheld', { runId: run.runId, agent: agent.key, path: rel, kinds: hits }); return '[withheld by the Station: ' + rel + ' holds what looks like a secret (' + hits.join(', ') + '); its content is not shown to any agent]'; }
+      return text;
     },
     fs_list({ path: p = '.' }) {
       const { abs, rel } = inFolder(p);
@@ -175,6 +187,8 @@ export function createToolbox(ctx) {
       const ownNotes = job && job.data && job.data.day ? notesRel(job.data.day, job.id) : null;
       if (isScoutPath(rel) && rel !== ownNotes) throw new ToolError('scouting notes go to this job\'s own file only (' + (ownNotes || 'no job') + '), not ' + rel);
       if (typeof content !== 'string') throw new ToolError('content must be text');
+      // R1: locked rule secrets-refused, by content: a write that holds a secret is not written
+      const sh = secretContentHits(content); if (sh.length) { log.warn('write refused: secret content', { runId: run.runId, agent: agent.key, path: rel, kinds: sh }); throw new ToolError('refused by a locked rule (secrets-refused): ' + rel + ' was NOT written: the content holds what looks like a secret (' + sh.join(', ') + '); write it without it'); }
       if (/\.json$/i.test(rel)) { try { JSON.parse(content); } catch (e) { throw new ToolError(rel + ' is not valid JSON: ' + e.message); } }
       // owner D3: a genre-scout draft is validated against the one brief schema before it is written; an invalid draft is
       // not written and the agent gets the problems back (one turn, within its caps) to fix and write it again

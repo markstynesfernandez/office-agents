@@ -46,7 +46,7 @@ function boot(t, { qaAlwaysRevise = false, designSendBacks = null } = {}) {
     const qaOnly = first.includes('RUN MODE: QA ONLY');
     return base(qaAlwaysRevise && ctx.agentKey === 'qa-design' && !qaOnly ? { ...ctx, pass: 1 } : ctx, params);
   };
-  const engine = createEngine({ J: r.J, log: r.log, script, configDir, overrides: OVERRIDES, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, configDir, overrides: OVERRIDES, startScheduler: false });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const O = engine.orchestrator, jd = (id) => path.join(r.dataRoot, 'jobs', id);
   const run = async (id) => { const c = O.createJob({ briefText: brief(id), by: 'test' }); assert.ok(c.ok, (c.reasons || []).join('; ')); await O.startJob(id); return engine.store.getJob(id); };
@@ -195,7 +195,7 @@ test('the deterministic listing text fix: the owner\'s US word list on the publi
 test('the pinned upscaler: refused when its pin does not match; its child process is killed by the E-STOP', async (t) => {
   const r = tempRoot('esrgan');
   t.after(() => r.cleanup());
-  const engine = createEngine({ J: r.J, log: r.log, startScheduler: false });
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, startScheduler: false });
   t.after(() => { try { engine.close(); } catch (_) {} });
   const pin = engine.cfg.engine.upscale;
   assert.match(checkPin({ ...pin, binary: 'C:/Windows/System32/cmd.exe' }).reason, /must live under office-agents\/tools/);

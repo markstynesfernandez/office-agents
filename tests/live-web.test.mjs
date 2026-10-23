@@ -305,7 +305,7 @@ test('the genre-scout line on live-shaped responses: 4 verified, 1 blocked, game
   const log = memLog();
   const providers = createProviders({ mode: 'live', engineCfg: ENGINE, env: LIVE_ENV, log, client });
   const create = providers.text.create; providers.text.create = (params, opts) => { cur = opts && opts.ctx; return create(params, opts); };
-  const e = createEngine({ J: r.J, log: r.log, providers, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, providers, startScheduler: false });
   t.after(() => { try { e.close(); } catch (_) {} r.cleanup(); });
   const c = e.orchestrator.createResearchJob({ line: 'genre-scout', by: 'test' });
   await e.orchestrator.startJob(c.id);
@@ -394,7 +394,8 @@ test('source rule: the blocked domains are the owner\'s four plus etsy.com (E7a)
 });
 
 test('source rule: the blocked list reaches BOTH web tools for every agent with web tools (TREND-SCOUT, EVIDENCE-CHECKER, and DEMAND-RESEARCHER on the research line)', async () => {
-  const withWeb = fs.readdirSync(path.join(APP_ROOT, 'config', 'agents')).map((f) => JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config', 'agents', f), 'utf8'))).filter((a) => (a.tools || []).some((x) => x.startsWith('web_'))).map((a) => a.key).sort();
+  const withWeb = fs.readdirSync(path.join(APP_ROOT, 'config', 'agents')).map((f) => JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config', 'agents', f), 'utf8'))).filter((a) => a.status !== 'not-hired').filter((a) => (a.tools || []).some((x) => x.startsWith('web_'))).map((a) => a.key).sort();
+  // R1: the not-hired LEAD-RESEARCHER and LEAD-CHECKER (R5) get the same shared relay, so the same list, when they are hired
   assert.deepEqual(withWeb, ['demand-researcher', 'evidence-checker', 'trend-scout'], 'the agents with web tools (one shared relay, so one list)');
   for (const agentKey of withWeb) {
     const s = setup({ agentKey });
@@ -430,7 +431,7 @@ test('source rule: a web_fetch of a blocked site or any subdomain is refused bef
   assert.equal(blockedBy('not a url', BLOCKED), '(unparsable URL)', 'fails closed');
   // the same refusal on the mock provider (the rule does not depend on the provider)
   const r = tempRoot('mock-src');
-  const e = createEngine({ J: r.J, log: r.log, script: createScoutScript(), startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createScoutScript(), startScheduler: false });
   try {
     const box = createToolbox({ J: e.J, folder: path.join(e.J.dataRoot, 'research'), agent: e.cfg.agents['trend-scout'], job: { id: '2026-10-17--genre-scout-1' }, cfg: { ...e.cfg }, guard: e.guard, providers: e.providers, run: { runId: 'run_m' }, halt: e.halt, log: r.log, bus: e.bus, line: 'genre-scout' });
     await assert.rejects(box.call('web_fetch', { url: 'https://store.steampowered.com/' }), /blocked source/);

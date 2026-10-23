@@ -34,7 +34,8 @@
     "owner-brief": "node scripts/owner-brief.mjs",
     "settle:images": "node scripts/settle-images.mjs",
     "settle:failed": "node scripts/settle-failed.mjs",
-    "migrate:businesses": "node scripts/migrate-businesses.mjs"
+    "migrate:businesses": "node scripts/migrate-businesses.mjs",
+    "migrate:products": "node scripts/migrate-products.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

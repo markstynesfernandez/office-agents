@@ -60,7 +60,7 @@ function liveEngine(t, { script, tag, stopAt = null }) {
   const text = createMockText({ script: (ctx, params) => script(ctx, params, engine) });
   const providers = { mode: 'live', text, image, web: Object.assign(async () => ({ text: '', usd: 0 }), { plan: () => ({ maxUses: 1, extraUsd: 0 }), settings: {} }) };
   const hooks = { onStep: ({ job, step, phase }) => { if (stopAt && stopAt() === step && phase === 'start') engine.orchestrator.stopJob(job.id, { expectedVersion: engine.store.getJob(job.id).version }); } };
-  engine = createEngine({ J: r.J, log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
+  engine = createEngine({ archiveSandbox: true, J: r.J, log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
   engine.sleep = async () => {};
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   engine.store.insertJob({ id: ID, line: 'room1-digital', kind: 'line', title: 'W4 winter props', product_key: 'pngtuber-prop-pack', state: 'queued', step: 'designer', data: { createdBy: 'test' } });

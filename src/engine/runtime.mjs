@@ -15,6 +15,11 @@
 // reserved as vision tokens (the image's own size, lib/vision.mjs), not as the length of its base64 text; the orchestrator's image
 // policy (style-reference run modes, ctx.image), the QA verdict kind (the file-1 check) and the per-file image attempt count (job
 // data imageAttempts, against the QA loop limit) reach the toolbox. A provider refusal raised before the network is never billed.
+// R1 (RESTRUCTURE.md §2.2, §3): before anything is recorded or reserved, a not-hired agent is refused (it costs nothing until its phase),
+// an archived one too (outside the mock-only archive sandbox), and the CEO runs only in its memos folder (locked rule ceo-recommends-only).
+// The policy is checked before the guard reserves any spend: a run whose tools include a forbidden action for its product is refused at
+// USD 0, and every tool call is checked again when it is made (the locked rules, then the level: forbidden ends the run refused, owner
+// files a request in the Owner's office and ends the run, auto runs the tool).
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { buildAgentPrompt, engineWrapper } from './prompts.mjs';
@@ -24,6 +29,9 @@ import { makeRedactor } from './providers/anthropic.mjs';
 import { urlsIn, pricesIn } from './lib/web-sources.mjs';
 import { isConnectionError, failedCallReason } from './providers/connection.mjs';
 import { businessDataArea } from './business.mjs';
+import { productDataArea } from './building.mjs';
+import { PolicyRefusal } from './policy.mjs';
+import { assertActor, LockedRefusal, CEO, CEO_FOLDER } from './locked.mjs';
 
 export const MAX_NUDGES = 2;
 export const TRANSCRIPT_RESULT_CHARS = 2000;
@@ -88,6 +96,10 @@ export async function guardedTextCall({ guard, halt, providers, call, params, ct
 export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null, image = null, verdictKind = null, file1 = null, imageAttemptLimit = null, verdictFiles = null }) {
   const { store, guard, providers, halt, bus, log, cfg } = engine;
   const agent = effectiveAgent(engine, agentKey);
+  // R1: the agent's status (config/agents status; building.mjs): not hired yet, or archived
+  if (agent.status === 'not-hired') throw Object.assign(new Error(agent.name + ' is not hired yet (' + (agent.phase || 'a later phase') + '): the engine does not run it'), { code: 'NOT_HIRED' });
+  if (agent.status === 'archived' && !engine.archiveSandbox) throw Object.assign(new Error(agent.name + ' is archived' + (agent.retired ? ' (retired into ' + agent.retiredInto + ')' : ' (the Etsy archive)') + ': the engine does not run it'), { code: 'ARCHIVED' });
+  if (agentKey === CEO && path.relative(engine.J.dataRoot, folder).split(path.sep).join('/') !== CEO_FOLDER) throw new LockedRefusal('ceo-recommends-only', 'the CEO runs only in ' + CEO_FOLDER + ', not ' + folder);
   if (!agent.enabled) throw new RunStopped(agent.name + ' is off duty');
   const tier = cfg.engine.tiers[agent.tier]; if (!tier) throw new Error('unknown tier ' + agent.tier);
   const provider = providers.mode === 'mock' ? 'mock' : tier.provider, model = tier.model;
@@ -103,9 +115,22 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   // B0 (owner, 21/10/2026): the business the run works for (its job's, else its line's or agent's) and its data area: the file tools are
   // jailed to it (a business agent never reaches another business's dataDir; the shared floor's agents serve every business: the data root)
   const businessId = engine.businessOf ? engine.businessOf({ jobId: job ? job.id : null, line, agentKey }) : null, bRec = businessId && engine.building ? engine.building.get(businessId) : null;
-  const businessArea = bRec ? businessDataArea(engine.J.dataRoot, bRec) : null;
+  // R1: the data area is the run's product's (products/<id>/; the archived Etsy layout for etsy-shop); B0's business area without one
+  const pd = engine.productOf ? engine.productOf({ jobId: job ? job.id : null, line, agentKey }) : null, prod = pd && engine.company ? engine.company.product(pd.productId) : null;
+  const businessArea = prod ? productDataArea(engine.J.dataRoot, prod) : bRec ? businessDataArea(engine.J.dataRoot, bRec) : null;
   const ctx = { J: engine.J, folder, agent, job, model, businessId, businessArea, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, verdictFiles, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
   const box = createToolbox(ctx);
+  // R1: the policy before any reservation: each of the run's tools declares its action (policy.mjs TOOL_ACTIONS); a forbidden one refuses the run
+  const pol = engine.policy || null;
+  if (pol) for (const d of box.defs) { const act = pol.toolAction(d.name); if (!act || pol.level(act, pd && pd.productId) === 'forbidden') throw new PolicyRefusal('refused before any spend: ' + agent.name + '\'s tool ' + d.name + ' (' + (act || 'no declared action') + ') is forbidden' + (pd ? ' for ' + pd.productId : ''), { action: act, level: 'forbidden' }); }
+  async function policyCheck(name, input) {
+    const act = pol ? pol.toolAction(name) : null, actor = { kind: 'agent', key: agentKey };
+    if (!act || !box.defs.some((d) => d.name === name)) return;   // not this agent's tool: the toolbox refuses it ("not available")
+    assertActor(act, actor);
+    const lv = pol.level(act, pd && pd.productId);
+    if (lv === 'forbidden') throw new PolicyRefusal(name + ' refused: ' + act + ' is forbidden by the autonomy policy', { action: act, level: lv });
+    if (lv === 'owner') { const r = await engine.actions.perform({ action: act, actor, productId: pd.productId, departmentId: pd.departmentId, jobId: job ? job.id : null, summary: agent.name + ': ' + name, payload: JSON.stringify(input || {}) }); if (!r.done) throw new PolicyRefusal(name + ' needs the owner (' + act + '): request ' + r.requestId + ' is in the Owner\'s office; the run ends here', { action: act, level: lv }); }
+  }
   const wrapper = engineWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, isQa: !!agent.verdict, loopNote });
   const system = [{ type: 'text', text: prompt.soul + '\n' + prompt.text, ...(cfg.engine.runtime.promptCaching ? { cache_control: { type: 'ephemeral' } } : {}) }, { type: 'text', text: wrapper }];
   const promptSha256 = crypto.createHash('sha256').update(JSON.stringify(system)).digest('hex');
@@ -191,11 +216,12 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
         let out, isError = false;
         try {
           if (only && !only.has(u.name)) throw new ToolError(u.name + ' refused: answer the reminder with ' + [...only].join(' or ') + ' only');
+          await policyCheck(u.name, u.input);
           out = await box.call(u.name, u.input);
           if (u.name === 'web_search' || u.name === 'web_fetch') { for (const x of urlsIn(out)) { web.all.add(x); if (u.name === 'web_search') web.search.add(x); } const ps = pricesIn(out); for (const p of ps) web.prices.add(p); if (u.name === 'web_search') web.searches.push({ query: String((u.input && u.input.query) || ''), prices: ps }); }
         }
         catch (e) {
-          if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped) { transcript(resp, uses, results, { ...after, error: e.message }); throw e; }
+          if (e instanceof CapError || e instanceof GuardRefusal || e instanceof RunStopped || e instanceof PolicyRefusal || e instanceof LockedRefusal) { transcript(resp, uses, results, { ...after, error: e.message }); throw e; }
           if (halt.signal.aborted) throw new RunStopped('e-stop', e);
           if (stopSignal && stopSignal.aborted) throw new RunStopped('stopped by the owner', e);
           // W2: a tool's provider call that failed with no HTTP response after its last retry ends the run (the job is blocked); it is
@@ -227,6 +253,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
     if (e instanceof CapError) { status = 'cap'; endReason = e.message; }
     else if (e instanceof GuardRefusal) { status = e.code === 'HALT' ? 'stopped' : 'refused'; endReason = e.message; }
     else if (e instanceof RunStopped) { status = 'stopped'; endReason = e.message; }
+    else if (e instanceof PolicyRefusal || e instanceof LockedRefusal) { status = 'refused'; endReason = e.message; log.warn('run refused by the policy', { runId, agent: agentKey, error: e.message }); }
     else { status = 'failed'; endReason = 'error'; error = String(e && e.message || e); log.error('run failed', { runId, agent: agentKey, error: String(e && e.stack || e) }); }
   }
   store.finishRun(runId, { status, usd: totals.usd, tokensIn: totals.tokensIn, tokensOut: totals.tokensOut, turns: totals.turns, endReason, error, tools: totals.tools });

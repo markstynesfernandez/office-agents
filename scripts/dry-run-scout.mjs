@@ -29,7 +29,7 @@ export async function dryRunScout({ quiet = false } = {}) {
   const base = createScoutScript({ bad: true });
   const script = (ctx, params) => { const last = params.messages[params.messages.length - 1]; if (ctx.agentKey === 'trend-scout' && Array.isArray(last.content)) tools.push(...last.content.filter((b) => b.type === 'tool_result')); return base(ctx, params); };
   script.web = base.web;
-  const engine = openScriptEngine({ J, log, script, purpose: 'dry-run:scout', startsJobs: true });
+  const engine = openScriptEngine({ archiveSandbox: true, J, log, script, purpose: 'dry-run:scout', startsJobs: true });
   try {
     if (engine.providers.mode !== 'mock') throw new Error('not on the mock provider');
     const rdir = path.join(J.dataRoot, 'research');

@@ -1,6 +1,10 @@
 // engine-model.mjs — turns the engine's own state (SQLite, ledger, job folders, config) into the office snapshot the page
 // renders: the same shape the legacy view produces (model.mjs), so the 3D office, board, calendar and panels work on
 // both. Read-only. Prompts, keys and provider responses never reach the snapshot.
+// R1: the seven-floor company (snapshot.company): the departments top to bottom (6 … 1, G) with every agent and its status (not hired yet,
+// archived, active), the products with their spend against budget (Finance: a ledger calculation; MRR "not connected" until R6), the
+// Owner's office (the requests queue, the decision log, the autonomy policy and its change log, paused lines). The 3D office keeps B0's
+// floors (snapshot.building) until R7; a not-hired agent has no desk yet, so it is listed here and not drawn.
 import fs from 'node:fs';
 import path from 'node:path';
 import { building, SHARED, DEFAULT_BUSINESS } from '../engine/business.mjs';
@@ -13,6 +17,8 @@ import { roleLabel } from '../web/ui/role.js';
 import { evidenceLevelOf, ownerSetsPriceOf } from '../engine/lib/scout-brief.mjs';
 import { upscalerStatus } from '../engine/lib/upscaler-status.mjs';
 import { formProducts } from '../engine/lib/owner-brief-form.mjs';
+import { company as companyOf } from '../engine/building.mjs';
+import { policyLog } from '../engine/policy.mjs';
 
 // L2: one line per engine event for a job's live status (the last 5 events in the job panel)
 export function eventText(ev, nameOf = {}) {
@@ -56,7 +62,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   const warnings = [];
   const day = dublinDay(now), dayStart = dublinDayStart(now);
   const L = cfg.lines['room1-digital'];
-  const agentsCfg = Object.values(cfg.agents);
+  const agentsCfg = Object.values(cfg.agents).filter((a) => a.status !== 'not-hired');   // R1: not hired yet: no desk until its phase
   const nameOf = Object.fromEntries(agentsCfg.map((a) => [a.key, a.name]));
   const stepDef = (job, step) => { const l = cfg.lines[job.line]; return l && l.steps[step]; };
   const runs = store.runsOf({ limit: 500 });
@@ -246,6 +252,10 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   const month = day.slice(0, 7);
   spend.byBusiness = [...B.list.map((b) => ({ id: b.id, name: b.name, floor: b.floor, todayUsd: r6(ledger.spent.businessDay(b.id, day)), monthUsd: r6(ledger.spent.businessMonth(b.id, month)), budgetUsd: b.monthlyBudgetUsd, dayCapUsd: b.dailyCapUsd || null, month })),
     { id: SHARED, name: B.shared.name || 'Shared services', floor: B.shared.floor ?? 0, todayUsd: r6(ledger.spent.businessDay(SHARED, day)), monthUsd: r6(ledger.spent.businessMonth(SHARED, month)), budgetUsd: null, dayCapUsd: null, month }];
+  // R1: spend per product (Finance, a ledger calculation): today and this Dublin month against the product's budget
+  const C = engine.company || (cfg.company ? companyOf(cfg) : null);
+  spend.byProduct = C ? C.list.map((p) => ({ id: p.id, name: p.name, status: p.status, todayUsd: r6(ledger.spent.productDay(p.id, day)), monthUsd: r6(ledger.spent.productMonth(p.id, month)), budgetUsd: p.monthlyBudgetUsd, budgetProposal: (p.proposals || []).includes('monthlyBudgetUsd'), dayCapUsd: p.dailyCapUsd || null, month, mrr: 'not connected', mrrNote: 'Stripe read-only arrives in R6 (a GDPR decision is recorded first)' })) : [];
+  for (const b of spend.byProduct) if (b.status === 'active' && b.budgetUsd && b.monthUsd >= 0.8 * b.budgetUsd) warnings.push((b.monthUsd >= b.budgetUsd ? 'BUDGET REACHED: ' : 'Budget warning: ') + b.name + ' ' + b.monthUsd.toFixed(2) + ' of ' + b.budgetUsd.toFixed(2) + ' USD this month');
   for (const b of spend.byBusiness) if (b.budgetUsd && b.monthUsd >= 0.8 * b.budgetUsd) warnings.push((b.monthUsd >= b.budgetUsd ? 'BUDGET REACHED: ' : 'Budget warning: ') + b.name + ' ' + b.monthUsd.toFixed(2) + ' of ' + b.budgetUsd.toFixed(2) + ' USD this month');
   if (!g.ledgerOk) warnings.push('LEDGER UNREADABLE: every paid call is refused. ' + g.ledgerError);
   for (const c of spend.capStatus) if (c.level !== 'ok') warnings.push((c.level === 'hit' ? 'CAP REACHED: ' : 'Cap warning: ') + c.label + ' ' + c.used.toFixed(2) + ' of ' + c.limit.toFixed(2) + ' USD (' + c.pct + '%)' + (c.level === 'hit' ? '; new calls on it are refused' : ''));
@@ -290,11 +300,33 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     building: { floors: B.floors().map((fl) => ({ ...fl, lounge: !!fl.shared && (B.shared.lounge !== false), lines: fl.shared ? [] : ((B.get(fl.id) || {}).lines || []), agents: agents.filter((a) => a.businessId === fl.id).map((a) => a.id), empty: !fl.shared && !((B.get(fl.id) || {}).lines || []).length })), sharedId: SHARED },
     services, departments, agents, hub, jobs, board, stages: columns.filter((c) => !['brief', 'approval-queue', 'done'].includes(c.key)), columns, routines, events, spend,
     // E5: what the page's controls may offer (the server checks every action again)
-    controls: { live: true, haltVersion: halt.state.at || 0, tiers: Object.entries(cfg.engine.tiers).map(([k, t]) => ({ key: k, model: t.model })), effortLevels: cfg.engine.effortLevels || [], routineTargets: (engine.routineTargets || []).map((t) => ({ id: t.id, label: t.label })), perRunCapUsd: caps.perRunUsd, today: day },
+    controls: { live: true, haltVersion: halt.state.at || 0, tiers: Object.entries(cfg.engine.tiers).map(([k, t]) => ({ key: k, model: t.model })), effortLevels: cfg.engine.effortLevels || [], routineTargets: (engine.routineTargets || []).filter((t) => !t.agent).map((t) => ({ id: t.id, label: t.label })), perRunCapUsd: caps.perRunUsd, today: day },
     briefs: engine.orchestrator ? engine.orchestrator.verifiedBriefs().map((b) => ({ file: b.file, id: b.id, niche: b.niche, status: b.status, product: b.product, jobId: b.jobId, legacy: b.legacy })) : [],
     // L2: the owner brief form (products.json: the file count from the spec, the floor, whether file 1 is a style reference) and the job limit
     ownerBriefForm: { products: formProducts(cfg.products, cfg.station), today: day },
+    // R1: the seven-floor company and the Owner's office (the penthouse); read only here: decisions go through POST /api/requests/decide
+    company: C ? companyView(engine, C, { agents, jobs }) : null,
     jobLimit: { maxRunning: engine.maxRunningJobs || null, perLine: Object.fromEntries(Object.values(cfg.lines).map((l) => [l.id, l.maxConcurrentJobs || 1])), running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }
   };
 }
 
+
+// R1: the company view: floors top to bottom, each agent with its status; products; the Owner's office (requests, decisions, policy)
+function companyView(engine, C, { agents, jobs }) {
+  const { cfg, store } = engine, drawn = new Set(agents.map((a) => a.id));
+  const agentView = (k) => { const a = cfg.agents[k] || {}, t = cfg.engine.tiers[a.tier] || {}; return { id: k, name: a.name || k, status: a.status || null, phase: a.phase || null, reportsTo: a.reportsTo || null, model: t.model || null, thinking: a.thinking || null, retiredInto: a.retiredInto || null, drawn: drawn.has(k), label: a.status === 'not-hired' ? 'not hired yet (' + (a.phase || 'later') + ')' : a.status === 'archived' ? (a.retired ? 'retired into ' + String(a.retiredInto || '').toUpperCase() : 'archived') : 'active' }; };
+  const floors = C.floors().map((d) => ({ floor: String(d.floor), id: d.id, name: d.name, status: d.status, reportsTo: d.reportsTo, product: d.product || null, lines: (d.lines || []).map((l) => ({ id: l, archived: C.lineArchived(l), paused: engine.actions ? engine.actions.paused(l) : null })), agents: (d.agents || []).map(agentView), openJobs: jobs.filter((j) => j.kind !== 'legacy' && (d.lines || []).includes(j.line) && !['done', 'archived'].includes(j.state)).length }));
+  const req = engine.requests ? engine.requests.list({ limit: 200 }) : [];
+  const reqView = (r) => ({ id: r.id, productId: r.product_id, departmentId: r.department_id, jobId: r.job_id, action: r.action, summary: r.summary, payloadSha256: r.payload_sha256, filedBy: r.filed_by, filedAt: r.filed_at, compliance: r.compliance, security: r.security, status: r.status, decidedAt: r.decided_at, words: r.decision_words, version: r.version });
+  const pol = engine.policy, levels = pol ? pol.levels : {}, count = (lv) => Object.values(levels).filter((x) => x === lv).length;
+  return {
+    floors,
+    products: C.list.map((p) => ({ id: p.id, name: p.name, status: p.status, repo: p.repo || null, budgetUsd: p.monthlyBudgetUsd, dailyCapUsd: p.dailyCapUsd || null, jobCapUsdByDepartment: p.jobCapUsdByDepartment || {}, proposals: p.proposals || [], decided: p.decided || {}, syntheticDataOnly: !!p.syntheticDataOnly })),
+    ownersOffice: {
+      requests: req.map(reqView), pending: req.filter((r) => r.status === 'pending').length,
+      decisions: engine.requests ? engine.requests.decisions(50) : [],
+      policy: pol ? { sha256: pol.sha256, counts: { auto: count('auto'), owner: count('owner'), forbidden: count('forbidden') }, levels, log: policyLog(engine.J.dataRoot, 100), source: 'config/autonomy.json (the owner edits the file; the page cannot)' } : null,
+      pausedLines: Object.keys(cfg.lines).map((l) => ({ line: l, paused: engine.actions ? engine.actions.paused(l) : null })).filter((x) => x.paused)
+    }
+  };
+}

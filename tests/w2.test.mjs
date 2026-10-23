@@ -73,7 +73,7 @@ function liveEngine(t, { reply = (n) => okImage(n), script = null, client = null
   let engine = null;
   const text = client ? createAnthropicText({ engineCfg: CFG.engine, env: LIVE, log, client }) : createMockText({ script: (ctx, params) => script(ctx, params, engine) });
   const providers = { mode: 'live', text, image, web: Object.assign(async () => ({ text: '', usd: 0 }), { plan: () => ({ maxUses: 1, extraUsd: 0 }), settings: {} }) };
-  engine = createEngine({ J: r.J, log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
+  engine = createEngine({ archiveSandbox: true, J: r.J, log, providers, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan, hooks });
   engine.sleep = async () => {};
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const addJob = (id = ID, step = 'designer', data = {}) => { engine.store.insertJob({ id, line: 'room1-digital', kind: 'line', title: 'W2 winter props', product_key: 'pngtuber-prop-pack', state: 'queued', step, data: { createdBy: 'test', ...data } }); r.J.put(path.join(r.dataRoot, 'jobs', id, 'brief.md'), BRIEF); return engine.store.getJob(id); };
@@ -263,7 +263,7 @@ test('2: a mock failure mid-batch blocks the job; Resume carries on the same set
     if (failOnce && ctx.agentKey === 'designer' && /REST OF SET — batch 1 of 2: files 02–07/.test(input) && turnOf(params) === 0) { seen.designer.push({ input, set: 2, files: range(2, 7) }); return { content: [2, 3, 4].map((n) => tool('g' + n, 'image_generate', { path: 'set-v2/raw/' + pad(n) + '-prop-' + n + '.png', prompt: 'winter desk prop ' + n + ', soft outline', transparent: true })) }; }
     return firstBatch(ctx, params);
   };
-  const engine = createEngine({ J: r.J, log: r.log, script: wrapped, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan,
+  const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: wrapped, configDir: CONFIG, promptsDir: PROMPTS, startScheduler: false, upscaler: fakeEsrgan,
     hooks: { onStep: ({ job, step, phase, result }) => { if (stopAtPrep && step === 'designer' && phase === 'end' && result && result.next === 'prep') engine.orchestrator.stopJob(job.id, { expectedVersion: engine.store.getJob(job.id).version }); } } });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   assert.equal(engine.providers.mode, 'mock');
@@ -408,7 +408,7 @@ function winterLedger(L) {
 }
 
 test('4: settle:failed: list, dry run, apply (appended correction rows with who, when and the amount), never twice; the winter job\'s 16 rows to USD 0', (t) => {
-  const r = tempRoot('w2settle'), log = capLog(r.log), engine = createEngine({ J: r.J, log, configDir: CONFIG, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
+  const r = tempRoot('w2settle'), log = capLog(r.log), engine = createEngine({ archiveSandbox: true, J: r.J, log, configDir: CONFIG, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   const L = engine.ledger, failed = winterLedger(L), ts = Date.parse('2026-10-20T09:00:00Z');
   // not failed-call rows: an image row with a generation id (settle:images), an e-stop abort, a settled call; one new-style row elsewhere
@@ -454,7 +454,7 @@ test('4: settle:failed: list, dry run, apply (appended correction rows with who,
 
 test('4: npm run settle:failed is a dry run by default and writes only with --apply', (t) => {
   const r = tempRoot('w2script');
-  const e = createEngine({ J: r.J, log: r.log, configDir: CONFIG, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
   winterLedger(e.ledger); const file = e.ledger.file; e.close();
   t.after(() => r.cleanup());
   const env = { ...process.env, STATION_DATA_ROOT: r.dataRoot, STATION_PROVIDER: 'mock', STATION_INSTANCE: 'dev' };
@@ -479,7 +479,7 @@ test('6: Mark published takes https://www.etsy.com/<country>/listing/<id>/... an
   assert.equal(etsyListingUrl(' https://etsy.com/listing/42/x '), 'https://www.etsy.com/listing/42/x');
   assert.equal(etsyListingUrl('https://www.etsy.com/listing/42'), 'https://www.etsy.com/listing/42');
   for (const bad of ['https://www.etsy.com/irl/listing/42', 'https://www.etsy.com/ie/shop/x', 'http://www.etsy.com/ie/listing/42', 'https://www.etsy.com.evil.example/ie/listing/42', 'https://www.etsy.com/ie/listing/abc']) assert.equal(etsyListingUrl(bad), null, bad);
-  const r = tempRoot('w2pub'), engine = createEngine({ J: r.J, log: r.log, configDir: CONFIG, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
+  const r = tempRoot('w2pub'), engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, configDir: CONFIG, startScheduler: false, script: () => ({ content: [{ type: 'text', text: 'x' }] }) });
   t.after(() => { try { engine.close(); } catch (_) {} r.cleanup(); });
   engine.store.insertJob({ id: ID, line: 'room1-digital', kind: 'line', title: 'W2', product_key: 'pngtuber-prop-pack', state: 'approval', step: 'package', data: {} });
   engine.store.queueApproval(ID);

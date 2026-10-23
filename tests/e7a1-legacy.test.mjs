@@ -40,7 +40,7 @@ function boot(t) {
     return base(ctx, params);
   };
   script.web = base.web;
-  const e = createEngine({ J: r.J, log: r.log, script, startScheduler: false });
+  const e = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script, startScheduler: false });
   t.after(async () => { await idle(e); try { e.close(); } catch (_) {} r.cleanup(); });
   return { e, r };
 }

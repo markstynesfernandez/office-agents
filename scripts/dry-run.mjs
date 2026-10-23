@@ -64,7 +64,7 @@ export async function dryRun({ shots: takeShots = shots, quiet = false } = {}) {
   };
   // the scripted agents write the listing text from the effective (patched) station config
   const script = createDryRunScript({ cfg: loadConfig({ configDir: path.join(APP_ROOT, 'config'), promptsDir: path.join(APP_ROOT, 'prompts'), overrides }).station });
-  const engine = openScriptEngine({ J, log, script, overrides, hooks, purpose: 'dry-run', startsJobs: true });
+  const engine = openScriptEngine({ archiveSandbox: true, J, log, script, overrides, hooks, purpose: 'dry-run', startsJobs: true });
   const { server, closeAll } = createEngineServer({ engine, log });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = 'http://127.0.0.1:' + server.address().port;

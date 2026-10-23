@@ -2,17 +2,28 @@
 // repository (DECISIONS.md Q7, Q8); the page can only change an agent's on/off, tier and effort (an overlay in SQLite).
 //   config/engine.json            caps, tiers, prices, providers, runtime
 //   config/station.config.json    business settings ported from the station (fees, digital terms, originality lists)
-//   config/products.json          digital product specs (one entry per product type; nothing in code names a product)
+//   config/archive/etsy/products.json   the Etsy digital product specs (one entry per product type; archived in R1, read only)
 //   config/agents/<key>.json      one file per agent
 //   config/lines/<id>.json        the written line specs
 //   config/office.json            the office layout (departments and desks)
 //   config/routines.json          routines the station ships with (seeded once per data root, always disabled)
-//   config/businesses/<id>.json   B0: the businesses of the building (one floor each; _template.json is never loaded), checked
-//                                 against the lines, agents and office departments: a bad business stops the engine
 //   config/building.json          B0: the building rules' data (foreignDataMarkers: another company's data never enters the Station)
+// R1 (RESTRUCTURE.md §1.4, §3): the seven-floor company replaces config/businesses/ (retired):
+//   config/products/<id>.json     products: budget, repo, data, policy overrides (_template.json is never loaded)
+//   config/departments/<id>.json  departments: floor (display order only), rooms, agents, lines, reportsTo, status
+//   config/autonomy.json          the autonomy policy (auto / owner / forbidden per action)
+//   config/archive/etsy/products.json   the archived Etsy product specs (was config/products.json; cfg.products, as before)
+// The building check, the policy, the tools' declared actions and the locked rules (building.mjs, policy.mjs, locked.mjs) are checked
+// here: any problem stops the engine with the reason (fail closed). cfg.businesses and cfg.office.shared are B0's view, derived.
 import fs from 'node:fs';
 import path from 'node:path';
-import { readBusinesses, validateBusinesses, withDefaults } from './business.mjs';
+import { withDefaults } from './business.mjs';
+import { readCompany, validateCompany, compatBuilding } from './building.mjs';
+import { readPolicy, policyProblems, overrideProblems, toolProblems, TOOL_ACTIONS } from './policy.mjs';
+import { lockedConfigProblems } from './locked.mjs';
+import { TOOL_NAMES } from './tools/index.mjs';
+
+export const ETSY_PRODUCTS_FILE = path.join('archive', 'etsy', 'products.json');
 
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
 const readDir = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => n.endsWith('.json')).sort().map((n) => readJson(path.join(d, n))) : []);
@@ -50,11 +61,25 @@ export function loadConfig({ configDir, promptsDir, overrides = null }) {
   const opt = (f) => (fs.existsSync(path.join(configDir, f)) ? readJson(path.join(configDir, f)) : null);
   const agents = Object.fromEntries(readDir(path.join(configDir, 'agents')).map((a) => [a.key, a]));
   const lines = Object.fromEntries(readDir(path.join(configDir, 'lines')).map((l) => [l.id, l]));
-  const products = overrides && overrides.productsFile ? overrides.productsFile : opt('products.json');
+  const products = overrides && overrides.productsFile ? overrides.productsFile : opt(ETSY_PRODUCTS_FILE);
   const bl = path.join(configDir, 'blocklist.txt');
   const blocklist = fs.existsSync(bl) ? fs.readFileSync(bl, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
   const routines = opt('routines.json');
-  const office = opt('office.json') || { departments: [] }, businesses = readBusinesses(configDir);
-  const bb = validateBusinesses({ businesses, engine, lines, agents, office }); if (bb.length) throw new Error('config/businesses: ' + bb.join('; '));
-  return { configDir, promptsDir, engine, blocklist, routines: (routines && routines.routines) || [], station: overrides && overrides.stationSet ? applySet(opt('station.config.json') || {}, overrides.stationSet) : (opt('station.config.json') || {}), overridden: !!overrides, products: (products && products.products) || [], productsFile: products, agents, lines, office, businesses: businesses.map(({ file, ...b }) => withDefaults(b)), building: opt('building.json') || { foreignDataMarkers: [] } };
+  const office = opt('office.json') || { departments: [] }, company = readCompany(configDir), policy = readPolicy(configDir);
+  checkCompany({ company, policy, engine, lines, agents, office, promptsDir });
+  const compat = compatBuilding({ company, agents, office });
+  const strip = ({ file, ...x }) => x;
+  return { configDir, promptsDir, engine, blocklist, routines: (routines && routines.routines) || [], station: overrides && overrides.stationSet ? applySet(opt('station.config.json') || {}, overrides.stationSet) : (opt('station.config.json') || {}), overridden: !!overrides, products: (products && products.products) || [], productsFile: products, agents, lines, office: { ...office, shared: compat.shared }, businesses: compat.businesses.map(withDefaults), company: { products: company.products.map(strip), departments: company.departments.map(strip) }, policy: { sha256: policy.sha256, levels: policy.levels }, building: opt('building.json') || { foreignDataMarkers: [] } };
+}
+
+// R1: the building check, the policy, the tools' declared actions and the locked rules, together; throws with every reason
+export function checkCompany({ company, policy, engine, lines, agents, office, promptsDir = null }) {
+  const overrides = [...company.products.map((p) => ({ file: 'config/products/' + p.file, policy: p.policy })), ...company.departments.map((d) => ({ file: 'config/departments/' + d.file, policy: d.policy })), ...Object.values(agents).map((a) => ({ file: 'config/agents/' + a.key + '.json', policy: a.policy }))].filter((o) => o.policy && Object.keys(o.policy).length);
+  const bad = [
+    ...validateCompany({ company, agents, lines, engine, office, implementedTools: TOOL_NAMES, promptsDir }),
+    ...policyProblems(policy.levels), ...overrideProblems(policy.levels, overrides), ...toolProblems(agents),
+    ...lockedConfigProblems({ levels: policy.levels, overrides, agents, departments: company.departments, toolActions: TOOL_ACTIONS })
+  ];
+  for (const p of company.products) for (const a of p.allowedActions || []) if (!(a in policy.levels)) bad.push('config/products/' + p.file + ': allowedActions "' + a + '" is not an action in config/autonomy.json');
+  if (bad.length) throw Object.assign(new Error('the building does not hold: ' + bad.join('; ')), { code: 'BUILDING', problems: bad });
 }
