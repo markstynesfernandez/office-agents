@@ -413,9 +413,20 @@ prices and assumed token counts, not measurements; each phase's first live runs 
 - **Outreach rules are per market.** Each market is a config entry (`config/markets/<id>.json`: lawful-basis rule, contact rule,
   required message content, opt-out handling and deadline, retention) that the mechanical gate and COMPLIANCE apply; a lead
   without a market is refused, and a market is added only by `lead.source.add` (owner). **EU / Ireland**: GDPR and ePrivacy, as §4
-  (to be confirmed by legal advice). **United States** (the existing outreach targets US businesses only): the rules are to be
-  recorded by the owner (the R0 follow-up instruction was cut off at this point); until then no US market entry exists and the
-  lead line refuses US leads.
+  (to be confirmed by legal advice). **United States** (the existing outreach targets US businesses only): the owner's
+  instruction was cut off at this point, so the entry below is **a proposal from R0, not an owner decision**; until the owner
+  confirms or replaces it, no US market entry exists and the lead line refuses US leads.
+  - *CAN-SPAM Act* (federal; covers B2B email, no prior consent needed): truthful header and sender; a subject line that is not
+    deceptive; the message identified as an advertisement; a valid physical postal address; a clear opt-out that works for at least
+    30 days after sending and is honoured within 10 business days, asking for nothing more than the address. The gate adds the
+    address and opt-out, as for the EU.
+  - *GDPR still applies to the controller*: the company is established in Ireland, so its processing of a US prospect's personal
+    data (a named contact, an address) falls under GDPR (Art. 3(1)) wherever the prospect is: lawful basis recorded, Art. 14
+    notice, retention and suppression as §4. Whether the Irish ePrivacy rules also reach email sent to US recipients is a question
+    for the legal advice (Q9).
+  - *Contact rule*: published business addresses only, as §4; a free-mail address (`@gmail.com` etc.) only where the business
+    itself publishes it as its contact, recorded with the source URL; named individuals only as the business publishes them.
+  - *State laws*: state privacy and anti-spam laws to be checked by the legal advice before the first US send.
 - **Scope**: CRM tables (leads, pipeline, lawful basis, suppression, retention routine); the lead line (LEAD-RESEARCHER → LEAD-CHECKER
   → dedupe/suppression gate); the outreach line (OUTREACH-WRITER → mechanical gate → COMPLIANCE → `email.send.prospect` request; the
   owner sends by hand and marks it sent); opt-out recording; the content line (CONTENT-WRITER → gate → COMPLIANCE → `public.post`
@@ -467,7 +478,7 @@ time after R1.
    deploy B0 first? W6 stays parked on `w6-wip` (recommended: not merged, since Etsy stops).
 3. **ReplyDesk facts.** Answered 23/10/2026: the clone is `C:\Users\marks\review-reply-service` (`REPLYDESK_REPO`, main at
    `d03a9ab`); Python/Flask, pytest, Render, Stripe, Google Business Profile (§5.8). Still open: whether it has users or customer
-   data in production yet; whether a linter or type check should be added to its checks; the US outreach rules (§8, R3); stopping
+   data in production yet; whether a linter or type check should be added to its checks; confirm or replace the proposed US market rules (§8, R3); stopping
    the weekly outreach routine and what to do with its prospect data (§8, R3).
 4. **emty-inbox and Stellar.** emty-inbox's PLAN.md names Stellar Corporate Housing as its first pilot tenant, and the repo's text
    names it. The building rule refuses Stellar's data (`foreignDataMarkers`), so today an agent's write containing that name is
