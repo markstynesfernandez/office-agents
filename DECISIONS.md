@@ -2549,3 +2549,43 @@ Every business inherits these. What code can enforce is enforced; the rest is th
 2. In the live checkout, server stopped: `npm run migrate:businesses` (the dry run; it should match the scratch copy's summary above,
    plus whatever live has done since), then `npm run migrate:businesses -- --apply` (the backup is taken first), then start live.
 3. The dev checkout's own `data/` (scratch) needs the same before `npm start` on dev.
+
+## R0: restructure (owner decision, 22/10/2026; plan written 23/10/2026)
+
+Plan only: no engine or app code changed, dev checkout, no API call, $0. The plan is `RESTRUCTURE.md`.
+
+### The owner's decision
+
+A complete restructure of the system. Etsy production stops; it was a proving exercise. The Station becomes a software company that
+builds, sells and keeps customers for the owner's products: first ReplyDesk (review-reply SaaS, repo
+`markstynesfernandez/Review-Service`), then emty-inbox (inbox copilot SaaS, repo `markstynesfernandez/emty-inbox`). Agents run the
+work autonomously; the owner is the human oversight and always has the final call, including the ethical calls.
+
+### W6 (interrupted mid-build)
+
+The W6 working tree (7 changed files, 2 new: owner listing approval without the outbox QA copy, the "set approved" line, rename-file,
+the listing-only cap stop) ran the full suite: **510 passed, 2 failed** (`tests/w4.test.mjs:186` "the listing checks still run",
+and the W4 QA-only test, which expects the set buttons where W6 now shows "set-v2 approved by the owner"). W6 had no tests or docs of
+its own and `renameFile` was not wired to a script. So it was **not** committed to main: it is on branch **`w6-wip`** (`56adc5f`),
+and main is clean. Recommendation: leave it parked, since Etsy production stops.
+
+### What the plan proposes (for the owner's review; nothing decided until "go R1")
+
+- Departments as floors: 0 Headquarters (Owner's office with the requests queue, Finance, Compliance & Ethics, Operations/OVERSEER,
+  lounge), 1 Engineering, 2 Sales & Marketing, 3 Customer Success, 4 Etsy (archived, today's floor-1 bake).
+- Products as a first-class dimension: `product_id` and `department_id` on every record; B0's business config splits into
+  `config/products/` and `config/departments/`; one migration (`migrate:products`) that accepts a pre-B0 or a B0 data root.
+- Thirteen agents (OVERSEER reused with a new prompt; the eight Etsy agents archived, not deleted).
+- `config/autonomy.json`: every action auto, owner or forbidden; unknown actions forbidden; product overrides only stricter;
+  changes only in the file, logged at start.
+- Compliance gates on every outbound draft; GDPR/ePrivacy rules for B2B outreach, to be confirmed by legal advice before R3.
+- Engineering safety: worktree-only writes, allowlisted `run_check`, secret refusals, no installs, `dev/<job-id>` branches; the
+  owner merges and deploys.
+- Phases R1 (engine core) – R5 (office), with estimated weekly API cost; the owner's open questions in RESTRUCTURE.md §9.
+
+### Noted while reading
+
+- emty-inbox's own PLAN.md names Stellar Corporate Housing as its first pilot tenant, while `config/building.json`
+  `foreignDataMarkers` refuses Stellar's data in the Station: RESTRUCTURE.md §9 Q4 asks the owner to decide before any emty-inbox work.
+- ReplyDesk's repo is not cloned on this laptop; its stack and check commands are unknown (§9 Q3).
+- Live runs L3.1 (`9122435`); W4 and B0 are not deployed.
