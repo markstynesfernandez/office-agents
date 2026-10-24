@@ -24,9 +24,11 @@ export function buildPostB0Root({ J, log }) {
   const engineJobs = jobs.filter((j) => !j.legacy);
   // 47 runs on the 11 engine jobs (etsy-shop)
   for (let i = 0; i < 47; i++) ins('INSERT INTO runs (run_id, job_id, agent_key, status, started_at, business_id) VALUES (?,?,?,?,?,?)', 'run_fix_' + i, engineJobs[i % engineJobs.length].id, AGENTS[i % AGENTS.length], 'done', at(i, 47), 'etsy-shop');
-  // 4 routines: the seeded genre scout and 3 imported legacy routines (etsy-shop)
+  // 4 routines, as live's (logs/migrate-businesses-2026-10-21.log): the seeded genre scout (disabled), 2 imported legacy routines (disabled)
+  // and the weekday research routine made on the page (L3.1), here ENABLED, the worst case (live's state is not read from here) (etsy-shop)
   ins("INSERT INTO routines (id, name, target, schedule, created_at, updated_at, legacy, business_id) VALUES ('rt_seed_weekly-genre-scout', 'Weekly genre scout', 'line:genre-scout', '0 9 * * 1', ?, ?, 0, 'etsy-shop')", t0, t0);
-  for (let i = 0; i < 3; i++) ins('INSERT INTO routines (id, name, target, schedule, created_at, updated_at, legacy, business_id) VALUES (?,?,?,?,?,?,1,?)', 'legacy-r' + i, 'legacy routine ' + i + ' (legacy, disabled)', 'legacy:agent:' + AGENTS[i], '0 8 * * *', t0, t0, 'etsy-shop');
+  for (let i = 0; i < 2; i++) ins('INSERT INTO routines (id, name, target, schedule, created_at, updated_at, legacy, business_id) VALUES (?,?,?,?,?,?,1,?)', 'legacy-r' + i, 'legacy routine ' + i + ' (legacy, disabled)', 'legacy:agent:' + AGENTS[i], '0 8 * * *', t0, t0, 'etsy-shop');
+  ins("INSERT INTO routines (id, name, target, input, schedule, enabled, max_runs_per_day, per_run_cap_usd, created_at, updated_at, legacy, business_id) VALUES ('rt_fix_weekday-research', 'Weekday research', 'line:research', 'sticker niches', '0 9 * * 1-5', 1, 1, 0.5, ?, ?, 0, 'etsy-shop')", t0, t0);
   // 1 approval: the line job in the old queue (etsy-shop)
   ins("INSERT INTO approvals (job_id, status, queued_at, business_id) VALUES (?, 'pending', ?, 'etsy-shop')", engineJobs[0].id, at(5, 32));
   // 509 ledger rows: 503 on engine jobs, 5 own-shop Etsy calls (USD 0), 1 station-wide smoke call (shared)

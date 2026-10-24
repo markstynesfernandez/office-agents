@@ -2837,3 +2837,64 @@ Each has a config test (the engine refuses to start, naming the rule and the fil
   --apply` runs on dev (dry run: 0 unmapped).
 - RESTRUCTURE.md §8 R1 also lists a dry run on a scratch copy of live data; it was not done (the R1 prompt: do not touch the live
   worktree). The live dry run is step 4 of the deploy plan, and the fixture test reproduces live's shape.
+
+## R1.1: owner confirmations, routine check (24/10/2026)
+
+The owner's R1 follow-up (24/10/2026). Dev only, mock only, $0; the live worktree, every `.env` and the network untouched.
+
+### Owner decisions
+
+1. **Confirmed by the owner (24/10/2026): `git.push.branch` is locked in code.** It is forbidden for every caller, the owner included,
+   and no config can change it (`src/engine/locked.mjs`, rule no-merge-deploy-push). This was R1 choice 1, first part.
+2. **Confirmed by the owner (24/10/2026): outbound actions are locked to "owner" or "forbidden", never "auto".** Anything leaving the
+   building waits for the owner's decision in the Owner's office, or is refused; a `config/autonomy.json` or product override that sets
+   one to auto stops the engine. This was R1 choice 1, second part. Changing either is a code change.
+
+### Proposal (not decided)
+
+- **HQ job cap USD 0.50 per job (proposal, owner, 24/10/2026)**: one HQ exec run (the CEO's memo, the COO's report) is one job on HQ
+  (product `station`, department `hq`). It replaces the station's USD 7.00 job cap as the fallback for HQ jobs. In
+  `config/products/station.json` as `jobCapUsdByDepartment.hq` 0.5, listed in `proposals`. The guard applies it now (a proposal may
+  only lower a cap; the lowest limit wins), and the agents' own run caps, also proposals, stay lower where they are: COO 0.20, CTO 0.30,
+  COMPLIANCE 0.10; the CEO's is 0.50. No exec is hired in R1, so nothing runs under it yet. It replaces R1 choice 5's "the HQ
+  department's job cap (the station's USD 7.00 applies)".
+
+### Routine check: archived-line routines after `migrate:products`
+
+- **The fixture now has live's routines** (`tests/helpers/post-b0-fixture.mjs`, still 4 routines; live's
+  `logs/migrate-businesses-2026-10-21.log` lists the weekly genre scout, 2 legacy routines and one made on the page). The fixture's
+  page-made routine is "Weekday research" (`line:research`, weekdays 09:00, USD 0.50 per run), **enabled** as the worst case: live's
+  state was not read (the live worktree is not touched). Before, the fixture had 3 legacy routines and no page-made one.
+- **Result** (`tests/r1-routines.test.mjs`: the fixture migrated, the engine started with the scheduler on, every routine fired once
+  at 09:00 Dublin on a weekday):
+
+  | Routine | Target | Product/department | Enabled | Armed | Firing |
+  |---|---|---|---|---|---|
+  | COO daily operations report (seeded at the first R1 start) | agent:coo | station/hq | no | no | skipped: routine is disabled |
+  | Weekday research | line:research | etsy-shop/etsy | **yes** | **yes** | skipped: archived: the research line is in the Etsy archive |
+  | Weekly genre scout | line:genre-scout | etsy-shop/etsy | no | no | skipped: routine is disabled |
+  | 2 legacy routines | legacy:agent:… | etsy-shop/etsy | no | no | skipped: routine is disabled |
+
+  Jobs 32 before and after, ledger rows 509 before and after, no reservation. **No routine on the archived Etsy lines can start a job
+  or spend.** With every Etsy routine enabled (the worst case beyond live), all 4 are armed and none starts a job or spends: the line
+  routines skip with "archived" and the legacy routines fail with "routine target not supported" (no runner), before any job.
+- **What "cannot be armed" means after R1**: no Etsy routine can be *enabled* (the enable is refused with "archived"). A routine that
+  was already enabled before R1 stays enabled after the migration (`migrate:products` changes no routine's state), so the scheduler
+  arms it and each firing is skipped with "archived" (a `routine.skip` event and its last status; no job, no spend). The owner can
+  disable it on the page (floor 1, the calendar, Disable); the deploy plan's verify step now checks this through the API
+  (PROGRESS.md "R1 deploy plan", step 7).
+- **Open for the owner**: whether the engine should also stop arming an enabled routine on an archived line at start (it would then
+  never fire). Today it fires and skips, at $0. Not changed in R1.1.
+
+### Dev data root
+
+- `npm run migrate:products` on `office-agents\data` (instance dev), 24/10/2026: the dry run set routines 1 (the weekly genre scout)
+  to etsy-shop/etsy, and jobs, runs, approvals and the ledger mirror 0 (no rows); every table's columns missing; the event log's 1 row
+  resolves to station/hq; **0 unmapped**. `--apply`: backup `data\.backups\products-20261024T054652Z`, 10 columns added, 1 value set.
+  A second run: "nothing to change". The dev Station then started on port 8792 (seeded the COO report routine, disabled; recorded the
+  55 policy actions).
+
+### Measured
+
+- npm test **554 passed, 0 failed** (552 after R1; new: `r1-routines` 2/2; changed: `r1-company` for the HQ proposal, the post-B0
+  fixture's routines).

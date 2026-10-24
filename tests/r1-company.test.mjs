@@ -158,6 +158,8 @@ test('4: budgets and caps come from config: ReplyDesk USD 60 a month and USD 3.0
   assert.ok(p('replydesk').decided.monthlyBudgetUsd.startsWith('owner, R0.3'));
   assert.ok(p('emty-inbox').proposals.includes('monthlyBudgetUsd') && p('station').proposals.includes('monthlyBudgetUsd'), 'proposals');
   for (const d of ['security-data', 'product-design', 'sales-marketing', 'customer-success']) { assert.equal(p('replydesk').jobCapUsdByDepartment[d], 0.5); assert.ok(p('replydesk').proposals.includes('jobCapUsdByDepartment.' + d)); }
+  // R1.1: an HQ exec run (the CEO's memo, the COO's report) USD 0.50 per job, a proposal, in place of the station's USD 7.00
+  assert.equal(p('station').jobCapUsdByDepartment.hq, 0.5); assert.ok(p('station').proposals.includes('jobCapUsdByDepartment.hq'));
   assert.equal(REAL.engine.caps.perDayUsd, 10, 'the day cap is unchanged in R1');
   // the engine wires them into the guard: an engineering job on ReplyDesk is capped at 3.00, below the station's 7.00
   const { engine } = engineOn(t, { tag: 'r1caps' });
