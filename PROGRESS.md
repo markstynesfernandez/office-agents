@@ -36,6 +36,7 @@ Last updated: 24/10/2026 (**R1.1 DONE, R1 not deployed**: the owner confirmed th
 | **B0** Businesses as floors | **Done (21/10/2026), not deployed.** Owner vision 21/10/2026; mock only, $0. Live needs `npm run migrate:businesses -- --apply` before it starts. See DECISIONS.md "B0" and "B0: building rules". |
 | **R1** Engine core (seven-floor company) | **Done (23/10/2026), not deployed.** Owner's go 23/10/2026; mock only, $0. Live needs `npm run migrate:products -- --apply` after the deploy (the deploy plan under "Exact next step"). See DECISIONS.md "R1". |
 | **R1.1** Owner confirmations, routine check | **Done (24/10/2026).** The two extra locked items confirmed; HQ job cap USD 0.50 proposed; archived-line routines checked (none can start or spend); dev migrated to products. See DECISIONS.md "R1.1". |
+| **R0.1** ReplyDesk facts and secrets check | **Done (24/10/2026).** Read-only on the ReplyDesk repo. Secrets: clean, nothing to rotate (no real secret in any commit on 20 refs; `.env`, `*.db`, `.venv` never committed and ignored now; `.env.*` and `*.sqlite` not ignored). Repo visibility unknown without the network. Outreach branches are made by a Claude routine outside the repo and hold drafts only; dedup broken (branches never merged). See `REPLYDESK.md`. |
 | E7 Routines and cut-over | E7a done; **E7b next** (own-shop Etsy writes, on the owner's go; anything beyond the own shop waits for Etsy's written answer). |
 
 Up to E6 readiness everything ran on the mock provider: $0, with no API keys read. E6 step a made the first real call
