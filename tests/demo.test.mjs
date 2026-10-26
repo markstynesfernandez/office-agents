@@ -14,10 +14,11 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startDemo, DEMO_PORT, demoRefusals, createDemoJail, createDemoClock, loadPacing, ZERO_PACING, DemoRefused } from '../scripts/demo.mjs';
 import { JailError } from '../src/engine/store/jail.mjs';
+import { tempDir } from './helpers/engine.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FAKE = 'sk-ant-api03-FAKE-test-value-0000000000';
-function temp(t) { const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-demo-'))); t.after(() => { try { fs.rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch (_) { /* left in temp */ } }); return { base, dataRoot: path.join(base, 'data-demo'), logDir: path.join(base, 'logs') }; }
+function temp(t) { const base = tempDir('station-demo-'); t.after(() => { try { fs.rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch (_) { /* left in temp */ } }); return { base, dataRoot: path.join(base, 'data-demo'), logDir: path.join(base, 'logs') }; }
 const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(ANTHROPIC|OPENROUTER|OPENAI)_/.test(k) && k !== 'STATION_PROVIDER'));
 
 test('demo mode refuses to start if real API keys are present in the environment', async (t) => {

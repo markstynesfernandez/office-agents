@@ -393,14 +393,17 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
           const r = await checker.runCheck({ product: p, name, worktree: repoOf(job), image: job.data.image, signal: AbortSignal.any([halt.signal, signal]) });
           const lf = path.join(jobDir(job), 'checks', 'pass-' + n, name + '.log');
           J.put(lf, '# ' + r.argv.join(' ') + ' · image ' + r.image + ' · exit ' + r.exitCode + (r.timedOut ? ' (timed out)' : '') + ' · ' + r.durationMs + ' ms\n' + r.output);
-          results.push({ check: name, argv: r.argv, passed: r.passed, exitCode: r.exitCode, timedOut: r.timedOut, stopped: r.stopped, durationMs: r.durationMs, log: rel(job, lf) });
-          if (r.stopped) break;
+          results.push({ check: name, argv: r.argv, passed: r.passed, exitCode: r.exitCode, timedOut: r.timedOut, stopped: r.stopped, ...(r.timedOut ? { timeoutMs: r.timeoutMs } : {}), durationMs: r.durationMs, log: rel(job, lf) });
+          if (r.stopped || r.timedOut) break;
         }
         return results;
       }).catch((e) => ({ error: e }));
       if (out.error) return out.error.code === 'NO_DOCKER' || out.error.code === 'NO_IMAGE' ? { blocked: out.error.message } : { blocked: 'checks failed to run: ' + out.error.message };
       if (results.some((r) => r.stopped)) return { stopped: 'stopped during the checks' };
       J.put(path.join(jobDir(job), 'checks', 'pass-' + n + '.json'), JSON.stringify({ pass: n, at: new Date().toISOString(), image: job.data.image, results }, null, 2) + '\n');
+      // R2a.1 (owner, 26/10/2026): a check that timed out blocks the job with the reason (it is not a result TESTER can judge)
+      const to = results.find((r) => r.timedOut);
+      if (to) { log.warn('check timed out', { id: job.id, check: to.check, timeoutMs: to.timeoutMs }); return { blocked: 'check "' + to.check + '" timed out after ' + Math.round((to.timeoutMs || to.durationMs) / 1000) + ' s and was killed (its container stopped); the log is ' + to.log + '. Resume to run the checks again, or archive the job' }; }
       store.updateJob(job.id, { data: { checksPass: n, checks: results.map((r) => ({ check: r.check, passed: r.passed })) } });
       bus.emit('eng.checks', { jobId: job.id, data: { pass: n, results: results.map((r) => ({ check: r.check, passed: r.passed, exitCode: r.exitCode })) } });
       return { next: def.next, note: 'checks pass ' + n + ': ' + (results.map((r) => r.check + ' ' + (r.passed ? 'passed' : 'failed')).join(', ') || 'none configured') };

@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { tempRoot, CAPS, PRICING } from './helpers/engine.mjs';
+import { tempRoot, removeTempDir, CAPS, PRICING } from './helpers/engine.mjs';
 import { configCopy, promptsCopy, hire, engineOn, reopen, CONFIG, PROMPTS, readJson } from './helpers/r1.mjs';
 import { createEngine } from '../src/engine/engine.mjs';
 import { loadConfig } from '../src/engine/config.mjs';
@@ -126,6 +126,8 @@ test('3: the archive sandbox runs only on the mock provider', (t) => {
   process.env.STATION_PROVIDER = 'live'; process.env.STATION_INSTANCE = 'live';
   try { assert.throws(() => createEngine({ J: r.J, log: r.log, archiveSandbox: true, startScheduler: false }), (e) => e.code === 'ARCHIVED' || /live/.test(e.message)); }
   finally { if (prev.p === undefined) delete process.env.STATION_PROVIDER; else process.env.STATION_PROVIDER = prev.p; if (prev.i === undefined) delete process.env.STATION_INSTANCE; else process.env.STATION_INSTANCE = prev.i; }
+  // R2a.1: the refused start closed what it had opened (the store, the e-stop watcher): its folder can be removed at once
+  assert.ok(removeTempDir(r.base), 'a refused start holds no file in its data root');
 });
 
 // ---- 4. the spend guard

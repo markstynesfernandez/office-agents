@@ -15,6 +15,7 @@ import { recolourByRoles, normaliseOutline, silhouetteOutline, readPlan, applyEd
 import { sha256 } from '../../src/engine/lib/common.mjs';
 import { createJail } from '../../src/engine/store/jail.mjs';
 import { useJail } from '../../src/engine/store/active.mjs';
+import { tempDir } from '../helpers/engine.mjs';
 
 const W = 48, C = 24;
 const OUTLINE = [96, 54, 37], CREAM = [249, 222, 175], BAND = [226, 146, 98], STEAM = [252, 231, 187], TAN = [188, 131, 90];
@@ -89,7 +90,7 @@ test('outline: measured on the silhouette; the line takes the target colour, fil
 
 const png = (d) => sharp(d, { raw: { width: W, height: W, channels: 4 } }).png().toBuffer();
 async function setDir(plan) {
-  const sd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'propedit-'))), raw = path.join(sd, 'raw'); fs.mkdirSync(raw); useJail(createJail({ dataRoot: sd, extraRoots: [] }));
+  const sd = tempDir('propedit-'), raw = path.join(sd, 'raw'); fs.mkdirSync(raw); useJail(createJail({ dataRoot: sd, extraRoots: [] }));
   fs.writeFileSync(path.join(raw, '01-mug.png'), await png(mug()));
   fs.writeFileSync(path.join(raw, '07-cat.png'), await png(cushion()));
   fs.writeFileSync(path.join(raw, '11-mug-alt.png'), await png(cushion([10, 10, 10], [200, 200, 200])));   // the Designer's redraw, replaced
@@ -165,7 +166,7 @@ test('edit plan "then": refused on a recolour edit, when empty, or when a step i
     [[{ ...base, then: [{ op: 'recolour', spec: { roles: [] } }] }], /must be a recolour/],
   ];
   for (const [edits, re] of cases) {
-    const sd = fs.mkdtempSync(path.join(os.tmpdir(), 'propedit-'));
+    const sd = tempDir('propedit-');
     try { fs.writeFileSync(path.join(sd, 'edit-plan.json'), JSON.stringify({ ...THEN_PLAN, edits })); const r = readPlan(sd); assert.equal(r.ok, false); assert.match(r.reason, re); }
     finally { fs.rmSync(sd, { recursive: true, force: true }); }
   }

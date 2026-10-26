@@ -17,6 +17,7 @@ import { screenText, screenFields, screenListing, screenDesign, imagePromptOf, r
 import { config } from '../../src/engine/lib/common.mjs';
 import { createJail } from '../../src/engine/store/jail.mjs';
 import { useJail } from '../../src/engine/store/active.mjs';
+import { tempDir } from '../helpers/engine.mjs';
 const ID = '2026-10-15--gate-test-tee';
 
 const cat = (t) => screenText(t).hits.map((h) => h.category);
@@ -119,7 +120,7 @@ test('digital set screen: only the Designer\'s self-check section is skipped; a 
 
 // added in the port: the on-disk reader takes design.md, brief.md and the listing from the engine's jobs/<id>/ layout
 test('digital set screen on disk: reads jobs/<id>/set-vN/design.md, jobs/<id>/brief.md and jobs/<id>/outbox/listing.json; the self-check is still skipped', () => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'og-disk-'))), w = path.join(dir, 'jobs', ID);
+  const dir = tempDir('og-disk-'), w = path.join(dir, 'jobs', ID);
   try {
     fs.mkdirSync(path.join(w, 'set-v2'), { recursive: true }); fs.mkdirSync(path.join(w, 'outbox'));
     fs.writeFileSync(path.join(w, 'set-v2', 'design.md'), '# Set\nA plump mug.\n## Originality self-check\nNo Nike, no Disney.\n');
@@ -165,7 +166,7 @@ test('imagePromptOf returns only the prompt section, so "no Disney" in the self-
   assert.match(imagePromptOf(MD), /camp mug/); assert.ok(!/Disney/.test(imagePromptOf(MD)));
 });
 function designDir(over = {}) {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'og-'))); useJail(createJail({ dataRoot: dir, extraRoots: [] })); const w = path.join(dir, 'jobs', ID); fs.mkdirSync(w, { recursive: true });
+  const dir = tempDir('og-'); useJail(createJail({ dataRoot: dir, extraRoots: [] })); const w = path.join(dir, 'jobs', ID); fs.mkdirSync(w, { recursive: true });
   const opts = ['Tongs up', 'Smoke signals', 'Fully loaded dad', 'Camp dad', 'Dink responsibly'];
   fs.writeFileSync(path.join(w, 'design-v1.slogan.json'), JSON.stringify({ options: opts, optionReasons: opts, chosen: opts[0], reason: 'r', picture: 'A pair of tongs', ...over.slogan }));
   fs.writeFileSync(path.join(w, 'design-v1.md'), over.md || MD);

@@ -23,7 +23,8 @@ async function main() {
   const t0 = Date.now();
   let text = '';
   const code = await new Promise((resolve) => {
-    const p = spawn(process.execPath, ['--test', '--test-reporter=spec'], { cwd: APP_ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    // R2a.1: the same temp check as npm test (tests/helpers/temp-guard.mjs): a temp folder left behind fails the run
+    const p = spawn(process.execPath, ['--test', '--test-reporter=spec', '--test-global-setup=tests/helpers/temp-guard.mjs'], { cwd: APP_ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     p.stdout.on('data', (d) => { text += d; process.stdout.write(d); });
     p.stderr.on('data', (d) => process.stderr.write(d));
     p.on('close', resolve);

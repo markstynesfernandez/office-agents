@@ -3,9 +3,14 @@
 //     it; lint once ruff is merged); an optional test filter is one path (or path::name) with no option, no "..", nothing else
 //   - each check runs in a container: --network none, the worktree mounted READ-ONLY at /work and no other host path, a read-only root
 //     with a tmpfs /tmp, every capability dropped, no new privileges, a pid, memory and CPU limit, and no environment from the Station
-//     (only HOME=/tmp and the switches that stop caches being written); the image is the product's check image (below)
+//     (only HOME=/tmp and the switches that stop caches being written); the image is the product's check image (below). R2a.1 (owner,
+//     26/10/2026): it runs as nobody (--user 65534:65534), not root, so the image and its lock are unchanged
+//   - R2a.1 (owner, 26/10/2026): a worktree holding a secret file by name (lib/secrets.mjs: .env, .env.*, *.db, keys, .venv/, ...) is
+//     refused before Docker starts, so nothing is mounted. The one exception is a file named exactly .env.example (ReplyDesk tracks one):
+//     it is scanned for secret content on every check (R1's patterns; a connection string to localhost, the stock default, is allowed)
+//     and refused, naming the file and the kind, never the value, if it holds one. The worktree's own .git file (its link) is not a secret
 //   - a timeout (runtime.checkTimeoutMs, proposed 300 s) or the E-STOP / the owner's Stop kills it: the docker client is killed and the
-//     container is stopped by name (docker kill), so nothing keeps running
+//     container is stopped by name (docker kill), so nothing keeps running; a check that timed out blocks the job (engineering.mjs)
 //   - output capped at 200 KB (lib/proc.mjs)
 //   - no Docker (not installed, not running): the check is refused with the reason; there is no best-effort fallback on the host
 // The check image (station-check-<product>:<sha>): built by the engine on the owner's command (npm run check-image -- <product>) from the
@@ -17,13 +22,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { run as procRun, ProcError } from './proc.mjs';
+import { secretPathHit, secretContentHits } from './secrets.mjs';
 
 export const CHECK_NAMES = ['test', 'lint', 'typecheck', 'format'];
 export const FILTER_RE = /^(?!-)(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,199}(::[A-Za-z0-9_\[\]-]{1,100})?$/;
 export const DEFAULT_TIMEOUT_MS = 300000;
+export const CHECK_USER = '65534:65534';   // nobody:nogroup in the Debian-based image
+export const ENV_EXAMPLE = '.env.example';
+const LOCAL_CONN_RE = /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@'"]+:[^\s@/'"]+@(?:localhost|127\.0\.0\.1|\[::1\])(?![A-Za-z0-9.-])/gi;
 const sha = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 
 export class CheckRefusal extends Error { constructor(msg, code = 'CHECK') { super(msg); this.code = code; } }
+
+// the secret files in a worktree -> ['<kind> (<path>)' | '<path> holds <kinds>'] ([] when none); links are named, never followed
+export function worktreeSecrets(dir) {
+  const out = [];
+  const walk = (abs, rel) => {
+    for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (!rel && e.name === '.git' && e.isFile()) continue;
+      if (e.name === ENV_EXAMPLE && e.isFile()) {
+        const hits = secretContentHits(fs.readFileSync(path.join(abs, e.name), 'utf8').replace(LOCAL_CONN_RE, ''));
+        if (hits.length) out.push(r + ' holds ' + hits.join(', '));
+        continue;
+      }
+      const hit = secretPathHit(r);
+      if (hit) { out.push(hit); continue; }
+      if (e.isDirectory()) walk(path.join(abs, e.name), r);
+    }
+  };
+  walk(dir, '');
+  return out;
+}
 
 export function dockerfileFor(product) {
   const ci = product.checkImage || {};
@@ -63,14 +93,16 @@ export function createChecks({ runner = procRun, log = null, timeoutMs = DEFAULT
   // one check -> { check, argv, image, exitCode, passed, timedOut, stopped, durationMs, output, capped }
   async function runCheck({ product, name, filter = null, worktree, image, signal = null, timeout = timeoutMs }) {
     const argv = checkArgv(product, name, filter);
+    const src = path.resolve(worktree);
+    if (!fs.existsSync(src)) throw new CheckRefusal('no worktree at ' + src);
+    const secrets = worktreeSecrets(src);
+    if (secrets.length) { log && log.warn('check refused: secret files in the worktree', { product: product.id, check: name, found: secrets.slice(0, 10) }); throw new CheckRefusal('refused before Docker starts: the worktree holds ' + secrets.slice(0, 10).join('; ') + (secrets.length > 10 ? ' and ' + (secrets.length - 10) + ' more' : '') + ' (secret files are never mounted into a check; .env.example only while it holds no secret)', 'SECRETS'); }
     await needDocker();
     if (!image) throw new CheckRefusal('no check image is set for this job', 'NO_IMAGE');
     if (!(await imageExists(image))) throw new CheckRefusal('the check image ' + image + ' has not been built: the owner builds it with npm run check-image -- ' + product.id + ' (it downloads the product\'s requirements once)', 'NO_IMAGE');
-    const src = path.resolve(worktree);
-    if (!fs.existsSync(src)) throw new CheckRefusal('no worktree at ' + src);
     if (/[,\0\r\n"]/.test(src)) throw new CheckRefusal('the worktree path cannot be mounted (it holds a comma, a quote or a line break): ' + src);
     const cname = 'station-check-' + crypto.randomBytes(6).toString('hex');
-    const args = ['run', '--rm', '--name', cname, '--network', 'none', '--read-only', '--tmpfs', '/tmp:rw,exec,size=512m', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+    const args = ['run', '--rm', '--name', cname, '--user', CHECK_USER, '--network', 'none', '--read-only', '--tmpfs', '/tmp:rw,exec,size=512m', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
       '--pids-limit', '256', '--memory', '2g', '--cpus', '2', '--mount', 'type=bind,source=' + src + ',target=/work,readonly', '--workdir', '/work',
       '--env', 'HOME=/tmp', '--env', 'PYTHONDONTWRITEBYTECODE=1', '--env', 'PYTEST_ADDOPTS=-p no:cacheprovider', '--env', 'RUFF_NO_CACHE=true', '--env', 'CI=1', image, ...argv];
     const kill = () => runner('docker', ['kill', cname], { timeoutMs: 20000 }).catch(() => {});
@@ -80,7 +112,7 @@ export function createChecks({ runner = procRun, log = null, timeoutMs = DEFAULT
       log && log.info('check ran', { product: product.id, check: name, filter, exit: r.code, durationMs: r.durationMs, image });
       return { check: name, filter: filter || null, argv, image, exitCode: r.code, passed: r.code === 0, timedOut: false, stopped: false, durationMs: r.durationMs, output: r.output, capped: !!r.capped };
     } catch (e) {
-      if (e instanceof ProcError && (e.code === 'TIMEOUT' || e.code === 'STOPPED')) { await kill(); log && log.warn('check killed', { product: product.id, check: name, why: e.code }); return { check: name, filter: filter || null, argv, image, exitCode: null, passed: false, timedOut: e.code === 'TIMEOUT', stopped: e.code === 'STOPPED', durationMs: Date.now() - t0, output: (e.output || '') + '\n[' + e.message + ']', capped: false }; }
+      if (e instanceof ProcError && (e.code === 'TIMEOUT' || e.code === 'STOPPED')) { await kill(); log && log.warn('check killed', { product: product.id, check: name, why: e.code }); return { check: name, filter: filter || null, argv, image, exitCode: null, passed: false, timedOut: e.code === 'TIMEOUT', stopped: e.code === 'STOPPED', timeoutMs: timeout, durationMs: Date.now() - t0, output: (e.output || '') + '\n[' + e.message + ']', capped: false }; }
       throw e;
     }
   }

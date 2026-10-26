@@ -14,6 +14,7 @@ import { makeLogger } from '../src/server/log.mjs';
 import { runImport, openSource, ImportError } from '../src/engine/import/legacy.mjs';
 import { openStore } from '../src/engine/store/db.mjs';
 import { createEngine, LockError } from '../src/engine/engine.mjs';
+import { tempDir } from './helpers/engine.mjs';
 
 const A = '2026-10-14--alpha-tee', B = '2026-10-14--beta-tee', C = '2026-10-14--gamma-tee', D = '2026-10-16--delta-pack';
 const SECRET = 'sk-or-v1-FAKE-never-copied-0000';
@@ -66,7 +67,7 @@ function fakeLegacy(base) {
 const hashTree = (dir) => { const out = {}; const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else { const s = fs.statSync(f); out[path.relative(dir, f)] = crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex') + ':' + s.mtimeMs; } } }; walk(dir); return out; };
 
 function setup(t) {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-import-')));
+  const base = tempDir('station-import-');
   t.after(() => { try { fs.rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch (_) { /* temp */ } });
   const L = fakeLegacy(base);
   const dataRoot = path.join(base, 'data'), logs = path.join(base, 'logs');

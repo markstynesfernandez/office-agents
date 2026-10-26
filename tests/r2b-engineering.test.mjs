@@ -19,6 +19,7 @@
 //  12 the line's records: the gates, the spec check, the verdict checks, the dev queue (the git, proc and check-argv pieces are R2a's)
 //  13 the building: the lines borrow the CTO and SECURITY by name; the engineering lines are no routine targets
 //  14 a git process that hangs inside a job is killed at its timeout and the job blocks with "git timeout" (it does not stall)
+//  15 a check that times out in the checks step blocks the job with the timeout reason (R2a.1; the real container: npm run test:docker)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -345,7 +346,7 @@ test('11: no Docker: the first check (DEVELOPER\'s run_check) is refused with th
   assert.equal(engine.requests.list().filter((r) => r.job_id === s.jobId).length, 0);
   // without the check image the check is refused as well
   const d2 = fakeDocker({ imageBuilt: false });
-  await assert.rejects(d2.checks.runCheck({ product: engine.company.product('replydesk'), name: 'test', worktree: engine.J.dataRoot, image: 'station-check-replydesk:0123456789abcdef' }), (e) => e.code === 'NO_IMAGE' && /npm run check-image -- replydesk/.test(e.message));
+  await assert.rejects(d2.checks.runCheck({ product: engine.company.product('replydesk'), name: 'test', worktree: tempBase(t, 'r2b-wt'), image: 'station-check-replydesk:0123456789abcdef' }), (e) => e.code === 'NO_IMAGE' && /npm run check-image -- replydesk/.test(e.message));
   assert.equal(d2.runs().length, 0);
 });
 
@@ -426,4 +427,17 @@ test('14: a git process that hangs inside a job is killed at its timeout and the
   assert.match(logged[0], new RegExp('"id":"' + s.jobId + '".*"step":"worktree".*"subcommand":"fetch"'));
   // nothing reached the owner's office
   assert.equal(engine.requests.list().filter((x) => x.job_id === s.jobId).length, 0);
+});
+
+test('15: a check that times out in the checks step blocks the job with the timeout reason (the container stopped by name); TESTER never sees it', async (t) => {
+  const { engine, E, d, approvedIssue } = engOn(t, { docker: { timeout: true } });
+  const id = await approvedIssue();
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const job = engine.store.getJob(s.jobId);
+  assert.deepEqual([job.state, job.step], ['blocked', 'checks'], job.reason);
+  assert.match(job.reason, /^check "test" timed out after 300 s and was killed \(its container stopped\); the log is checks\/pass-1\/test\.log\. Resume to run the checks again, or archive the job$/);
+  const last = d.runs().pop(), name = last.args[last.args.indexOf('--name') + 1];
+  assert.ok(d.kills().some((k) => k.args[1] === name), 'the checks step\'s container was stopped by its name');
+  assert.equal(engine.store.db.prepare("SELECT COUNT(*) AS n FROM stages WHERE job_id = ? AND step = 'tester'").get(s.jobId).n, 0, 'TESTER never ran');
+  assert.equal(engine.requests.list().filter((r) => r.job_id === s.jobId).length, 0);
 });

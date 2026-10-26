@@ -10,6 +10,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createJail, realResolve, JailError } from '../src/engine/store/jail.mjs';
+import { tempDir } from './helpers/engine.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCAN_DIRS = ['src', 'scripts', 'tests', 'demo'];
@@ -132,7 +133,7 @@ test('WRITE-PATH.md is marked superseded, NOTICE.md credits the legacy system an
 
 // ---------------------------------------------------------------- dataJail unit checks
 function tempJail() {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-jail-')));
+  const base = tempDir('station-jail-');
   const data = path.join(base, 'data'), logs = path.join(base, 'logs'), legacy = path.join(base, 'Legacy-build');
   fs.mkdirSync(logs); fs.mkdirSync(legacy); fs.writeFileSync(path.join(legacy, 'keep.txt'), 'legacy');
   const J = createJail({ dataRoot: data, extraRoots: [logs], legacyRoots: [legacy] });
@@ -203,7 +204,7 @@ test('dataJail: 8.3 short names are expanded before the check', (tt) => {
 });
 
 test('createJail refuses a data root that overlaps the legacy root, in either direction', () => {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-jail-')));
+  const base = tempDir('station-jail-');
   try {
     const legacy = path.join(base, 'legacy'); fs.mkdirSync(legacy);
     assert.throws(() => createJail({ dataRoot: path.join(legacy, 'data'), extraRoots: [], legacyRoots: [legacy] }), /overlap/);
@@ -231,7 +232,7 @@ test('import-legacy: writes only through the data jail; reads refuse secrets, VC
   }
   const { openSource, SECRET_RE } = await import('../src/engine/import/legacy.mjs');
   for (const bad of ['.secrets', 'starnet/.secrets/provider-keys.json', '.env', '.env.local', 'research-lab/.git/config', 'provider-keys.json']) assert.ok(SECRET_RE.test(bad), bad);
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-src-')));
+  const base = tempDir('station-src-');
   try {
     const sw = path.join(base, 'station-workspace', 'starnet');
     fs.mkdirSync(sw, { recursive: true });

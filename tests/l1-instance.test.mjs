@@ -17,13 +17,13 @@ import { createProviders } from '../src/engine/providers/index.mjs';
 import { createOpenRouterImage } from '../src/engine/providers/openrouter.mjs';
 import { git, gitState } from '../scripts/git-state.mjs';
 import { testCounts } from '../scripts/record-tests.mjs';
-import { tempRoot, until, sleep } from './helpers/engine.mjs';
+import { tempRoot, until, sleep, tempDir } from './helpers/engine.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GIT = (o = {}) => ({ commit: 'a'.repeat(40), branch: 'live', dirty: [], ...o });
 const codeOf = (fn) => { try { fn(); return 'ok'; } catch (e) { assert.ok(e instanceof InstanceError, String(e && e.stack)); return e.code; } };
 function layout() {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-l1-')));
+  const base = tempDir('station-l1-');
   const dev = path.join(base, 'office-agents'), live = path.join(base, 'office-agents-live');
   for (const d of [dev, live, path.join(dev, 'data'), path.join(live, 'data')]) fs.mkdirSync(d, { recursive: true });
   return { base, dev, live, cleanup: () => { try { fs.rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch (_) {} } };
@@ -111,7 +111,7 @@ test('the live providers build only on the live instance (no key is ever in the 
 });
 
 test('git state: the commit, the branch and uncommitted tracked files (untracked files do not count)', () => {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-l1-git-')));
+  const base = tempDir('station-l1-git-');
   try {
     git(base, ['init', '-q', '-b', 'live']);
     fs.writeFileSync(path.join(base, 'a.txt'), 'one\n');

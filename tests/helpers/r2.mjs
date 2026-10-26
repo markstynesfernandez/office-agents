@@ -9,13 +9,14 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createChecks } from '../../src/engine/lib/checks.mjs';
 import { ProcError, run as procRun } from '../../src/engine/lib/proc.mjs';
+import { tempDir } from './engine.mjs';
 
 // git on the fixture (not through the engine): a fixed identity, no line-ending conversion
 export const G = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'core.autocrlf=false', '-c', 'init.defaultBranch=main', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim();
 
 // a temp folder removed after the test
 export function tempBase(t, tag = 'r2-fixture') {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-' + tag + '-')));
+  const base = tempDir('station-' + tag + '-');
   t.after(() => { try { fs.rmSync(base, { recursive: true, force: true, maxRetries: 3 }); } catch (_) { /* left in the temp folder */ } });
   return base;
 }
@@ -39,7 +40,7 @@ export function fixtureClone(base) {
 export const cloneState = (dir) => ({ refs: G(dir, 'for-each-ref', '--format=%(refname) %(objectname)'), status: G(dir, 'status', '--porcelain'), head: G(dir, 'rev-parse', 'HEAD') });
 
 // a fake Docker for lib/checks.mjs: every call recorded, nothing runs. timeout: the run times out (as lib/proc.mjs reports it)
-export function fakeDocker({ installed = true, imageBuilt = true, exit = () => 0, timeout = false } = {}) {
+export function fakeDocker({ installed = true, imageBuilt = true, exit = () => 0, timeout = false, freeze = 'pytest==8.4.2\n' } = {}) {
   const calls = [];
   const res = (code, stdout = '') => ({ code, stdout, stderr: '', output: stdout, capped: false, timedOut: false, killed: false, durationMs: 5 });
   const runner = async (program, args) => {
@@ -48,8 +49,10 @@ export function fakeDocker({ installed = true, imageBuilt = true, exit = () => 0
     if (!installed) throw new ProcError('docker could not run: ENOENT', { code: 'NOT_FOUND' });
     if (args[0] === 'version') return res(0, '29.8.2\n');
     if (args[0] === 'image') return imageBuilt ? res(0, 'sha256:' + '0'.repeat(64) + '\n') : res(1, 'Error: No such image\n');
+    if (args[0] === 'run' && args.includes('/deps/freeze.txt')) return res(0, freeze);   // the build's pip freeze, read back from the image
     if (args[0] === 'run') { if (timeout) throw new ProcError('docker timed out after 1 s and was killed', { code: 'TIMEOUT', output: 'partial output' }); const code = exit(args); return res(code, code === 0 ? '2 passed in 0.01s\n' : '1 failed in 0.01s\n'); }
     if (args[0] === 'kill') return res(0);
+    if (args[0] === 'build') return res(0, 'sha256:' + '1'.repeat(64) + '\n');
     return res(1, 'unexpected docker call\n');
   };
   return { calls, runs: () => calls.filter((c) => c.args[0] === 'run'), kills: () => calls.filter((c) => c.args[0] === 'kill'), checks: createChecks({ runner }) };

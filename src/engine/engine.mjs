@@ -81,6 +81,8 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
   J = J || createJail({ dataRoot });
   const unlock = takeLock(J, log);
   useJail(J);   // the ported station modules write through this engine's jail
+  // R2a.1: what a start that fails part way has opened (the store, the e-stop watcher) is closed again, so it holds no file
+  const opened = [];
   try {
     const cfg = loadConfig({ configDir, promptsDir, overrides });
     checkDemoConfig(cfg, { demo, dataRoot: J.dataRoot });
@@ -89,7 +91,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     const baseStation = cfg.station, researchDir = path.join(J.dataRoot, 'research');
     Object.defineProperty(cfg, 'station', { enumerable: true, get: () => withScouting(baseStation, scoutedTerms(researchDir)) });
     if (overrides) log.warn('config overrides in use (dry run and demo only)', { products: overrides.productsFile ? overrides.productsFile.products.map((p) => p.key) : null, stationSet: overrides.stationSet ? Object.keys(overrides.stationSet) : null });
-    const store = openStore({ J, log });
+    const store = openStore({ J, log }); opened.push(() => store.close());
     // B0 (owner, 21/10/2026): every job, run, routine, approval, ledger row and event carries business_id. A data root from before
     // B0 is refused until npm run migrate:businesses -- --apply has backfilled it (fail closed: no record without its business)
     const gaps = store.businessGaps();
@@ -107,7 +109,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     const ledger = createLedger({ J, store, log, businessOf, productOf });
     const bus = createBus({ J, log, businessOf, productOf });
     const policy = createPolicy({ levels: cfg.policy.levels, sha256: cfg.policy.sha256, products: cfg.company.products });
-    const halt = createHalt({ J, bus, log });
+    const halt = createHalt({ J, bus, log }); opened.push(() => halt.close());
     const guard = createGuard({ J, ledger, halt, caps: cfg.engine.caps, pricing: cfg.engine.pricing, log, bus, clock, outerLimits: cfg.engine.outerLimits || {}, products: { get: C.product, resolve: productOf, businessOf, jobCap: (p, d) => { const x = C.product(p); return x && x.jobCapUsdByDepartment ? x.jobCapUsdByDepartment[d] ?? null : null; }, agentRunCap: (k) => { const a = cfg.agents[k]; return a && a.limits && a.limits.runCapUsd > 0 ? a.limits.runCapUsd : null; } } });
     const recovered = guard.recoverPending();
     const rec = recover({ store, bus, log, resumeOnRestart: cfg.engine.runtime.resumeOnRestart });
@@ -182,7 +184,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     log.info('engine started', { dataRoot: J.dataRoot, provider: prov.mode, store: store.backend, ledgerRows: ledger.totals.rows, halted: halt.isHalted() });
     engine.close = () => { try { engine.scheduler.stop(); } catch (_) {} try { engine.engineering.close(); } catch (_) {} halt.close(); store.close(); useJail(null); unlock(); log.info('engine closed'); };
     return engine;
-  } catch (e) { unlock(); throw e; }
+  } catch (e) { for (const close of opened.reverse()) { try { close(); } catch (_) { /* already closed on the refusal's own path */ } } unlock(); throw e; }
 }
 
 // config/routines.json: routines the station ships with, inserted once per data root and ALWAYS disabled (enabling is the

@@ -27,6 +27,7 @@ const CONTENT_RULES = [
   ['Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}/],
   ['Stripe key', /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/],
   ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
+  ['Render API key', /\brnd_[A-Za-z0-9]{20,}/],   // R2a.1 (owner, 26/10/2026): ReplyDesk deploys on Render
   ['private key block', /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/],
   ['connection string with a password', /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@'"]+:[^\s@/'"]+@[^\s'"]+/i]
 ];

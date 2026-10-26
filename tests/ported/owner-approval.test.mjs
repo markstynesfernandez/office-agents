@@ -16,13 +16,14 @@ import { composeSetApproval, checkOwnerSetApproval, overridesOf, APPROVAL_FILE }
 import { checkPackage } from '../../src/engine/lib/gates.mjs';
 import { createJail } from '../../src/engine/store/jail.mjs';
 import { useJail } from '../../src/engine/store/active.mjs';
+import { tempDir } from '../helpers/engine.mjs';
 
 const ID = '2026-10-16--test-owner-approval', cfg = { ...structuredClone(config), productType: 'digital' };
 const CANDLE = 'The banded shading and the edge near the rim are acceptable cel shading for this set.';
 const WORDS = 'Record my owner approval of the whole set. That approval is the sign-off for the package gate in place of a 4th QA pass; originality stays a hard check and must still be clear.';
 
 function room({ passes = 3, lastVerdict = 'revise', originality = 'clear', review = (r) => r, manifest = (m) => m } = {}) {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ownerappr-'))), w = path.join(dir, 'jobs', ID), sd = path.join(w, 'set-v4'), raw = path.join(sd, 'raw');
+  const dir = tempDir('ownerappr-'), w = path.join(dir, 'jobs', ID), sd = path.join(w, 'set-v4'), raw = path.join(sd, 'raw');
   useJail(createJail({ dataRoot: dir, extraRoots: [] })); fs.mkdirSync(raw, { recursive: true }); fs.mkdirSync(path.join(w, 'qa'));
   fs.writeFileSync(path.join(w, 'brief.md'), '---\nid: ' + ID + '\n---\n# Niche\nProps.\n');
   for (let i = 1; i <= passes; i++) fs.writeFileSync(path.join(w, 'qa', 'design-pass' + i + '.json'), JSON.stringify({ stage: 'design', pass: i, verdict: i === passes ? lastVerdict : 'revise', designFile: 'jobs/' + ID + '/set-v4/deliverables.json' }));

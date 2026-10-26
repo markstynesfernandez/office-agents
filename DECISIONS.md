@@ -3017,3 +3017,162 @@ It is committed separately so the owner can accept it or ask for it to be revert
 - Full suite with R2a and R2b, 26/10/2026: two runs 576 passed of 576 (0 skipped, about 120 s each); two later runs on the same code
   573 and 571 of 576 (0 skipped, about 490–540 s each, the machine 4–5 times slower throughout): the failures were timing tests
   (`live-ui`, the dry-run controls, a restart recovery) that load no R2 module, a different set each run.
+
+## R2a.1: real sandbox proof and test cleanup (26/10/2026)
+
+Dev only, mock only, $0, no model call; the live worktree and every `.env` untouched. Committed on main as "R2a.1: real sandbox
+proof, test cleanup, check image" (26/10/2026); not deployed.
+
+### Owner decisions (26/10/2026)
+
+1. **R2b is accepted** (not deployed). This settles R2b's owner point 1.
+2. **The six R2 agents are confirmed**: DEVELOPER and REVIEWER on Sonnet with thinking on; TECH-LEAD on Sonnet; the others as R0.3
+   recorded (CTO and SECURITY on Sonnet, thinking off; TESTER on Haiku, effort low, thinking off). This settles R2b's owner point 2.
+   The configs already say this (`tier` strong = Sonnet, cheap = Haiku; DEVELOPER and REVIEWER `thinking: "default"`, the others
+   `"off"`), so nothing changed in `config/agents/`. The `maxOutputTokens` figures stay proposals.
+
+3. **`repo.fetch` and `repo.worktree` stay `auto`** in `config/autonomy.json` (R2b point 3; the owner, R2a.1 item 9). Both are the
+   engine's own worktree step: `repo.fetch` fetches the owner's clone's `origin/main` into the Station's mirror, `repo.worktree` adds or
+   removes a `dev/<job-id>` worktree; no agent tool maps to either and neither is outbound. Unchanged.
+
+The check image: below (pinned and built on the owner's go).
+
+### Temp folders
+
+- **Found**: 1,296 folders left by the test suite in `%TEMP%` (45 prefixes, 139.7 MB, dated 21–26/10/2026), about one per suite run
+  from the same tests every time. Largest: `station-fixtools-` 276 (33.8 MB), `og-` 190, `station-demo-` 123 (27.4 MB),
+  `station-import-` 81, `station-l3maint-` and `station-l3own-` 46 each; the rest 1 to 41. All deleted (1,296 of 1,296). Not touched:
+  5 `station-b0-engine-` folders (`scripts/screenshots-b0.mjs`, not the suite) and everything else in `%TEMP%`.
+- **Why they were left**: `node:test` runs a test's after hooks in the order they are added; many tests add the folder's cleanup
+  before the engine's close, so the folder was removed while the engine still held its SQLite files, and the cleanup (made never to
+  throw) failed silently. One more: an engine whose start failed part way (`createEngine` throwing after it opened the store) never
+  closed the store, so its folder could not be removed at all until the process ended.
+- **Now**:
+  - every test temp folder comes from `tests/helpers/engine.mjs` `tempDir` (or `tempRoot`, which uses it): removed by the test's
+    cleanup, and whatever is still there when the test file's process exits is removed then, after every after hook, pass or fail. The
+    18 raw `mkdtempSync` calls in the tests use it now.
+  - `createEngine` closes what it opened (the store, the e-stop watcher) when its start fails (`src/engine/engine.mjs`); a test
+    checks the folder of a refused start can be removed at once (fails without the fix).
+  - `tests/helpers/temp-guard.mjs`: `npm test` and `npm run test:record` run with it (`--test-global-setup`). The run gets its own
+    temp folder (`station-tests-…`) as TEMP for every test process; after the last test it must be empty and no `.tmp-from-*` may be in
+    the repo, or the run fails (exit 1) with the folders listed (and removed). `tests/temp-guard.test.mjs` proves both ways.
+- **Measured**: two runs of `npm test`, 578 of 578 passed, 0 failed, 0 skipped, 97 s and 96 s, exit 0, the temp check clean; with
+  `check-image` and its test added, two more: 579 of 579, 96 s each, exit 0, the temp check clean. The
+  4–5 times slower runs of earlier today (490–540 s, timing tests failing) did not recur; they stopped once the 1,296 folders were
+  gone, which suggests them as the cause but does not prove it.
+
+### The check image (proposal, for the owner)
+
+- **ReplyDesk's Python**: 3.12, from its repo at `origin/main` (`d03a9ab`): `.github/workflows/ci.yml` (`python-version: "3.12"`, both
+  jobs) and `render.yaml` (`PYTHON_VERSION: "3.12"`, production). No `.python-version`, `runtime.txt` or `pyproject.toml`.
+- **Proposed base**: the official `python:3.12-slim`, pinned by digest:
+  `python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704` (the multi-platform index; Python
+  3.12.15 on Debian trixie-slim, built 21/10/2026; its linux/amd64 image is
+  `sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c`). Read from Docker Hub with
+  `docker buildx imagetools inspect`; nothing pulled.
+- **Requirements**: `requirements.txt` at the root, at `origin/main`: sha256
+  `1c91e5fcdbc870b2c36b8383bfaf5952ec12e790a3148e1cd98e9a7537391580`, 450 bytes, LF line endings (git blob `9387c2f9`).
+  Version ranges, no lockfile: the build records `pip freeze` beside the image.
+- **`npm run check-image -- <product>`** (`scripts/check-image.mjs`): the plan by default (the base, the requirements path, sha256
+  and size at main, the Dockerfile, the tag, whether Docker answers and the image exists; it fetches the Station's mirror, nothing
+  pulled or built). `--apply` builds (docker pulls the base, pip downloads the requirements: the network, once), refused unless
+  `checkImage.base` is pinned by digest. `config/products/replydesk.json` is unchanged (`python:3.12-slim`, not pinned), so `--apply`
+  refuses today. Tested on the fixture clone with a fake Docker (`tests/r2a-workshop.test.mjs` 7).
+
+### Owner decision (26/10/2026): pin and build, with a lock
+
+- **Pinned**: `config/products/replydesk.json` `checkImage.base` is
+  `python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704`.
+- **`REPLYDESK_REPO` on the command line only** (owner's condition 1): `check-image` no longer reads `.env` at all; nothing was written
+  to any `.env`.
+- **Requirements pinning** (owner's condition 2, asked before the build): **no line of ReplyDesk's `requirements.txt` is pinned with
+  `==`**. All nine are ranges with an upper bound below the next major version (flask, anthropic, python-dotenv, requests,
+  APScheduler, stripe, psycopg[binary], gunicorn, pytest), so what pip installs depends on the day of the build.
+- **Built** 26/10/2026 11:32 UTC: `station-check-replydesk:fc3eeeed826a3b0a`, image
+  `sha256:1971201a3bf0eb190eca59cb14e6789cc028f45c30d7d45b1300fdb0661da6e2`, 310.6 MB, Python 3.12.15, from `requirements.txt`
+  sha256 `1c91e5fc…1580` at `d03a9ab`. The build record is `data/products/replydesk/check-image/fc3eeeed826a3b0a/` (Dockerfile,
+  requirements.txt, freeze.txt, image.json). The mirror `data/products/replydesk/repo.git` now exists on the dev data root (main at
+  `d03a9ab` only). The dev engine logged the two R2 autonomy actions at this first R2 start (`data/policy/autonomy-log.jsonl`) and
+  replaced a stale engine lock left by a dead process.
+- **The lock**: the image's `pip freeze` (38 packages) is `config/products/replydesk.lock.txt`, sha256
+  `dde217f94f94e3cdf17054430c653a0f76c2236ebaa8b188b8ed6ca91c7eb539`, recorded in `checkImage.lock`. `check-image` checks the file
+  against that sha256 (plan and build) and, after a build, compares the image's freeze with it: a package added, removed or at another
+  version prints a WARNING naming each (it does not refuse; the checks would run on the new versions). The script never writes the lock;
+  changing it is the owner's, in a commit. A second `--apply` found the image built and the freeze the same as the lock (no warning).
+- **Measured**: `tests/r2a-workshop.test.mjs` 8/8 (test 8: the comparison, the sha256 check, the warnings, no `.env` read, no lock
+  written); `npm test` twice: 580 of 580, 0 skipped, 104 s and 102 s, exit 0, the temp check clean.
+
+### Owner decisions (26/10/2026): the sandbox gaps and `.env.example`
+
+Found while writing the real-Docker proofs (item 6), decided by the owner the same day:
+
+1. **The container runs as a non-root user**: `docker run --user 65534:65534` (nobody:nogroup in the Debian image) in
+   `src/engine/lib/checks.mjs`, so the image and its lock are unchanged (no rebuild). Before: root (uid 0).
+2. **A check that timed out blocks the job** with the reason (`check "test" timed out after N s and was killed (its container
+   stopped); the log is checks/pass-N/test.log. Resume to run the checks again, or archive the job`), in `src/engine/engineering.mjs`.
+   Before: the timed-out check was recorded as a failed result and the job went on (to the diff step, then TESTER). The checks after a
+   timed-out one in the same pass are not run.
+3. **A worktree holding a secret file is refused before Docker starts** (`CheckRefusal` code `SECRETS`; not one docker call, nothing
+   mounted): any file or folder `lib/secrets.mjs` names by path (`.env`, `.env.*`, `*.db` and the other database files, keys and
+   certificate stores, `.venv/`, `.npmrc`/`.pypirc`/`.netrc`, `credentials*`, `secrets/`, a `.git` folder), anywhere in the worktree.
+   Not a secret: the worktree's own `.git` file at its root (its link to the mirror). In a job the checks step blocks with the reason;
+   in DEVELOPER's `run_check` the run ends refused (as with no Docker), so the job blocks.
+4. **`.env.example` is the one exception**, by that exact name (ReplyDesk tracks one at `main`: 31 setting names, blank or placeholder
+   values). It is mounted only after R1's secret content scan (`secretContentHits`) passes on it, on every check; a hit refuses the
+   check naming the file and the kind (e.g. `.env.example holds Stripe key`), never the value. A connection string with a password to
+   `localhost`, `127.0.0.1` or `[::1]` is allowed (ReplyDesk's is the commented stock default, user and password `postgres` on
+   localhost); one to any other host is refused. Every other `.env.*` (`.env.local`, `.env.production`, ...) stays refused.
+5. **A Render API key pattern** (`rnd_` and 20 or more letters and digits) is added to R1's content scan (`src/engine/lib/secrets.mjs`),
+   as the owner listed Render with Stripe, Google, Anthropic, OpenAI, GitHub and private keys. It is stricter everywhere the scan runs
+   (the agents' file tools, issues, the commit gate), not only for `.env.example`.
+
+### Real-Docker proof: `npm run test:docker`
+
+`tests/docker/sandbox.docker.mjs`, run by `npm run test:docker` (with the temp check) and never by `npm test` (its name matches none of
+`node --test`'s default patterns; `tests/temp-guard.test.mjs` checks this). It uses the built image
+`station-check-replydesk:fc3eeeed826a3b0a` and the engine's own runner; nothing pulled or built, no model call; a missing Docker or image
+fails the run. Docker 29.8.2 (Docker Desktop, WSL 2). Each proof runs its own container:
+
+| # | Proof | How | Before the fixes | After |
+|---|---|---|---|---|
+| 1 | an outbound network attempt fails | inside: only `lo`; connect to 1.1.1.1:53 and 8.8.8.8:443 `errno 101 Network is unreachable`; DNS fails; inspect `NetworkMode none` | pass | pass |
+| 2 | the root filesystem is read-only | inside: writes to `/var/tmp`, `/usr/local`, `/etc` and `/work` fail `Read-only file system`, `/tmp` is written; inspect `ReadonlyRootfs`, tmpfs `/tmp` only | pass | pass |
+| 3 | it runs as a non-root user | inside: uid, euid and gid 65534; inspect `Config.User 65534:65534` | **fail** (uid 0) | pass |
+| 4 | the hard timeout kills a hanging test in a job | a job on a fixture clone with ReplyDesk's requirements (so the job picks the built image) and a test that sleeps an hour; timeout 8 s: the container ran, `docker kill` by its name, the container is gone (`docker ps -a`), the job `blocked` at `checks` with the timeout reason, `pass-1.json` `timedOut` | **fail** (the job went on and blocked at `diff`: "DEVELOPER made no change") | pass (10.6 s) |
+| 5 | a worktree with `.env`, `.env.*` or `*.db` is refused before docker starts | `.env`, `config/.env.local`, `instance/app.db`, `reviews.sqlite3`: `SECRETS`, the file and kind named, not one docker call | **fail** (the container ran) | pass |
+| 5b | a clean `.env.example` passes | the stock commented localhost default: the check runs, the file is visible in `/work` | pass | pass |
+| 5c | a planted fake `sk_live_` key in `.env.example` is refused | `SECRETS`, ".env.example holds Stripe key", the value nowhere in the message; not one docker call | **fail** (the container ran) | pass |
+| 6 | no host environment variable reaches the container | a random canary set on the host is absent inside (name and value); every variable inside is the image's own, the five the runner sets, or `HOSTNAME` | pass | pass |
+| 7 | only the job's worktree is mounted | inspect: one mount, `bind`, `/work`, read-only, the worktree; inside, the mount points besides `/proc`, `/sys`, `/dev` are `/`, `/tmp`, `/work` and Docker's own `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf` for this container; `/work` holds the worktree's files only; no Docker socket, `/mnt` empty, no host drive | pass | pass |
+| 8 | the CPU, memory and pids limits are applied | inspect `NanoCpus` 2e9, `Memory` 2 GiB, `PidsLimit` 256, `CapDrop ALL`, `no-new-privileges`; inside, cgroup `cpu.max` `200000 100000`, `memory.max` 2147483648, `pids.max` 256 | pass | pass |
+
+Before the fixes: 6 passed, 4 failed (3, 4, 5, 5c), 39 s. After: 10 of 10, 37 s.
+
+### ReplyDesk smoke (item 7)
+
+ReplyDesk's own pytest, unchanged, in the real sandbox: a worktree of the dev Station's mirror on a new branch `dev/r2a-smoke` at
+`main` = `d03a9ab` (clean, no change), the product's check (`python -m pytest -q`), the image `station-check-replydesk:fc3eeeed826a3b0a`
+(the tag `imageTag` gives for `requirements.txt` at main), the secret scan clean (`.env.example` passed the content scan).
+**27 passed, 0 failed, 0 errors in 4.37 s** (pytest's time; 6.2 s for the container run), exit 0. **No test failed for want of the
+network or a secret**, so there is nothing to list. Run by a one-off script with the engine's own `lib/repo.mjs` git (allowlisted,
+jailed paths) and `lib/checks.mjs`; `addWorktree` takes only `eng-…` job ids, so the script ran the allowlisted `git worktree add -b
+dev/r2a-smoke` itself. The worktree was removed after; **the branch `dev/r2a-smoke` stays in the dev mirror** (at `d03a9ab`, no
+commit of its own): the engine has no git subcommand that deletes a branch.
+
+### Tests changed for R2a.1 (existing files)
+
+- `tests/r2a-workshop.test.mjs` 6: the check runs on a clean worktree folder (the fixture base holds a clone's `.git` folder, which the
+  new scan refuses); `--user 65534:65534` added to the flags it requires. No assertion loosened.
+- `tests/r2b-engineering.test.mjs` 11: the no-image refusal runs on an empty temp folder, not the whole data root (which holds
+  `station.db`, now refused before Docker). No assertion loosened.
+- New: `tests/r2a-workshop.test.mjs` 9 (the scan: clean cases incl. the worktree's `.git` file and localhost connection strings;
+  refusals by name for `.env`, `.env.local`, a nested `.env.production`, `*.db`, `*.sqlite3`, a key, `.venv/`, `.git/` folders;
+  `.env.example` with a Stripe, Render, Anthropic, Google or GitHub key, a private key block or a remote connection string refused, the
+  value never named; with or without Docker, not one docker call); `tests/r2b-engineering.test.mjs` 15 (a timed-out check blocks the
+  job, the container stopped by name, TESTER never runs; fake Docker); `tests/temp-guard.test.mjs` 3 (`test:docker` and its exclusion
+  from `npm test`).
+
+### Measured (items 6 to 8)
+
+- `npm run test:docker`: 10 of 10, 37 s, the temp check clean.
+- `npm test` once: 583 of 583, 0 failed, 0 skipped, 119 s, exit 0, the temp check clean; the Docker file not run.

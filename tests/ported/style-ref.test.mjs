@@ -26,6 +26,7 @@ import { noticeFor } from '../../src/engine/lib/digital-build.mjs';
 import { digitalListingChecks } from '../../src/engine/lib/digital-gate.mjs';
 import { createJail } from '../../src/engine/store/jail.mjs';
 import { useJail } from '../../src/engine/store/active.mjs';
+import { tempDir } from '../helpers/engine.mjs';
 
 const ID = '2026-10-16--test-style-ref';
 const PACK = { key: 'prop-pack', digital: true, kind: 'asset-pack', licence: 'commercial-content', transparent: true, aspectRatio: '1:1', styleReference: { ownerOk: true },
@@ -36,7 +37,7 @@ const fakeEsrgan = async (input, w, h) => ({ data: await sharp(input).ensureAlph
 const prop = (seed = 0) => { const W = 64, d = Buffer.alloc(W * W * 4); for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; if ((x - 32) ** 2 + (y - 32) ** 2 <= 400) { d[i] = 180 + seed; d[i + 1] = 90; d[i + 2] = 60; d[i + 3] = 255; } } return sharp(d, { raw: { width: W, height: W, channels: 4 } }).png().toBuffer(); };
 const brief = () => ['---', 'id: ' + ID, 'status: verified', 'product_type: prop-pack', '---', '# Niche', 'Desk props', '', '## Design direction', 'Original cosy desk props, no text.', ''].join('\n');
 // PORT: a temp room is the data root of its own data jail
-const tmp = (p) => { const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p))); useJail(createJail({ dataRoot: dir, extraRoots: [] })); return dir; };
+const tmp = (p) => { const dir = tempDir(p); useJail(createJail({ dataRoot: dir, extraRoots: [] })); return dir; };
 async function room({ files = ['01-steaming-mug.png'], n = 1 } = {}) {
   const dir = tmp('sref-'), w = path.join(dir, 'jobs', ID), raw = path.join(w, 'set-v' + n, 'raw');
   fs.mkdirSync(raw, { recursive: true }); fs.writeFileSync(path.join(w, 'brief.md'), brief());

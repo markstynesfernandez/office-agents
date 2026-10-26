@@ -37,6 +37,7 @@ import { fixListing, usSpelling, chainFixRecord } from '../../src/engine/lib/lis
 import { packageDigital } from '../../src/engine/lib/package-digital.mjs';
 import { createJail } from '../../src/engine/store/jail.mjs';
 import { useJail } from '../../src/engine/store/active.mjs';
+import { tempDir } from '../helpers/engine.mjs';
 
 const ID = '2026-10-16--test-prop-pack';
 const PACK = { key: 'prop-pack', digital: true, kind: 'asset-pack', licence: 'commercial-content', transparent: true, aspectRatio: '1:1',
@@ -67,7 +68,7 @@ const brief = (priceLines = ['owner price: EUR 7.00–12.00 (recorded by owner, 
   '## Price range', 'EUR 1.13–13.90 = USD 1.27–15.56 (https://www.etsy.com/listing/101)', ...priceLines, '', '## Design direction', 'Original cosy desk props, no text.', ''].join('\n');
 
 async function setRoom({ cfg = cfgApproved(), priceLines } = {}) {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'dbuild-'))), jail = createJail({ dataRoot: dir, extraRoots: [] }); useJail(jail);
+  const dir = tempDir('dbuild-'), jail = createJail({ dataRoot: dir, extraRoots: [] }); useJail(jail);
   const w = path.join(dir, 'jobs', ID), sd = path.join(w, 'set-v1'), raw = path.join(sd, 'raw');
   fs.mkdirSync(raw, { recursive: true }); fs.mkdirSync(path.join(w, 'qa'), { recursive: true }); fs.mkdirSync(path.join(w, 'outbox'), { recursive: true });
   fs.writeFileSync(path.join(w, 'brief.md'), brief(priceLines));

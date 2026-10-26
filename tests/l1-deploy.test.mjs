@@ -9,11 +9,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { deployLive, testedOn, rollbackTarget } from '../scripts/deploy-live.mjs';
 import { git } from '../scripts/git-state.mjs';
+import { tempDir } from './helpers/engine.mjs';
 
 const C = ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false'];
 const head = (d) => git(d, ['rev-parse', 'HEAD']).trim();
 function repo() {
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'station-l1-deploy-')));
+  const base = tempDir('station-l1-deploy-');
   const dev = path.join(base, 'dev'), live = path.join(base, 'live');
   fs.mkdirSync(dev);
   git(dev, ['init', '-q', '-b', 'main']);

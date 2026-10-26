@@ -10,8 +10,9 @@
   "scripts": {
     "start": "node scripts/start.mjs",
     "mock": "node src/server/index.mjs --fixtures",
-    "test": "node --test",
+    "test": "node --test --test-global-setup=tests/helpers/temp-guard.mjs",
     "test:record": "node scripts/record-tests.mjs",
+    "test:docker": "node --test --test-global-setup=tests/helpers/temp-guard.mjs tests/docker/*.docker.mjs",
     "deploy:live": "node scripts/deploy-live.mjs",
     "screenshots": "node scripts/screenshots.mjs",
     "snapshot-fixtures": "node scripts/snapshot-fixtures.mjs",
@@ -35,7 +36,8 @@
     "settle:images": "node scripts/settle-images.mjs",
     "settle:failed": "node scripts/settle-failed.mjs",
     "migrate:businesses": "node scripts/migrate-businesses.mjs",
-    "migrate:products": "node scripts/migrate-products.mjs"
+    "migrate:products": "node scripts/migrate-products.mjs",
+    "check-image": "node scripts/check-image.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

@@ -20,6 +20,7 @@ import { checkPackage } from '../../src/engine/lib/gates.mjs';
 import { demandEvidenceProblems, keywordSourceProblems, ownerPrice } from '../../src/engine/lib/demand-evidence.mjs';
 import { createJail } from '../../src/engine/store/jail.mjs';
 import { useJail } from '../../src/engine/store/active.mjs';
+import { tempDir } from '../helpers/engine.mjs';
 
 const ID = '2026-10-16--test-bingo-set';
 const PRODUCT = { key: 'bingo-set', digital: true, kind: 'printable', licence: 'personal-use', transparent: true,
@@ -45,7 +46,7 @@ async function jpg(file, w, h) { await sharp({ create: { width: w, height: h, ch
 
 // a complete digital room: brief, set-v1 (3 files + design.md), prepared manifest, approved QA records, listing filled by the price script
 async function room({ mutateFiles, design = 'Prompt: flat winter icons, no text. Self-check: original, no trademarks, no named style, no real person.', cfg = cfgApproved(), briefOpts = {}, qa = (r) => r, listing = (l) => l, fill = true } = {}) {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'dig-'))); useJail(createJail({ dataRoot: dir, extraRoots: [], legacyRoots: [] })); const w = path.join(dir, 'jobs', ID), sd = path.join(w, 'set-v1'), fd = path.join(sd, 'files'), out = path.join(dir, 'jobs', ID, 'outbox');
+  const dir = tempDir('dig-'); useJail(createJail({ dataRoot: dir, extraRoots: [], legacyRoots: [] })); const w = path.join(dir, 'jobs', ID), sd = path.join(w, 'set-v1'), fd = path.join(sd, 'files'), out = path.join(dir, 'jobs', ID, 'outbox');
   fs.mkdirSync(fd, { recursive: true }); fs.mkdirSync(path.join(w, 'qa'), { recursive: true }); fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(w, 'brief.md'), brief(briefOpts));
   await png(path.join(fd, '01-card.png'), 300, 400); await png(path.join(fd, '02-card.png'), 300, 400); await jpg(path.join(fd, '03-cover.jpg'), 200, 100);
@@ -90,7 +91,7 @@ test('digital floor: no cost, no shipping; fees incl. VAT on seller fees + EUR 5
 });
 
 test('files: format from the bytes, pixel size from the headers (PNG and JPEG), fonts recognised', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-'));
+  const dir = tempDir('df-');
   await png(path.join(dir, 'a.png'), 123, 45); await jpg(path.join(dir, 'b.jpg'), 640, 480);
   assert.deepEqual(imageSize(fs.readFileSync(path.join(dir, 'a.png'))), { widthPx: 123, heightPx: 45 });
   const m = measureFile(path.join(dir, 'b.jpg')); assert.equal(m.format, 'jpg'); assert.equal(m.widthPx, 640); assert.equal(m.heightPx, 480);
