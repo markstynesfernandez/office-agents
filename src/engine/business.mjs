@@ -34,6 +34,7 @@ export function validateBusinesses({ businesses, engine, lines, agents, office }
   const owner = { dept: new Map(), line: new Map(), agent: new Map() }, claim = (kind, key, who) => { if (owner[kind].has(key)) bad.push({ dept: 'department', line: 'line', agent: 'agent' }[kind] + ' ' + key + ' belongs to both ' + owner[kind].get(key) + ' and ' + who); else owner[kind].set(key, who); };
   for (const k of shared.departments || []) { if (!deptKeys.has(k)) bad.push('the shared floor names department ' + k + ', which is not in config/office.json'); claim('dept', k, 'the shared floor'); }
   for (const k of shared.agents || []) { if (!agents[k]) bad.push('the shared floor names agent ' + k + ', which has no config/agents file'); claim('agent', k, 'the shared floor'); }
+  for (const k of shared.lines || []) { if (!lines[k]) bad.push('the shared floor names line ' + k + ', which has no config/lines file'); claim('line', k, 'the shared floor'); }   // R2: the active departments' lines
   let legacyDirs = 0;
   for (const b of businesses) {
     const who = 'business ' + (b.id || b.file);

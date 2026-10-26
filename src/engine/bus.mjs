@@ -13,7 +13,9 @@ import { dublinDay } from './time.mjs';
 export const EVENT_TYPES = ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected',
   'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.start', 'engine.recovered',
   'routine.changed', 'action.done', 'action.refused',
-  'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed'];
+  'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed',
+  // R2: the engineering line (engineering.mjs): the owner's issues and their decisions, a checks pass
+  'issue.written', 'issue.decided', 'eng.checks'];
 
 export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringSize = 1000, businessOf = null, productOf = null }) {
   const ring = [], subs = new Set();

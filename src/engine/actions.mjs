@@ -18,11 +18,13 @@ const who = (actor) => (actor && actor.kind === 'agent' ? 'agent ' + actor.key :
 
 export function createActions(engine) {
   const { store, bus, log } = engine;
+  // a job a line is running keeps its own state (the line records the outcome); R2: the engineering line's jobs too
+  const running = (id) => !!((engine.orchestrator && engine.orchestrator.isActive(id)) || (engine.engineering && engine.engineering.isActive(id)));
 
   function refused(e, { action, actor, jobId }) {
     log.warn('action refused', { action, by: who(actor), jobId, rule: e.rule || null, error: e.message });
     try { bus.emit('action.refused', { jobId: jobId || null, agentKey: actor && actor.kind === 'agent' ? actor.key : null, data: { action, by: who(actor), rule: e.rule || null, error: e.message } }); } catch (_) { /* bus closed */ }
-    if (jobId) { const j = store.getJob(jobId); if (j && !['blocked', 'archived', 'done'].includes(j.state) && !(engine.orchestrator && engine.orchestrator.isActive(jobId))) store.updateJob(jobId, { state: 'blocked', reason: e.message, ended_at: Date.now() }); }
+    if (jobId) { const j = store.getJob(jobId); if (j && !['blocked', 'archived', 'done'].includes(j.state) && !running(jobId)) store.updateJob(jobId, { state: 'blocked', reason: e.message, ended_at: Date.now() }); }
     throw e;
   }
 
@@ -47,7 +49,7 @@ export function createActions(engine) {
     return wait(r, jobId, stale);
   }
   function wait(r, jobId, stale = false) {
-    if (jobId) { const j = store.getJob(jobId); if (j && !(engine.orchestrator && engine.orchestrator.isActive(jobId))) store.updateJob(jobId, { state: 'queued', reason: 'waiting for the owner: request ' + r.id + ' (' + r.action + ')' + (stale ? '; the earlier approval no longer matched the payload' : ''), data: { waitingFor: 'owner', requestId: r.id, autoStart: false } }); }
+    if (jobId) { const j = store.getJob(jobId); if (j && !running(jobId)) store.updateJob(jobId, { state: 'queued', reason: 'waiting for the owner: request ' + r.id + ' (' + r.action + ')' + (stale ? '; the earlier approval no longer matched the payload' : ''), data: { waitingFor: 'owner', requestId: r.id, autoStart: false } }); }
     return { waiting: true, requestId: r.id, ...(stale ? { stale: true } : {}) };
   }
 

@@ -1,6 +1,7 @@
 {
   "$comment": "R1 (RESTRUCTURE.md §3.1): the autonomy policy. Every action an agent, a tool or a mechanical step can take has one level: auto (done without asking), owner (the engine files a request in the Owner's office and the job waits; only the owner decides it, on the page) or forbidden (refused, logged, the job blocks with the reason). An action not in this file is forbidden (fail closed), and a tool with no declared action stops the engine at start (src/engine/policy.mjs TOOL_ACTIONS). The owner changes this file only; the page shows it and cannot edit it. At every start the engine compares the file's sha256 with the last one it recorded and appends a row per changed action to data/policy/autonomy-log.jsonl. A product override (config/products/<id>.json policy) may only make an action stricter. The locked rules (src/engine/locked.mjs, RESTRUCTURE.md §3.2) are in code: every locked action must be here at forbidden, and anything that leaves the building must be owner or forbidden; a file that loosens either stops the engine with the rule and the file.",
   "$addedInR1": "file.read, code.search, image.generate, image.analyze and verdict.submit are not in RESTRUCTURE.md §3.1's table: the existing tools (fs_read, fs_list, image_generate, image_analyze, submit_verdict) and the planned code_search need a declared action, so R1 adds them at auto (image.* are used only by the archived Etsy line, which refuses every start). git.push.branch is locked (the owner's R1 prompt: no agent can merge, deploy or push).",
+  "$addedInR2": "repo.fetch (the engine fetches the product's main from the owner's local clone into its own mirror; RESTRUCTURE.md §5.1: git fetch is auto) and repo.worktree (the engine adds and removes a job's worktree on dev/<job-id>) are not in RESTRUCTURE.md §3.1's table: R2's mechanical steps need a declared action, so R2 adds them at auto. Neither leaves the building; git.push.branch stays forbidden and locked.",
   "levels": {
     "research.web": "auto",
     "draft.write": "auto",
@@ -25,6 +26,8 @@
     "image.generate": "auto",
     "image.analyze": "auto",
     "verdict.submit": "auto",
+    "repo.fetch": "auto",
+    "repo.worktree": "auto",
 
     "roadmap.approve": "owner",
     "line.resume": "owner",

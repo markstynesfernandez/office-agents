@@ -72,7 +72,13 @@ export function validateCompany({ company, agents = {}, lines = {}, engine = {},
     for (const k of d.agents || []) { if (!agents[k]) bad.push(who + ': agent ' + k + ' has no config/agents file'); claim('agent', k, 'department ' + d.id); }
     for (const k of d.lines || []) { if (!lines[k]) bad.push(who + ': line ' + k + ' has no config/lines file'); claim('line', k, 'department ' + d.id); }
     for (const k of d.rooms || []) { if (!rooms.has(k)) bad.push(who + ': room ' + k + ' is not in config/office.json'); claim('room', k, 'department ' + d.id); }
-    for (const k of d.lines || []) for (const a of lines[k] ? stepAgents(lines[k]) : []) if (!(d.agents || []).includes(a)) bad.push(who + ': line ' + k + ' uses agent ' + a + ', which is not in this department');
+    // R2: a line may borrow an agent of another active department by name (config/lines/<id>.json borrows: the engineering line borrows the
+    // CTO and SECURITY); every other agent of its steps must be in its own department
+    for (const k of d.lines || []) {
+      const borrows = (lines[k] && lines[k].borrows) || [];
+      for (const a of lines[k] ? stepAgents(lines[k]) : []) if (!(d.agents || []).includes(a) && !borrows.includes(a)) bad.push(who + ': line ' + k + ' uses agent ' + a + ', which is not in this department (a line borrows another department\'s agent only by naming it in borrows)');
+      for (const a of borrows) { const od = D.find((x) => (x.agents || []).includes(a)); if (!agents[a] || !od) bad.push(who + ': line ' + k + ' borrows agent ' + a + ', which is in no department'); else if (od.status !== 'active') bad.push(who + ': line ' + k + ' borrows agent ' + a + ' from the archived department ' + od.id); }
+    }
     if (d.status === 'archived') {
       if (!d.product || !P.some((p) => p.id === d.product)) bad.push(who + ': an archived department names the product its history belongs to (product)');
       for (const k of d.agents || []) if (agents[k] && agents[k].status !== 'archived') bad.push(who + ': agent ' + k + ' of an archived department must be archived');
@@ -107,7 +113,9 @@ export function compatBuilding({ company, agents = {}, office = {} }) {
   });
   const inBiz = new Set(businesses.flatMap((b) => b.agents)), base = (office && office.shared) || {};
   const sharedRooms = (company.departments || []).filter((d) => !archived.includes(d)).flatMap((d) => d.rooms || []);
-  return { businesses, shared: { ...base, floor: base.floor ?? 0, name: base.name || 'Shared services', departments: sharedRooms, agents: Object.keys(agents).filter((k) => !inBiz.has(k)).sort() } };
+  // R2: the lines of the active departments (the engineering line, the CTO's triage) are B0's shared floor's
+  const sharedLines = (company.departments || []).filter((d) => !archived.includes(d)).flatMap((d) => d.lines || []);
+  return { businesses, shared: { ...base, floor: base.floor ?? 0, name: base.name || 'Shared services', departments: sharedRooms, agents: Object.keys(agents).filter((k) => !inBiz.has(k)).sort(), lines: sharedLines } };
 }
 
 // lookups over a loaded config (cfg.company, cfg.lines, cfg.agents)

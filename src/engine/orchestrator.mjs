@@ -85,6 +85,10 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const active = new Map();   // line id -> { jobId, promise }
   const stops = new Map();    // job id -> AbortController (the owner's Stop on a running job)
   const isActive = (id) => [...active.values()].some((a) => a.jobId === id);
+  // R2: engineering and CTO-triage jobs belong to the engineering line (engineering.mjs): this orchestrator hands them over and never runs
+  // them; the running-jobs limit counts both
+  const engJob = (j) => !!j && (j.kind === 'engineering' || j.kind === 'eng-triage');
+  const engCount = () => (engine.engineering ? engine.engineering.activeCount() : 0);
   const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 
   // the brief check everywhere a brief is judged (research brief-check, intake): the ported checks, then the scouting
@@ -212,6 +216,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const queuedAt = (j) => (j.data && j.data.queuedAt) || j.updated_at || j.created_at || 0;
   function startJob(id) {
     const job = store.getJob(id); if (!job) throw new Error('no such job: ' + id);
+    if (engJob(job)) { if (!engine.engineering) throw new Error('job ' + id + ' is an engineering job and this engine has no engineering line'); return engine.engineering.start(id); }
     if (!['queued'].includes(job.state)) throw new Error('job ' + id + ' is ' + job.state + ', not queued');
     if (halt.isHalted()) throw new Error('e-stop is on');
     const hold = engine.lineHold ? engine.lineHold(job.line) : null;
@@ -221,7 +226,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     if (sr) sr.own.add(id);
     const L = lineOf(job.line), cur = active.get(L.id), max = engine.maxRunningJobs || null;
     if (cur && (L.maxConcurrentJobs || 1) <= 1) { setJob(id, { reason: 'next: waiting for ' + cur.jobId + ' (one job at a time on the ' + L.id + ' line)', data: { autoStart: true, next: true, nextFor: 'line', queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
-    if (max && active.size >= max) { const on = [...active.values()].map((a) => a.jobId); setJob(id, { reason: 'next: waiting for ' + on.join(', ') + ' (at most ' + max + ' job' + (max === 1 ? '' : 's') + ' running at a time)', data: { autoStart: true, next: true, nextFor: 'total', queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
+    if (max && active.size + engCount() >= max) { const on = [...active.values()].map((a) => a.jobId).concat(engine.engineering ? engine.engineering.active() : []); setJob(id, { reason: 'next: waiting for ' + on.join(', ') + ' (at most ' + max + ' job' + (max === 1 ? '' : 's') + ' running at a time)', data: { autoStart: true, next: true, nextFor: 'total', queuedAt: (job.data && job.data.next && job.data.queuedAt) || Date.now() } }); return null; }
     if (job.data && job.data.next) store.updateJob(id, { data: { next: false, nextFor: null } });
     const promise = runJob(id).catch((e) => { log.error('job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } }).finally(() => { blocklistOnEnd(id); active.delete(L.id); startNext(id); });
     active.set(L.id, { jobId: id, promise });
@@ -229,13 +234,13 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   }
   // the queued jobs that start by themselves, oldest first (never one interrupted by a restart or waiting for an agent or the owner)
   function nextJobs(exceptId = null) {
-    return store.listJobs({ states: ['queued'] }).filter((j) => j.id !== exceptId && !j.legacy && j.data && j.data.autoStart && !j.data.waitingFor && !/^interrupted/.test(j.reason || '') && !isActive(j.id)).sort((a, b) => queuedAt(a) - queuedAt(b));
+    return store.listJobs({ states: ['queued'] }).filter((j) => j.id !== exceptId && !j.legacy && !engJob(j) && j.data && j.data.autoStart && !j.data.waitingFor && !/^interrupted/.test(j.reason || '') && !isActive(j.id)).sort((a, b) => queuedAt(a) - queuedAt(b));
   }
   function startNext(endedId) {
     if (halt.isHalted()) return;
     const max = engine.maxRunningJobs || null;
     for (const j of nextJobs(endedId)) {
-      if (max && active.size >= max) return;
+      if (max && active.size + engCount() >= max) return;
       if (active.get(j.line)) continue;
       if (engine.scriptRun && !engine.scriptRun.own.has(j.id)) continue;   // L3: a script never starts a job it did not start itself
       try { startJob(j.id); } catch (e) { log.warn('next job not started', { jobId: j.id, error: e.message }); }
@@ -1116,6 +1121,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   // version moves at every step, so a Stop sent with an older version is still accepted while that job is running
   // (stopping overwrites nothing); once it has finished or changed state, an old version is refused as stale.
   function stopJob(id, { expectedVersion, by = 'owner' } = {}) {
+    if (engJob(store.getJob(id)) && engine.engineering) return engine.engineering.stop(id, { expectedVersion, by });
     const j = ownJob(id);
     const running = isActive(id) && stops.has(id);
     if (!(running && Number.isInteger(expectedVersion) && expectedVersion <= j.version)) checkVersion(j, expectedVersion);
@@ -1136,6 +1142,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
 
   // Restart: from the step it stopped or was blocked at, within the caps (the guard still checks every call)
   function restartJob(id, { expectedVersion, by = 'owner' } = {}) {
+    if (engJob(store.getJob(id)) && engine.engineering) return engine.engineering.resume(id, { expectedVersion, by });
     const j = ownJob(id); checkVersion(j, expectedVersion);
     if (!controlsFor(j).restart) throw new Error('job ' + id + ' is ' + effState(j) + ': only a blocked or stopped job can be restarted');
     notHalted('restart');
@@ -1152,6 +1159,7 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
 
   // Archive: the job leaves the board; its files move to jobs/<id>/rerun-archive-<stamp>/ (brief.md stays), never deleted
   function archiveJob(id, { expectedVersion, by = 'owner' } = {}) {
+    if (engJob(store.getJob(id)) && engine.engineering) return engine.engineering.archive(id, { expectedVersion, by });
     const j = ownJob(id); checkVersion(j, expectedVersion);
     const st = effState(j);
     if (!controlsFor(j).archive) throw new Error('job ' + id + ' is ' + st + ': only a blocked, stopped, rejected or finished research job can be archived');
@@ -1482,5 +1490,5 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
     return out;
   }
 
-  return { createJob, saveOwnerBrief, startJob, runJob, nextJobs, createResearchJob, decide, qaOnly, prepareRedraw, redrawOnly, rebuildSet, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
+  return { createJob, saveOwnerBrief, startJob, runJob, nextJobs, createResearchJob, decide, qaOnly, prepareRedraw, redrawOnly, rebuildSet, listingOnly, packageJob, agentEstimate, costRecord, active: () => [...active.values()].map((a) => a.jobId), activeCount: () => active.size, startNext, jobDir, stopJob, restartJob, archiveJob, rerunListing, wakeWaiting, verifiedBriefs, startBrief, startResearch, controlsFor, effState, isActive, blocklistOnEnd };
 }

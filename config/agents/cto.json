@@ -1,10 +1,10 @@
 {
-  "$comment": "R1 (RESTRUCTURE.md §2.2, §2.3): in config from R1, \"not hired yet\" until R2. The engine refuses to run a not-hired agent and it costs nothing; its prompt, maxOutputTokens and write paths are set when it is hired. Model, effort and thinking are the owner's (R0.2, R0.3); every limit here is a proposal (§2.2 \"Limits (proposed)\").",
+  "$comment": "R2 (owner's go, 25/10/2026; RESTRUCTURE.md §2.2, §8 R2): hired for the engineering line on ReplyDesk (src/engine/engineering.mjs). Model, effort and thinking are the owner's (R0.2, R0.3); every limit here is a proposal (§2.2 \"Limits (proposed)\"; maxOutputTokens set at hiring, R2).",
   "key": "cto",
   "name": "CTO",
   "department": "hq",
   "reportsTo": "owner",
-  "status": "not-hired",
+  "status": "active",
   "phase": "R2",
   "tier": "strong",
   "effort": "medium",
@@ -18,11 +18,16 @@
   ],
   "limits": {
     "maxTurns": 30,
-    "runCapUsd": 0.3
+    "runCapUsd": 0.3,
+    "maxOutputTokens": 4000
   },
   "proposals": [
     "limits"
   ],
-  "enabled": false,
-  "role": "Orders the dev queue within the owner-approved roadmap, reviews large specs, assigns approved issues. Cannot merge or deploy."
+  "enabled": true,
+  "role": "Orders the dev queue within the owner-approved roadmap, reviews large specs, assigns approved issues. Cannot merge or deploy.",
+  "writes": [
+    "dev-queue.json"
+  ],
+  "hired": "R2"
 }

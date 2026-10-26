@@ -2955,3 +2955,65 @@ No agent, no model, no page or owner command. Dev only, mock only, $0; the live 
   (`fixtures/SNAPSHOT.json`, `fixtures/station-root/`, `fixtures/synthetic/`); with those copied in, 561 tests, 557 and then 559 passed:
   the failures were timing tests in `tests/live-ui.test.mjs` and a restart-recovery test under load, a different set each run, none of
   them loading an R2a module; `live-ui` alone passed 9/9.
+
+## R2b: the engineering line and its agents (built 25/10/2026, recorded 26/10/2026)
+
+The engineering line on R2a's workshop: issues, the CTO's triage, and a job per issue (spec, code, checks, three reviews, the commit on
+`dev/<job-id>`, a `git.merge` request for the owner). Dev only, mock only, $0; the live worktree, every `.env` and the network untouched.
+
+**Built ahead of its prompt.** The code was written on 25/10/2026 (09:08–09:23) in an earlier session, before R2 was split; the R2a
+prompt asked for the workshop with no agents. The agent configs say "owner's go, 25/10/2026"; that go is not recorded anywhere else.
+It is committed separately so the owner can accept it or ask for it to be reverted.
+
+### What it is
+
+- `src/engine/engineering.mjs`: the line (issues, triage, steps, loops, the merge request, the owner's controls, the page's view and card).
+- `src/engine/lib/eng-records.mjs` (issues and their decisions, the CTO's dev queue, the spec check, the engineering verdicts) and
+  `src/engine/lib/eng-gates.mjs` (the secret gate on the diff; dependency and workflow files become `dependency.add` / `ci.change`).
+- `config/lines/engineering.json`, `config/lines/eng-triage.json`; `config/departments/engineering.json` (the two lines).
+- **Six agents hired**: CTO, SECURITY, TECH-LEAD, DEVELOPER, REVIEWER, TESTER (`status: active`, `enabled: true`, `maxOutputTokens` set,
+  write paths), with prompts in `prompts/agents/` and `prompts/skills/engineering-rules.md`. The other 13 stay not hired.
+- Tools: `fs_edit`, `code_search`, `run_check` (counted against `maxChecks`), `fs_read` by lines, `submit_verdict` for the engineering
+  kinds; each call names its policy action (`code.edit`, `spec.write`, `queue.prioritise`, `code.review`, `security.audit`).
+- Engine wiring: the orchestrator hands engineering jobs over and counts them in the running-jobs limit; actions, spend (quotes
+  `eng-triage`, `eng-start`), the building (a line may borrow another active department's agent by name), the runtime wrapper,
+  the snapshot (hired agents without a drawn floor get no desk until R7).
+- `src/engine/bus.mjs` and `src/web/main.js`: the events `issue.written`, `issue.decided`, `eng.checks` (added 26/10/2026: without
+  them writing an issue threw "unknown event type").
+- `config/autonomy.json`: `repo.fetch` and `repo.worktree` added at **auto**.
+- A git timeout in a job: the job blocks with "git timeout in <step>: git <subcommand> did not finish in N s and was killed", logged as
+  "git timeout" (26/10/2026). After the merge request is filed, a timeout removing the worktree is logged and the job still waits for
+  the owner (the commit and the request are already made).
+
+### For the owner to confirm or change
+
+1. **Accept R2b as built, or revert it** (it went past the R2a prompt).
+2. **Hiring the six engineering agents** (status active, enabled) and their `maxOutputTokens` (proposals: CTO 4,000, SECURITY 6,000,
+   TECH-LEAD 8,000, DEVELOPER 16,000, REVIEWER 12,000, TESTER 3,000).
+3. **`config/autonomy.json`**: `repo.fetch` and `repo.worktree` at auto. The file is the owner's; this was changed by the build.
+4. The CTO's queue is `backlog/dev-queue.json` (RESTRUCTURE.md §2.2 says `dev-queue.md`): JSON so it can be checked when written.
+
+### Not done
+
+- **Nothing drives it from the page or the command line yet**: no server endpoint or owner command writes an issue, starts the triage
+  or a job, or builds the check image. The engine functions and the spend quotes exist.
+- No real run: the check image is not built (R2a), `REPLYDESK_REPO` is not set, no model was called.
+
+### Tests changed for R2b (existing files)
+
+- `tests/r1-company.test.mjs`: the six are hired (status, enabled, the HQ label "active"); the not-hired checks run over the other 13;
+  the "cannot be hired without its tools" check now uses the COO (`line_pause`, R3), since `code_search` and `run_check` are built;
+  the policy counts auto 23 → 25 (`repo.fetch`, `repo.worktree`).
+- `tests/b0.test.mjs`, `tests/l2-steer.test.mjs`, `tests/l3.test.mjs`: the two engineering lines in the line lists.
+- `tests/people-looks.test.mjs`: hired agents without a drawn floor have no shirt to check.
+- No locked-rule or secrets test changed (`tests/r1-locked.test.mjs`, `src/engine/locked.mjs`, `src/engine/lib/secrets.mjs` unchanged).
+
+### Measured
+
+- `tests/r2b-engineering.test.mjs` 15/15: issues are the owner's; the CTO cannot queue an unapproved issue; start conditions; the
+  whole line to the merge request with the owner's clone untouched; the tools; the rework limit; the CTO's review of a large spec; a
+  SECURITY refuse; a dependency change; a worktree changed after review; no Docker; an agent reading `repo/.git` (refused by the
+  locked rule secrets-refused, R1); the line's records; the building; a git that hangs inside a job (blocked "git timeout").
+- Full suite with R2a and R2b, 26/10/2026: two runs 576 passed of 576 (0 skipped, about 120 s each); two later runs on the same code
+  573 and 571 of 576 (0 skipped, about 490–540 s each, the machine 4–5 times slower throughout): the failures were timing tests
+  (`live-ui`, the dry-run controls, a restart recovery) that load no R2 module, a different set each run.

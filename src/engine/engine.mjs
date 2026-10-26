@@ -32,6 +32,7 @@ import { company } from './building.mjs';
 import { createPolicy, recordPolicyChanges } from './policy.mjs';
 import { createRequests } from './requests.mjs';
 import { createActions } from './actions.mjs';
+import { createEngineering, ENG_KINDS } from './engineering.mjs';
 
 export class LockError extends Error { constructor(msg) { super(msg); this.code = 'LOCKED'; } }
 export class DemoConfigError extends Error { constructor(msg) { super(msg); this.code = 'DEMO_CONFIG'; } }
@@ -76,7 +77,7 @@ export function recover({ store, bus, log, resumeOnRestart = 1 }) {
   return out;
 }
 
-export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false, upscaler = null, limitJobs = false, scriptRun = null, archiveSandbox = false, instance = null } = {}) {
+export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config'), promptsDir = path.join(APP_ROOT, 'prompts'), log, providers = null, script = null, mockDelayMs = 0, clock = Date.now, startScheduler = true, resume = true, hooks = {}, overrides = null, J = null, demo = false, upscaler = null, limitJobs = false, scriptRun = null, archiveSandbox = false, instance = null, engineering = {} } = {}) {
   J = J || createJail({ dataRoot });
   const unlock = takeLock(J, log);
   useJail(J);   // the ported station modules write through this engine's jail
@@ -125,6 +126,8 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     // L2: an instance started by npm start (limitJobs) runs at most runtime.maxRunningJobs jobs at once, across every line; others queue as next
     engine.maxRunningJobs = limitJobs ? (cfg.engine.runtime.maxRunningJobs ?? 1) : null;
     engine.orchestrator = createOrchestrator(engine, { hooks });
+    // R2: the engineering line (issues, the CTO's triage, engineering jobs on a product's code); engineering = { checks, env } in tests
+    engine.engineering = createEngineering(engine, { hooks, ...engineering });
     engine.spend = createSpendDesk(engine);   // L2: the spend confirmation in front of every page action that can spend
     // E6 b3: a scout job that restart recovery ended (blocked) still puts its notes' names on the scouting blocklist
     for (const j of rec.jobs.filter((x) => x.action === 'blocked')) engine.orchestrator.blocklistOnEnd(j.id);
@@ -159,7 +162,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
       throw new Error('routine target not supported: ' + routine.target);
     };
     // routines the page may create (ENGINE-PLAN.md §5.4); an off-duty first agent makes its line's routines skip
-    engine.routineTargets = Object.values(cfg.lines).map((l) => ({ id: 'line:' + l.id, label: l.kind === 'research' ? (l.routineLabel || l.label + ' batch') + ' (' + l.id + ' line)' : 'Next verified brief (' + l.id + ' line)', firstAgent: firstAgentOf(l) }));
+    engine.routineTargets = Object.values(cfg.lines).filter((l) => !ENG_KINDS.includes(l.kind)).map((l) => ({ id: 'line:' + l.id, label: l.kind === 'research' ? (l.routineLabel || l.label + ' batch') + ' (' + l.id + ' line)' : 'Next verified brief (' + l.id + ' line)', firstAgent: firstAgentOf(l) }));
     // R1: a routine may run one agent's standing report (the COO's daily report, seeded disabled; its live run is R3)
     if (cfg.agents.coo) engine.routineTargets.push({ id: 'agent:coo', label: 'COO daily operations report (from R3)', firstAgent: 'coo', agent: true });
     const routineHold = (routine) => {
@@ -177,7 +180,7 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     // R1: the autonomy policy's changes since the last start, one row per changed action (data/policy/autonomy-log.jsonl)
     recordPolicyChanges({ J, store, policy, commit: instance ? instance.commit || null : null, instance: instance ? instance.name || null : null, log, bus });
     log.info('engine started', { dataRoot: J.dataRoot, provider: prov.mode, store: store.backend, ledgerRows: ledger.totals.rows, halted: halt.isHalted() });
-    engine.close = () => { try { engine.scheduler.stop(); } catch (_) {} halt.close(); store.close(); useJail(null); unlock(); log.info('engine closed'); };
+    engine.close = () => { try { engine.scheduler.stop(); } catch (_) {} try { engine.engineering.close(); } catch (_) {} halt.close(); store.close(); useJail(null); unlock(); log.info('engine closed'); };
     return engine;
   } catch (e) { unlock(); throw e; }
 }
@@ -280,6 +283,6 @@ export function updateAgent(engine, key, patch = {}, { expectedVersion } = {}) {
   const eff = effectiveAgent(engine, key);
   bus.emit('agent.updated', { agentKey: key, data: { enabled: eff.enabled, tier: eff.tier, effort: eff.effort, appliesAt: 'next run' } });
   log.info('agent updated', { agent: key, ...p, version: out.version });
-  const woke = p.enabled === true ? engine.orchestrator.wakeWaiting(key) : [];
+  const woke = p.enabled === true ? [...engine.orchestrator.wakeWaiting(key), ...(engine.engineering ? engine.engineering.wakeWaiting(key) : [])] : [];
   return { agentKey: key, version: out.version, enabled: eff.enabled, tier: eff.tier, effort: eff.effort, started: woke };
 }

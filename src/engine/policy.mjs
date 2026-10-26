@@ -21,6 +21,7 @@ export const TOOL_ACTIONS = {
   fs_read: 'file.read',
   fs_list: 'file.read',
   fs_write: 'draft.write',
+  fs_edit: 'code.edit',
   image_generate: 'image.generate',
   image_analyze: 'image.analyze',
   web_search: 'research.web',
@@ -33,7 +34,7 @@ export const TOOL_ACTIONS = {
   metrics_read: 'metrics.read',
   support_ticket_read: 'product.read'
 };
-export const PLANNED_TOOLS = ['code_search', 'run_check', 'line_pause', 'metrics_read', 'support_ticket_read'];
+export const PLANNED_TOOLS = ['line_pause', 'metrics_read', 'support_ticket_read'];   // R2 built code_search, run_check (and fs_edit)
 export const POLICY_FILE = 'autonomy.json';
 const ACTION_RE = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/;
 

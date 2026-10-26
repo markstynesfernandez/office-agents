@@ -19,8 +19,9 @@ test('every skin tone is in the skin range; every spare shirt colour is outside 
 
 test('the shirts of the configured agents are off the skin range and pairwise distinct', () => {
   const dir = path.join(APP_ROOT, 'config', 'agents');
-  // R1: the agents the office draws (a not-hired agent has no desk until its phase)
-  const agents = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))).filter((a) => a.status !== 'not-hired').map((a) => ({ id: a.key, color: a.color }));
+  // R1: the agents the office draws (a not-hired agent has no desk until its phase); R2: nor one hired before its floor is drawn (R7)
+  const rooms = new Set(JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'config', 'office.json'), 'utf8')).departments.map((d) => d.key));
+  const agents = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))).filter((a) => a.status !== 'not-hired' && rooms.has(String(a.department).toLowerCase())).map((a) => ({ id: a.key, color: a.color }));
   const sets = [agents, [...agents].reverse(), [...agents, ...agents.map((a) => ({ id: a.id + '-2', color: a.color }))].slice(0, 10)];
   for (const list of sets) {
     const shirts = shirtColours(list), vals = list.map((a) => shirts[a.id]);

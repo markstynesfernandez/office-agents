@@ -62,8 +62,11 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   const warnings = [];
   const day = dublinDay(now), dayStart = dublinDayStart(now);
   const L = cfg.lines['room1-digital'];
-  const agentsCfg = Object.values(cfg.agents).filter((a) => a.status !== 'not-hired');   // R1: not hired yet: no desk until its phase
-  const nameOf = Object.fromEntries(agentsCfg.map((a) => [a.key, a.name]));
+  // R1: not hired yet: no desk until its phase. R2: an agent hired before its floor is drawn (R7: Engineering, Security & Data, the
+  // penthouse) has no desk on B0's page either: the company view lists it and the Engineering panel shows its work
+  const hired = Object.values(cfg.agents).filter((a) => a.status !== 'not-hired'), rooms = new Set((cfg.office.departments || []).map((d) => d.key));
+  const agentsCfg = hired.filter((a) => rooms.has(String(a.department).toLowerCase()));
+  const nameOf = Object.fromEntries(hired.map((a) => [a.key, a.name]));
   const stepDef = (job, step) => { const l = cfg.lines[job.line]; return l && l.steps[step]; };
   const runs = store.runsOf({ limit: 500 });
   const running = runs.filter((r) => r.status === 'running');
@@ -109,7 +112,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
       else if (ap && ap.status === 'rejected_by_owner') { out.lane = 'rejected'; out.stage = 'rejected'; out.status = 'rejected'; out.rejectedBy = 'owner'; out.agentId = null; out.statusReason = 'rejected by the owner: ' + (ap.reason || ''); }
       else { out.stage = 'approval-queue'; out.status = 'waiting'; out.agentId = null; }
     }
-    else if (['approved', 'published', 'retired', 'research-done'].includes(j.state)) { out.stage = j.state === 'research-done' ? 'brief' : 'done'; out.status = 'done'; }
+    else if (['approved', 'published', 'retired', 'research-done', 'done'].includes(j.state)) { out.stage = j.state === 'research-done' ? 'brief' : 'done'; out.status = 'done'; }
     else if (j.state === 'blocked' || j.state === 'stopped' || j.state === 'incomplete') { out.lane = 'blocked'; out.stage = 'blocked'; out.status = j.state === 'incomplete' ? 'incomplete' : 'blocked'; out.flag = j.state === 'stopped' ? 'stopped' : j.state === 'incomplete' ? 'incomplete' : null; out.qaPassedGateFailed = /^QA passed, package gate failed/.test(j.reason || ''); }
     else if (j.state === 'rejected' || j.state === 'rejected_by_owner') { out.lane = 'rejected'; out.stage = 'rejected'; out.status = 'rejected'; out.rejectedBy = j.state === 'rejected' ? 'rejects-desk' : 'owner'; }
     else if (j.state === 'parked') { out.lane = 'parked'; out.stage = 'parked'; out.status = 'parked'; }

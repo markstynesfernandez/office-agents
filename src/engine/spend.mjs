@@ -29,7 +29,10 @@ export const SPEND_ACTIONS = {
   'listing-only': { label: 'Listing-only run', params: ['jobId', 'maxUsd'] },
   'agent-on-duty': { label: 'Put the agent back on duty (its waiting jobs start)', params: ['agentKey'] },
   // L2.1 (owner, 19/10/2026): arming (enabling) a routine; disarming spends nothing and needs no token
-  'routine-arm': { label: 'Arm the routine', params: ['id'] }
+  'routine-arm': { label: 'Arm the routine', params: ['id'] },
+  // R2: the engineering line: the CTO's triage of a product's approved issues, and an engineering job on one assigned issue
+  'eng-triage': { label: 'CTO triage of the approved issues', params: ['productId'] },
+  'eng-start': { label: 'Start the engineering line on the issue', params: ['productId', 'issueId'] }
 };
 const bind = (action, body) => JSON.stringify([action, ...SPEND_ACTIONS[action].params.map((k) => (body[k] == null ? null : String(body[k])))]);
 
@@ -48,7 +51,7 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
   // the worst case still open on a job: its cap less what it has spent
   const remaining = (j) => Math.max(0, jobCapOf(j.line) - ledger.spent.job(j.id));
   // jobs that may still spend today without another click: running, and queued to start by themselves (next, or after a restart)
-  const committedJobs = (exceptId) => store.listJobs({ states: ['running', 'queued'] }).filter((j) => j.id !== exceptId && !j.legacy && (j.state === 'running' || O().isActive(j.id) || (j.data && j.data.autoStart && !j.data.waitingFor)));
+  const committedJobs = (exceptId) => store.listJobs({ states: ['running', 'queued'] }).filter((j) => j.id !== exceptId && !j.legacy && (j.state === 'running' || O().isActive(j.id) || (engine.engineering && engine.engineering.isActive(j.id)) || (j.data && j.data.autoStart && !j.data.waitingFor)));
 
   function lineAgents(lineId) {
     const L = cfg.lines[lineId]; if (!L) return [];
@@ -73,6 +76,9 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       return { line: waiting[0].line, jobId: null, headroomUsd: r6(waiting.reduce((s, j) => s + remaining(j), 0)), what: waiting.length + ' waiting job(s) start: ' + waiting.map((j) => j.id).join(', '), jobs: waiting.map((j) => j.id) };
     }
     if (action === 'routine-arm') return routineTarget(p('id'));
+    // R2: the engineering line (engine.engineering): the job cap of the line's product and department; why it cannot start, if it cannot
+    if (action === 'eng-triage') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); return { line: 'eng-triage', jobId: null, headroomUsd: jobCapOf('eng-triage'), what: 'the CTO orders the approved issues of ' + p('productId') + ' (one CTO run, writes backlog/dev-queue.json)' }; }
+    if (action === 'eng-start') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); const sp = E.startProblems(p('productId'), p('issueId')); return { line: 'engineering', jobId: null, headroomUsd: jobCapOf('engineering'), what: 'job ' + (sp.jobId || '?') + ' on issue ' + p('issueId') + ': TECH-LEAD spec, DEVELOPER, checks in Docker, TESTER, REVIEWER, SECURITY, then a merge request for you (the engine never pushes)', refuse: sp.problems }; }
     const j = store.getJob(p('jobId')); if (!j) throw err('no such job: ' + p('jobId'), 'BAD_REQUEST');
     const rest = remaining(j), refuse = rest <= 0 ? ['job cap reached: ' + usd(ledger.spent.job(j.id)) + ' of ' + usd(jobCapOf(j.line)) + ' spent on this job'] : [];
     if (action === 'qa-only' || action === 'listing-only') { const m = Number(body.maxUsd); return { line: j.line, jobId: j.id, headroomUsd: r6(Math.min(rest, m > 0 ? m : rest)), what: SPEND_ACTIONS[action].label + ' on ' + j.id + ' within your cap ' + usd(m), refuse }; }
@@ -129,7 +135,7 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     if (consoleLimit && consoleWorst > consoleLimit + 1e-9) refusals.push('the Anthropic Console\'s monthly limit could be passed (estimate from the station ledger): this month ' + usd(consoleUsed) + ' + open jobs up to ' + usd(committed) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(consoleWorst) + ', over ' + usd(consoleLimit));
     if (product && product.monthWorstUsd > product.budgetUsd + 1e-9) refusals.push(product.name + '\'s monthly budget would be exceeded: this month ' + usd(product.monthSpentUsd) + ' + its open jobs up to ' + usd(product.openJobsUsd) + ' + this up to ' + usd(headroomUsd) + ' = ' + usd(product.monthWorstUsd) + ', over ' + usd(product.budgetUsd));
     if (product && product.dayCapUsd != null && product.dayWorstUsd > product.dayCapUsd + 1e-9) refusals.push(product.name + '\'s daily cap would be exceeded: ' + usd(product.dayWorstUsd) + ' worst case, over ' + usd(product.dayCapUsd));
-    const openJobs = others.map((j) => ({ id: j.id, line: j.line, lineLabel: (cfg.lines[j.line] || {}).label || j.line, state: j.state === 'running' || O().isActive(j.id) ? 'running' : 'next', step: j.step || null, spentUsd: r6(ledger.spent.job(j.id)), capUsd: jobCapOf(j.line), worstUsd: r6(remaining(j)) }));
+    const openJobs = others.map((j) => ({ id: j.id, line: j.line, lineLabel: (cfg.lines[j.line] || {}).label || j.line, state: j.state === 'running' || O().isActive(j.id) || (engine.engineering && engine.engineering.isActive(j.id)) ? 'running' : 'next', step: j.step || null, spentUsd: r6(ledger.spent.job(j.id)), capUsd: jobCapOf(j.line), worstUsd: r6(remaining(j)) }));
     return { day, g, month, product, consoleLimit, consoleUsed, consoleWorst, openJobs, committed, lineCommitted, spentToday, lineSpent, lineCap, worst, lineWorst, refusals };
   }
 

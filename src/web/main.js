@@ -285,7 +285,7 @@ function connectLive() {
   live.onopen = () => { liveOk = true; };
   live.onerror = () => { liveOk = false; };
   const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; try { presenter.onEvent(JSON.parse(e.data)); } catch (_) { /* not JSON */ } if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
-  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused', 'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed']) live.addEventListener(t, onEv);
+  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused', 'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed', 'issue.written', 'issue.decided', 'eng.checks']) live.addEventListener(t, onEv);
 }
 // the e-stop (ENGINE-PLAN.md §5.5): one click and a confirmation stops everything; resuming is a second, explicit action
 // with the typed word, against the e-stop state the page loaded (a stale page is refused)

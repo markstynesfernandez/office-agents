@@ -57,7 +57,8 @@ test('1 (R1): etsy-shop is B0\'s business, derived from the archived Etsy depart
   assert.deepEqual(REAL.businesses.map((b) => b.id), ['etsy-shop'], 'one archived department with a product');
   const b = REAL.businesses[0];
   assert.deepEqual([b.name, b.floor, b.monthlyBudgetUsd, b.dailyCapUsd, b.dataDir, b.ownerApprovalRequired], ['TheStationShopFinds', 1, 200, null, '.', true]);
-  assert.deepEqual(b.lines.sort(), Object.keys(REAL.lines).sort(), 'every line today is etsy-shop\'s');
+  assert.deepEqual(b.lines.sort(), ['genre-scout', 'research', 'room1-digital'], 'the Etsy lines are etsy-shop\'s');
+  assert.deepEqual(REAL.office.shared.lines.sort(), ['eng-triage', 'engineering'], 'R2: the engineering lines are B0\'s shared floor\'s');
   assert.deepEqual(b.departments, ['research', 'design', 'office']);
   assert.deepEqual(b.allowedOutbound, ['etsy:read-own-shop']);
   const B = building(REAL);
