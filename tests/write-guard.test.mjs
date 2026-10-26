@@ -98,8 +98,17 @@ test('no messaging: no mail, chat or SMS library in package.json, no messaging i
 
 // owner decision 17/10/2026: Real-ESRGAN may run as a local child process, from ONE module only, pinned, without a shell, killable
 const UPSCALER_MODULE = 'src/engine/lib/esrgan.mjs';
-test('no shelling out anywhere in src/ except the pinned upscaler module, which runs execFile without a shell, hidden and killable', () => {
-  for (const f of code.filter((x) => rel(x).startsWith('src/') && rel(x) !== UPSCALER_MODULE)) assert.ok(!/child_process|execSync|spawnSync|\bspawn\s*\(|\bexecFile\s*\(/.test(read(f)), rel(f) + ' shells out');
+// R2 (owner, R0.3: checks in Docker; the engine's own git mirror): git and docker run from ONE more module, lib/proc.mjs, the same way
+const PROC_MODULE = 'src/engine/lib/proc.mjs';
+test('the git and docker runner (R2) runs execFile without a shell, hidden, killable, with a minimal environment, from one call site', () => {
+  const pr = read(path.join(ROOT, PROC_MODULE));
+  assert.match(pr, /import \{ execFile \} from 'node:child_process'/);
+  assert.ok(!/execSync|spawnSync|\bspawn\s*\(|(?<!\.)\bexec\s*\(|shell\s*:\s*true/.test(pr), 'only execFile, never a shell');
+  assert.equal((pr.match(/execFile\(/g) || []).length, 1, 'one call site');
+  for (const must of ['shell: false', 'windowsHide: true', 'signal: signal || undefined', "export const PROGRAMS = ['git', 'docker']", 'env: minimalEnv(program']) assert.ok(pr.includes(must), PROC_MODULE + ' lacks ' + must);
+});
+test('no shelling out anywhere in src/ except the pinned upscaler module (and the R2 git/docker runner), which runs execFile without a shell, hidden and killable', () => {
+  for (const f of code.filter((x) => rel(x).startsWith('src/') && rel(x) !== UPSCALER_MODULE && rel(x) !== PROC_MODULE)) assert.ok(!/child_process|execSync|spawnSync|\bspawn\s*\(|\bexecFile\s*\(/.test(read(f)), rel(f) + ' shells out');
   const u = read(path.join(ROOT, UPSCALER_MODULE));
   assert.match(u, /import \{ execFile \} from 'node:child_process'/);
   assert.ok(!/execSync|spawnSync|\bspawn\s*\(|(?<!\.)\bexec\s*\(|shell\s*:\s*true/.test(u), 'only execFile, never a shell');

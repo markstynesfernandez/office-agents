@@ -2898,3 +2898,60 @@ The owner's R1 follow-up (24/10/2026). Dev only, mock only, $0; the live worktre
 
 - npm test **554 passed, 0 failed** (552 after R1; new: `r1-routines` 2/2; changed: `r1-company` for the HQ proposal, the post-B0
   fixture's routines).
+
+## R2a: engineering workshop (26/10/2026)
+
+The workshop the engineering line builds on: the Station's own copy of a product's code, a worktree per job, and the Docker check runner.
+No agent, no model, no page or owner command. Dev only, mock only, $0; the live worktree, every `.env` and the network untouched.
+
+### What it is
+
+- `src/engine/lib/proc.mjs`: the one runner for git and docker (execFile, no shell, minimal environment, a timeout and the e-stop kill
+  it, output capped at 200 KB). `tests/write-guard.test.mjs` allows it as the second module that starts a process (the pinned
+  upscaler is the first), with its own checks: one call site, `shell: false`, hidden, killable, git and docker only.
+- `src/engine/lib/repo.mjs`: the mirror `data/products/<id>/repo.git`, fetched from the owner's local clone (`REPLYDESK_REPO`), **only**
+  the clone's `origin/main`, as `main` (no `outreach/*` branch, no tag; the clone is only read); a worktree per job on `dev/<job-id>`
+  and no other ref; the staged diff; the commit with hooks off and the Station as author; git subcommands on an allowlist without
+  push, remote or config. The engine never pushes.
+- `src/engine/lib/checks.mjs`: a product check (its fixed argv from `config/products/<id>.json runChecks`) in Docker with
+  `--network none`, the worktree mounted read-only and no other host path, a read-only root, no capabilities, no Station environment;
+  no Docker or no image refuses (no fallback on the host); a timeout or the e-stop kills the container by name. The image
+  `station-check-<product>:<sha>` is built from the product's requirements at `main`, on the owner's command only.
+- `config/products/replydesk.json`: `repoSource.ref` (`refs/remotes/origin/main`) and `checkImage` (`python:3.12-slim`,
+  `requirements.txt`).
+
+### Owner instruction (26/10/2026): a hard timeout on every git process
+
+- Every git process the engine starts goes through `lib/repo.mjs` `git()` and has a hard timeout; on it the process is killed and
+  `GitTimeout` ("git timeout: git <subcommand> did not finish in N s and was killed") is thrown. The engineering line (R2b) blocks the
+  job with it and logs it.
+- **stdin is now closed** for every git and docker process as it starts. Before, `lib/proc.mjs` left it open, so a git that read stdin
+  waited until its timeout (measured: `git hash-object --stdin` sat until the 3 s test timeout; now it returns at once).
+- **The 25/10/2026 hang**: in the first run of the R2 tests, the fetch into the mirror (the only git call with a 300 s timeout) hung
+  and was killed after 300 s. It did not happen again in 145 tries (25 alone, 120 in three loops at once, with the test suite running)
+  or in the later test runs. Its log was in a temp folder the test removed, so **its cause is not proven**; the open stdin is one way a
+  git process can sit until its timeout, and it is closed now.
+
+### Proposals (not decided)
+
+- Timeouts: **120 s** for a git call and **300 s** for the fetch from the owner's clone (`GIT_TIMEOUT_MS`, `GIT_FETCH_TIMEOUT_MS`), and
+  300 s for a check (`runtime.checkTimeoutMs` default). A local fetch should take well under a minute; 60 s for it is an option.
+- Container limits: 256 processes, 2 GB memory, 2 CPUs, 512 MB `/tmp`; output kept up to 200 KB.
+
+### Not done
+
+- **The check image is not built and was not pulled.** Docker is running (Desktop 4.94.0, engine 29.8.2); no `station-check-*` or
+  `python` image is on the machine. The build reads `requirements.txt` at `main` and runs `pip install` (network) once, so it waits for
+  the owner's approval. There is no `npm run check-image` script yet (the build function is `lib/checks.mjs` `buildImage`).
+- No mirror exists on the dev data root (`data/products/replydesk/` does not exist); `REPLYDESK_REPO` is not set in this checkout.
+
+### Measured
+
+- `tests/r2a-workshop.test.mjs` 6/6, on a real git with a fixture clone and a fake Docker: the runner and stdin; a git that really hangs
+  (a pipe that never answers) killed at its timeout, `GitTimeout`; every git call through `git()` with the timeout; the mirror takes
+  `origin/main` only and never writes to the clone; the worktree, diff, commit and branch; the check runner's Docker arguments and
+  refusals.
+- On `53e7eb9` with only the R2a files added (a separate checkout): the suite passed except tests that need the git-ignored fixtures
+  (`fixtures/SNAPSHOT.json`, `fixtures/station-root/`, `fixtures/synthetic/`); with those copied in, 561 tests, 557 and then 559 passed:
+  the failures were timing tests in `tests/live-ui.test.mjs` and a restart-recovery test under load, a different set each run, none of
+  them loading an R2a module; `live-ui` alone passed 9/9.
