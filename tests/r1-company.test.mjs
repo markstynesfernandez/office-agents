@@ -156,11 +156,12 @@ test('4: the guard: a product\'s monthly budget and day cap, its department\'s j
   assert.equal(ledger.spent.productMonth('replydesk', dublinDay().slice(0, 7)), 0.18);
 });
 
-test('4: budgets and caps come from config: ReplyDesk USD 60 a month and USD 3.00 per engineering job (owner, R0.3); the rest marked as proposals; the station\'s day cap stays the outer limit', (t) => {
+test('4: budgets and caps come from config: ReplyDesk USD 80 a month (owner, R2 deploy prep, 28/10/2026; USD 60 at R0.3) and USD 3.00 per engineering job (owner, R0.3); the rest marked as proposals; the station\'s day cap stays the outer limit', (t) => {
   const p = (id) => C.product(id);
-  assert.deepEqual([p('replydesk').monthlyBudgetUsd, p('replydesk').jobCapUsdByDepartment.engineering, p('emty-inbox').monthlyBudgetUsd, p('station').monthlyBudgetUsd, p('etsy-shop').monthlyBudgetUsd], [60, 3, 40, 20, 200]);
+  assert.deepEqual([p('replydesk').monthlyBudgetUsd, p('replydesk').jobCapUsdByDepartment.engineering, p('emty-inbox').monthlyBudgetUsd, p('station').monthlyBudgetUsd, p('etsy-shop').monthlyBudgetUsd], [80, 3, 40, 20, 200]);
   assert.ok(!p('replydesk').proposals.includes('monthlyBudgetUsd') && !p('replydesk').proposals.includes('jobCapUsdByDepartment.engineering'), 'decided by the owner');
-  assert.ok(p('replydesk').decided.monthlyBudgetUsd.startsWith('owner, R0.3'));
+  assert.ok(p('replydesk').decided.monthlyBudgetUsd.startsWith('owner, R2 deploy prep (28/10/2026): USD 80'));
+  assert.ok(p('replydesk').decided['jobCapUsdByDepartment.engineering'].startsWith('owner, R0.3'));
   assert.ok(p('emty-inbox').proposals.includes('monthlyBudgetUsd') && p('station').proposals.includes('monthlyBudgetUsd'), 'proposals');
   for (const d of ['security-data', 'product-design', 'sales-marketing', 'customer-success']) { assert.equal(p('replydesk').jobCapUsdByDepartment[d], 0.5); assert.ok(p('replydesk').proposals.includes('jobCapUsdByDepartment.' + d)); }
   // R1.1: an HQ exec run (the CEO's memo, the COO's report) USD 0.50 per job, a proposal, in place of the station's USD 7.00
@@ -252,7 +253,7 @@ test('7: the snapshot: the seven floors with their agents, the products (Finance
   assert.deepEqual(s.company.floors.find((f) => f.id === 'etsy').lines.map((l) => [l.id, l.archived]).sort(), [['genre-scout', true], ['research', true], ['room1-digital', true]]);
   assert.equal(s.company.floors.reduce((n, f) => n + f.agents.filter((a) => a.status === 'not-hired').length, 0), 13);
   assert.equal(s.company.floors.reduce((n, f) => n + f.agents.filter((a) => a.status === 'active').length, 0), 6, 'R2: the engineering six');
-  assert.deepEqual(s.spend.byProduct.map((p) => [p.id, p.budgetUsd, p.budgetProposal, p.mrr]).sort(), [['emty-inbox', 40, true, 'not connected'], ['etsy-shop', 200, false, 'not connected'], ['replydesk', 60, false, 'not connected'], ['station', 20, true, 'not connected']]);
+  assert.deepEqual(s.spend.byProduct.map((p) => [p.id, p.budgetUsd, p.budgetProposal, p.mrr]).sort(), [['emty-inbox', 40, true, 'not connected'], ['etsy-shop', 200, false, 'not connected'], ['replydesk', 80, false, 'not connected'], ['station', 20, true, 'not connected']]);
   const oo = s.company.ownersOffice;
   assert.deepEqual([oo.pending, oo.requests[0].id, oo.requests[0].action, oo.requests[0].status, oo.requests[0].productId], [1, req.id, 'dependency.add', 'pending', 'replydesk']);
   assert.deepEqual(oo.policy.counts, { auto: 25, owner: 15, forbidden: 17 }); assert.ok(oo.policy.log.length > 0); assert.match(oo.policy.source, /the page cannot/);

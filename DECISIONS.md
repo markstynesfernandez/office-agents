@@ -3176,3 +3176,25 @@ commit of its own): the engine has no git subcommand that deletes a branch.
 
 - `npm run test:docker`: 10 of 10, 37 s, the temp check clean.
 - `npm test` once: 583 of 583, 0 failed, 0 skipped, 119 s, exit 0, the temp check clean; the Docker file not run.
+
+## R2 deploy prep (28/10/2026)
+
+Dev only, mock only, $0, no model call; the live worktree and every `.env` untouched. Owner decisions, 28/10/2026:
+
+1. **ReplyDesk's monthly budget is USD 80**, replacing USD 60 (owner, R0.3, 23/10/2026): `config/products/replydesk.json`
+   `monthlyBudgetUsd` 80, its `decided` entry dated. The engineering job cap stays **USD 3.00** (owner, R0.3); the station's day cap stays
+   the outer limit. `tests/r1-company.test.mjs` 4 and 7 pin the new figure (they pinned the old one).
+2. **The `dev/r2a-smoke` branch stays in the dev mirror** (`data/products/replydesk/repo.git`, at `d03a9ab` = main, no commit of its own),
+   recorded rather than removed. The engine's git allowlist has no subcommand that deletes a branch (`lib/repo.mjs` GIT_ALLOWED), and
+   the owner chose not to widen it before a deploy. Checked through the engine's own `git()`: the mirror has no worktree but itself
+   (the smoke worktree was removed on 26/10/2026) and `data/products/replydesk/smoke/` is gone. Live has its own mirror; the deploy is
+   not affected.
+3. **The R2 deploy plan is held** until the engineering line can be driven. R2b built the line (issues, the CTO's triage, a job per
+   issue to a `git.merge` request) but nothing starts it: no page control, server route or command files an issue, triages it, starts
+   an engineering job or shows its diff and checks, and `writeIssue` refuses an owner actor without the page's registered session, so
+   a script cannot stand in. Deployed now, the six agents would be hired and idle. R2 deploys together with that wiring, in a later
+   phase on the owner's go. Found while preparing the plan: no R2 change needs a data migration (no store or schema change since live's
+   `964bcb8`); the first R2 start appends 2 rows to `data/policy/autonomy-log.jsonl` (`repo.fetch` and `repo.worktree`, null -> auto),
+   so live's 55 lines become 57.
+
+Measured on main with these changes: `npm test` 585 of 585 (100 s, the temp check clean); `npm run test:docker` 10 of 10 (37 s).
