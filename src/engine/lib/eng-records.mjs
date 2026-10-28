@@ -39,6 +39,12 @@ export function composeIssue({ title, problem, acceptance = '', notes = '', mode
   const text = ['---', 'id: ' + id, 'product: ' + productId, 'title: ' + t, 'model: ' + model, 'by: owner', '---', '', '# ' + t, '', '## Problem', '', p, '', '## Acceptance hints', '', a || '(none: TECH-LEAD writes the acceptance criteria)', '', '## Notes', '', n || '(none)', ''].join('\n');
   return { ok: true, id, text };
 }
+// R2c: the page's issue form (what happens, what should happen, where, acceptance criteria) -> composeIssue's fields; the problem keeps
+// the owner's three parts under their own labels
+export function issueFromForm({ title, happens, should, where, acceptance = '', model = 'default' } = {}) {
+  const part = (label, v) => { const t = String(v == null ? '' : v).replace(/\r\n/g, '\n').trim(); return t ? label + ':\n' + t : ''; };
+  return { title, problem: [part('What happens', happens), part('What should happen', should), part('Where', where)].filter(Boolean).join('\n\n'), acceptance, model };
+}
 export function issueField(text, k) { const m = new RegExp('^' + k + ':\\s*(.*)$', 'm').exec(String(text || '').split(/\n---\n/)[0] || ''); return m ? m[1].trim() : null; }
 export function readIssue(dataRoot, productId, id) {
   if (!ISSUE_ID_RE.test(String(id || ''))) return null;

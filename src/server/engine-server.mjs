@@ -20,6 +20,7 @@ import { buildEngineSnapshot } from './engine-model.mjs';
 import { loadLegacy } from './legacy-view.mjs';
 import { RESUME_WORD } from '../engine/halt.mjs';
 import { composeOwnerBrief } from '../engine/lib/owner-brief-form.mjs';
+import { issueFromForm } from '../engine/lib/eng-records.mjs';
 
 const MAX_BODY = 16 * 1024;
 
@@ -47,6 +48,8 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
   function writeEvent(res, ev) { try { res.write('id: ' + ev.seq + '\nevent: ' + ev.type + '\ndata: ' + JSON.stringify({ seq: ev.seq, ts: ev.ts, type: ev.type, jobId: ev.jobId, agentKey: ev.agentKey, data: ev.data }) + '\n\n'); } catch (_) { clients.delete(res); } }
   const beat = setInterval(() => { for (const c of clients) { try { c.write(': beat\n\n'); } catch (_) { clients.delete(c); } } }, 15000); beat.unref();
 
+  // R2c: the engineering controls answer the loopback address only (the server binds 127.0.0.1; this holds even behind a forwarder)
+  const loopback = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes((req.socket && req.socket.remoteAddress) || '');
   const sameOrigin = (req) => { const host = req.headers.host || ''; const o = req.headers.origin; return !!o && (o === 'http://' + host) && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host); };
   function readBody(req) { return new Promise((resolve, reject) => { let n = 0; const parts = []; req.on('data', (c) => { n += c.length; if (n > MAX_BODY) { reject(new Error('body too large')); req.destroy(); } else parts.push(c); }); req.on('end', () => { try { resolve(parts.length ? JSON.parse(Buffer.concat(parts).toString('utf8')) : {}); } catch (e) { reject(new Error('body is not JSON')); } }); req.on('error', reject); }); }
 
@@ -93,6 +96,11 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     if (!r.ok) throw Object.assign(new Error('the owner brief was refused at intake (nothing saved): ' + r.reasons.join('; ')), { code: 'INTAKE' });
     return { id: r.id, file: r.id + '.md', saved: r.file, changed: r.changed, warnings: r.warnings };
   }
+  // R2c: the engineering line (engine.engineering): every call carries the owner's page session, and the engine refuses any other actor
+  const E = () => { if (!engine.engineering) throw Object.assign(new Error('this engine has no engineering line'), { code: 'BAD_REQUEST' }); return engine.engineering; };
+  const noPromise = (r) => { if (!r || typeof r !== 'object') return r; const { promise, ...rest } = r; return rest; };
+  // the owner's session is checked first, before the spend gate: a server without it (a script engine) refuses every engineering control
+  const asOwner = (fn) => (body, key) => { if (!engine.requests || !engine.requests.isOwner(owner)) throw Object.assign(new Error('refused: only the owner, on the page, controls the engineering line (this server has no owner session)'), { code: 'LOCKED' }); return fn(body, key); };
   const ACTIONS = {
     // the e-stop: pressing it is never refused for a stale page; resuming needs the typed word and the current state
     'POST /api/engine/halt': (body) => engine.halt.press({ by: 'owner (office button)', reason: str(body.reason) }),
@@ -111,7 +119,8 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/routines/delete': (body) => engine.routines.remove(str(body.id), { expectedVersion: ver(body) }),
     // R1: the Owner's office: the owner decides a request (approve or reject, with the owner's words); nothing is sent anywhere. Pausing a
     // line is the COO's or the owner's; resuming it is the owner's only
-    'POST /api/requests/decide': (body) => engine.requests.decide(str(body.id, 60), { decision: str(body.decision, 20), words: str(body.words, 2000), expectedVersion: ver(body), actor: owner }),
+    // R2c: a git.merge request of an engineering job is decided by the engineering line (the branch and the diff are checked first)
+    'POST /api/requests/decide': (body) => { const id = str(body.id, 60), r = mergeRequestRow(id); if (r) return E().ownerDecide({ jobId: r.job_id, decision: str(body.decision, 20), words: str(body.words, 2000), requestVersion: ver(body) }, { actor: owner }).then(noPromise); return engine.requests.decide(id, { decision: str(body.decision, 20), words: str(body.words, 2000), expectedVersion: ver(body), actor: owner }); },
     'POST /api/lines/pause': (body) => engine.actions.pauseLine(str(body.line, 60), { actor: owner, reason: str(body.reason, 500) }),
     'POST /api/lines/resume': (body) => engine.actions.resumeLine(str(body.line, 60), { actor: owner, words: str(body.words, 2000) }),
     // the approval queue (B0's, the Etsy history): approvals and tracker rows only; nothing is sent anywhere
@@ -138,6 +147,16 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/jobs/stop': (body) => O.stopJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
     'POST /api/jobs/restart': spends('restart', (body) => O.restartJob(str(body.jobId), { expectedVersion: ver(body), by: BY })),
     'POST /api/jobs/archive': (body) => O.archiveJob(str(body.jobId), { expectedVersion: ver(body), by: BY }),
+    // R2c: the Engineering panel (owner only): issues, the CTO's triage, a start, Stop, and the decision on a finished job. Triage, start,
+    // resume and rework can spend, so they pass the spend gate (the confirm token from /api/spend/quote) first
+    'POST /api/eng/issue': asOwner((body) => E().writeIssue({ productId: str(body.productId, 60), ...issueFromForm({ title: str(body.title, 200), happens: str(body.happens, 3000), should: str(body.should, 3000), where: str(body.where, 1000), acceptance: str(body.acceptance, 4000), model: str(body.model, 20) || 'default' }) }, { actor: owner })),
+    'POST /api/eng/issue-decide': asOwner((body) => E().decideIssue({ productId: str(body.productId, 60), issueId: str(body.issueId, 100), decision: str(body.decision, 20), words: str(body.words, 2000) }, { actor: owner })),
+    'POST /api/eng/triage': asOwner(spends('eng-triage', (body) => noPromise(E().startTriage({ productId: str(body.productId, 60), by: BY }, { actor: owner })))),
+    'POST /api/eng/start': asOwner(spends('eng-start', (body) => noPromise(E().startIssue({ productId: str(body.productId, 60), issueId: str(body.issueId, 100), by: BY }, { actor: owner })))),
+    'POST /api/eng/stop': asOwner((body) => E().stop(str(body.jobId, 120), { expectedVersion: ver(body) })),
+    'POST /api/eng/resume': asOwner(spends('restart', (body) => E().resume(str(body.jobId, 120), { expectedVersion: ver(body), by: BY }))),
+    'POST /api/eng/archive': asOwner((body) => E().archive(str(body.jobId, 120), { expectedVersion: ver(body) })),
+    'POST /api/eng/decide': asOwner(async (body) => { const decision = str(body.decision, 20); if (decision === 'rework') engine.spend.gate('eng-rework', body); return noPromise(await E().ownerDecide({ jobId: str(body.jobId, 120), decision, words: str(body.words, 2000), expectedVersion: ver(body) }, { actor: owner })); }),
     // E7a: the own-shop Etsy connection (read scopes only; nothing is written to Etsy and nothing spends)
     'POST /api/etsy/connect/start': () => etsyClient().startConnect(),
     'POST /api/etsy/connect/finish': (body) => etsyClient().finishConnect(str(body.pasted, 4000)),
@@ -145,6 +164,12 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/etsy/disconnect': () => etsyClient().disconnect(),
     ...((ext && ext.actions) || {})
   };
+  // a pending or approved git.merge request of an engineering job, or null (any other request is decided by requests.mjs as before)
+  function mergeRequestRow(id) {
+    if (!engine.engineering || !engine.store.hasProductColumns()) return null;
+    const r = engine.requests.get(id), j = r && r.job_id ? engine.store.getJob(r.job_id) : null;
+    return r && r.action === 'git.merge' && j && j.kind === 'engineering' ? r : null;
+  }
   function etsyClient() {
     if (!etsy || etsy.unavailable) throw Object.assign(new Error('Etsy is not available on this Station: ' + ((etsy && etsy.unavailable) || 'no Etsy client')), { code: 'ETSY_UNAVAILABLE' });
     return etsy;
@@ -164,6 +189,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       if (req.method === 'POST') {
         const act = ACTIONS['POST ' + p];
         if (!act && p !== '/api/spend/quote') return sendJson(res, { error: 'unknown action' }, 404);
+        if (p.startsWith('/api/eng/') && !loopback(req)) return refuse(res, p, 403, 'localhost only', { remote: (req.socket && req.socket.remoteAddress) || null });
         if (!sameOrigin(req)) return refuse(res, p, 403, 'same-origin requests only', { origin: req.headers.origin || null });
         if (req.headers['x-station-action'] !== token) return refuse(res, p, 403, 'missing or stale action token: reload the page', { token: req.headers['x-station-action'] ? 'wrong' : 'missing' });
         if (!/^application\/json\b/.test(req.headers['content-type'] || '')) return refuse(res, p, 415, 'JSON only');
@@ -220,6 +246,15 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       if ((m = /^\/api\/office\/image\/job\/([^/]+)\/(set-v\d+)\/(?:(build|review)\/)?([a-z0-9][a-z0-9._-]*\.(?:png|jpg))$/.exec(p))) { const buf = await thumb(m[1], m[2], m[4], m[3] || 'files'); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=60' }) : send(res, 404, 'no such image', 'text/plain'); }
       if ((m = /^\/api\/office\/image\/legacy\/(\d{4}-\d{2}-\d{2}--[a-z0-9-]+)\/((?:work|package|rejected)\/[a-z0-9][a-z0-9._/-]*\.png)$/.exec(p)) && !m[2].includes('..')) { const buf = await legacyThumb(m[1], m[2]); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=300' }) : send(res, 404, 'no such image', 'text/plain'); }
       if (p === '/api/etsy') return sendJson(res, etsyStatus());
+      // R2c: the Engineering panel's reads: localhost, same origin, and the owner's page session (the action token), like a write
+      if (p.startsWith('/api/eng/')) {
+        if (!loopback(req)) return refuse(res, p, 403, 'localhost only', { remote: (req.socket && req.socket.remoteAddress) || null });
+        if (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') return refuse(res, p, 403, 'same-origin requests only');
+        if (req.headers['x-station-action'] !== token || !engine.requests || !engine.requests.isOwner(owner)) return refuse(res, p, 403, "only the owner's page session: reload the page", { token: req.headers['x-station-action'] ? 'wrong' : 'missing' });
+        if (p === '/api/eng/view') return sendJson(res, E().view());
+        if ((m = /^\/api\/eng\/job\/([a-z0-9][a-z0-9-]{2,120})$/.exec(p))) { const d = await E().jobDetail(m[1]); return d ? sendJson(res, d) : sendJson(res, { error: 'no such engineering job' }, 404); }
+        return sendJson(res, { error: 'unknown route' }, 404);
+      }
       if (p.startsWith('/api/')) return sendJson(res, { error: 'unknown route' }, 404);
       return serveStatic(res, p);
     } catch (e) {

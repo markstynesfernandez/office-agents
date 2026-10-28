@@ -19,6 +19,7 @@ import { createEtsyPanel } from './ui/etsy.js';
 import { QUALITY_KEY } from './scene/quality.js';
 import { floorsOf, pickFloor, floorSnapshot } from './ui/floors.js';
 import { createBuildingView } from './ui/building.js';
+import { createEngPanel } from './ui/engpanel.js';
 import { createFloorMenu } from './ui/floormenu.js';
 
 const q = new URLSearchParams(location.search);
@@ -42,8 +43,10 @@ const ledger = createLedgerView({ root: $('#ledger') });
 // and spend); the whole-building view lists every floor's totals. ?floor=N for this page only, else the remembered floor
 // R1: the penthouse's Owner's office in the building view: the owner decides a request (approve or reject, with their words) and resumes a
 // paused line; the server checks the page session again (only the owner decides)
-const building = createBuildingView({ root: $('#building'), onFloor: (n) => setFloor(n),
+const building = createBuildingView({ root: $('#building'), onFloor: (n) => setFloor(n), onEng: (jobId) => openEng(jobId),
   onDecide: async (r, decision) => {
+    // R2c: a merge request's rework is the Engineering panel's (the owner's notes, then the spend confirmation)
+    if (decision === 'rework') { closeOverlays(); engPanel.rework(r.jobId); syncPause(); return; }
     const ok = decision === 'approve';
     const v = await ctl.dialog({ title: (ok ? 'Approve' : 'Reject') + ' this request', intro: '<b>' + esc(r.summary) + '</b><br><span class="mono">' + esc(r.action) + ' · ' + esc(r.productId) + ' · ' + esc(r.departmentId) + '</span><br><br>' + (ok ? 'Records your approval of this exact payload (sha256 ' + esc(String(r.payloadSha256).slice(0, 12)) + '…); if the payload changes, the approval no longer matches. Nothing is sent from here.' : 'Records your rejection; nothing runs.'), fields: [{ name: 'words', label: 'Your words (logged with the decision)', type: 'textarea', required: true, rows: 3 }], confirm: ok ? 'Approve' : 'Reject', danger: !ok });
     if (v) await ctl.act('/api/requests/decide', { id: r.id, decision, words: v.words.trim(), expectedVersion: r.version }, { ok: (ok ? 'Approved: ' : 'Rejected: ') + r.summary });
@@ -53,7 +56,9 @@ const building = createBuildingView({ root: $('#building'), onFloor: (n) => setF
     if (v) await ctl.act('/api/lines/resume', { line, words: v.words.trim() }, { ok: 'Resumed: ' + line });
   } });
 // the Floors button (F): every floor and its departments; a department goes to its floor and flies the camera there
-const floorMenu = createFloorMenu({ button: $('#floor-btn'), root: $('#floor-menu'), onFloor: (n) => setFloor(n), onDept: (key) => focusDept(key) });
+const floorMenu = createFloorMenu({ button: $('#floor-btn'), root: $('#floor-menu'), onFloor: (n) => setFloor(n), onDept: (key) => focusDept(key), onEng: () => openEng() });
+// R2c: the Engineering panel (owner only): from the building view (G), the Floors menu (F) and a merge request in the Owner's office
+const engPanel = createEngPanel({ root: $('#eng'), ctl });
 let floorChoice = q.get('floor') != null ? q.get('floor') : store.get('office-floor'), curFloor = null, view = null;
 // E7a: the own-shop Etsy connection (top-bar button; the API Terms' notice is in the footer)
 const etsyPanel = createEtsyPanel({ ctl, button: $('#etsy-btn') });
@@ -82,8 +87,9 @@ function openAgent(id, zoom) {
 function openJob(id) { office.setSelected(null); labelsDirty = true; sidepanel.showJob(id); }
 function focusDept(key, zoom = 1.7) { const a = office.anchors.depts[key]; if (a) office.focus(a, zoom); taskpanel.setDept(key); }
 // the 3D scene is paused (no renders, no animation) while an overlay covers the stage
-function syncPause() { office.setPaused(board.isOpen() || calendar.isOpen() || ledger.isOpen() || building.isOpen()); }
-function closeOverlays() { floorMenu.hide(); board.hide(); calendar.hide(); ledger.hide(); building.hide(); syncPause(); }
+function syncPause() { office.setPaused(board.isOpen() || calendar.isOpen() || ledger.isOpen() || building.isOpen() || engPanel.isOpen()); }
+function closeOverlays() { floorMenu.hide(); board.hide(); calendar.hide(); ledger.hide(); building.hide(); engPanel.hide(); syncPause(); }
+function openEng(jobId = null) { closeOverlays(); engPanel.open(jobId); syncPause(); }
 function openLedger() { closeOverlays(); ledger.render(snap); ledger.show(); syncPause(); }
 function openBoard() { closeOverlays(); board.render(view || snap); board.show(); syncPause(); }
 function openCalendar() { closeOverlays(); calendar.render(view || snap); calendar.show(); syncPause(); }
@@ -98,7 +104,7 @@ function applyView() {
   curFloor = pickFloor(snap, floorChoice);
   view = curFloor == null ? snap : floorSnapshot(snap, curFloor);
   office.setData(view); labels.build(view); taskpanel.setSnapshot(view); renderTopbar(snap); renderFloors(snap);
-  if (board.isOpen()) board.render(view); if (calendar.isOpen()) calendar.render(view); if (building.isOpen()) building.render(snap);
+  if (board.isOpen()) board.render(view); if (calendar.isOpen()) calendar.render(view); if (building.isOpen()) building.render(snap); if (engPanel.isOpen()) engPanel.refresh();
   labelsDirty = true;
 }
 // the floor switcher (top bar): Building, then each floor from 0 up; the stage caption names the floor shown
@@ -319,6 +325,6 @@ $('#estop').addEventListener('click', async () => {
 
 // test hooks for the screenshot script (read-only helpers)
 window.__office = {
-  ready: () => ready, reload: () => load(true), ctl, taskpanel, sidepanel, board, presenter, setPresenter, presenterOn: () => presenterOn, closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap, view: () => view, setFloor, floor: () => curFloor, openBuilding,
+  ready: () => ready, reload: () => load(true), ctl, taskpanel, sidepanel, board, presenter, setPresenter, presenterOn: () => presenterOn, closePanel: () => { if (sidepanel.isOpen()) sidepanel.close(); }, office, openBoard, openCalendar, openLedger, closeOverlays, setTheme, openAgent, showJob: openJob, focusDept, calendar, snapshot: () => snap, view: () => view, setFloor, floor: () => curFloor, openBuilding, openEng, engPanel,
   setAnimate: (v) => office.setAnimate(v), bench: (ms, opts) => office.bench(ms, opts), stats: () => office.getStats(), togglePerf, settled: () => { const v = office.view, b = office.bakedState(); return (!b.want || b.loaded || !!b.failed) && v.target.distanceTo(v.wantTarget) < 0.002 && Math.abs(v.zoom - v.wantZoom) < 0.0005; }, baked: () => office.bakedState()
 };

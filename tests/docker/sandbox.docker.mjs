@@ -136,9 +136,9 @@ test('4: a hanging test in a job: the hard timeout kills it, the container is go
   const owner = { kind: 'owner', session: tok }, E = engine.engineering;
   state.issueId = E.writeIssue({ productId: 'replydesk', title: 'A test that hangs', problem: 'tests/test_hang.py sleeps for an hour; the checks must not wait for it.' }, { actor: owner }).issueId;
   await E.decideIssue({ productId: 'replydesk', issueId: state.issueId, decision: 'approve', words: 'Prove the timeout.' }, { actor: owner });
-  const tr = E.startTriage({ productId: 'replydesk' }); await tr.promise;
+  const tr = E.startTriage({ productId: 'replydesk' }, { actor: owner }); await tr.promise;
   assert.equal(engine.store.getJob(tr.jobId).state, 'done', engine.store.getJob(tr.jobId).reason);
-  const t0 = Date.now(), s = E.startIssue({ productId: 'replydesk', issueId: state.issueId });
+  const t0 = Date.now(), s = E.startIssue({ productId: 'replydesk', issueId: state.issueId }, { actor: owner });
   await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.ok(Date.now() - t0 < 90000, 'the job ended near the timeout, it did not wait for the test');

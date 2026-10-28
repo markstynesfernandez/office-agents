@@ -112,7 +112,7 @@ function engOn(t, { opts = {}, docker = {}, hooks = {}, env = null, configDir, g
     const w = E.writeIssue({ productId: 'replydesk', title: 'add() should add numbers given as text', problem: 'add("2", "3") returns "23" instead of 5; the form posts numbers as text.' }, { actor: owner });
     state.issueId = w.issueId;
     await E.decideIssue({ productId: 'replydesk', issueId: w.issueId, decision: 'approve', words: 'Go ahead.' }, { actor: owner });
-    if (triage) { const tr = E.startTriage({ productId: 'replydesk' }); await tr.promise; assert.equal(engine.store.getJob(tr.jobId).state, 'done', 'triage done: ' + engine.store.getJob(tr.jobId).reason); }
+    if (triage) { const tr = E.startTriage({ productId: 'replydesk' }, { actor: owner }); await tr.promise; assert.equal(engine.store.getJob(tr.jobId).state, 'done', 'triage done: ' + engine.store.getJob(tr.jobId).reason); }
     return w.issueId;
   }
   return { engine, r, E, owner, clone, d, seen, state, approvedIssue, dataRoot: r.dataRoot };
@@ -149,8 +149,8 @@ test('1: issues are the owner\'s: written and decided only with the owner\'s ses
 });
 
 test('2: the CTO\'s triage: a queue naming an issue the owner has not approved is NOT written; the corrected queue is, and the job is done', async (t) => {
-  const { engine, E, seen, dataRoot, approvedIssue } = engOn(t, { opts: { badQueueFirst: true } });
-  assert.throws(() => E.startTriage({ productId: 'replydesk' }), /no issue of ReplyDesk is approved/);
+  const { engine, E, owner, seen, dataRoot, approvedIssue } = engOn(t, { opts: { badQueueFirst: true } });
+  assert.throws(() => E.startTriage({ productId: 'replydesk' }, { actor: owner }), /no issue of ReplyDesk is approved/);
   const id = await approvedIssue();
   const bad = seen.find((s) => s.agent === 'cto' && s.id === 'tu_q0');
   assert.ok(bad && /dev-queue\.json was NOT written/.test(bad.text) && /not approved by the owner|there is no issue/.test(bad.text), 'the bad queue was refused with the reason: ' + (bad && bad.text));
@@ -167,7 +167,7 @@ test('3: an issue starts only when approved, assigned by the CTO, with the clone
   const p1 = E.startProblems('replydesk', id).problems;
   assert.ok(p1.some((x) => /CTO has not assigned it yet/.test(x)), p1.join(' | '));
   assert.ok(p1.some((x) => /REPLYDESK_REPO is not set/.test(x)), p1.join(' | '));
-  assert.throws(() => E.startIssue({ productId: 'replydesk', issueId: id }), /cannot start/);
+  assert.throws(() => E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }), /cannot start/);
   const quote = engine.spend.assess('eng-start', { productId: 'replydesk', issueId: id });
   assert.equal(quote.line, 'engineering');
   assert.ok(quote.refusals.some((x) => /CTO has not assigned/.test(x)), 'the spend dialog shows the reason: ' + quote.refusals.join(' | '));
@@ -181,7 +181,7 @@ test('4: the whole line: mirror, worktree, spec, code, checks in Docker, gates, 
   const { engine, E, owner, clone, d, dataRoot, approvedIssue } = engOn(t);
   const before = cloneState(clone);
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id });
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner });
   assert.equal(s.jobId, 'eng-' + id); assert.ok(JOB_ID_RE.test(s.jobId));
   await s.promise;
   let job = engine.store.getJob(s.jobId);
@@ -241,9 +241,9 @@ test('4: the whole line: mirror, worktree, spec, code, checks in Docker, gates, 
 });
 
 test('5: the tools in an engineering run: write paths, code files only, .git hidden, fs_edit, fs_read by lines, code_search, run_check counted', async (t) => {
-  const { engine, E, seen, d, approvedIssue } = engOn(t);
+  const { engine, E, owner, seen, d, approvedIssue } = engOn(t);
   const id = await approvedIssue();
-  await E.startIssue({ productId: 'replydesk', issueId: id }).promise;
+  await E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }).promise;
   const r = (tid) => seen.find((s) => s.agent === 'developer' && s.id === 'tu_' + tid) || {};
   assert.match(r('d0').text, /app\.py/); assert.ok(!/\.git\b/.test(r('d0').text), '.git is not listed: ' + r('d0').text);
   assert.match(r('d1').text, /^\[repo\/app\.py lines 2–2 of 3\]\n2:     return a \+ b$/);
@@ -259,9 +259,9 @@ test('5: the tools in an engineering run: write paths, code files only, .git hid
 });
 
 test('6: a REVIEWER revise sends the job back to DEVELOPER with the findings, at most reworkMax (2) times, then it blocks', async (t) => {
-  const { engine, E, seen, approvedIssue } = engOn(t, { opts: { review: () => 'revise' } });
+  const { engine, E, owner, seen, approvedIssue } = engOn(t, { opts: { review: () => 'revise' } });
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.equal(job.state, 'blocked');
   assert.match(job.reason, /REVIEWER said revise and the rework loop is used up \(2 reworks\)/);
@@ -278,9 +278,9 @@ test('6: a REVIEWER revise sends the job back to DEVELOPER with the findings, at
 });
 
 test('7: a large spec goes to the CTO: a revise sends it back to TECH-LEAD, then the CTO approves and the line goes on', async (t) => {
-  const { engine, E, approvedIssue } = engOn(t, { opts: { specSize: 'large', cto: (pass) => (pass === 1 ? 'revise' : 'approve') } });
+  const { engine, E, owner, approvedIssue } = engOn(t, { opts: { specSize: 'large', cto: (pass) => (pass === 1 ? 'revise' : 'approve') } });
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.equal(job.state, 'approval', job.reason);
   const st = engine.store.db.prepare('SELECT step, pass FROM stages WHERE job_id = ? ORDER BY id').all(s.jobId).map((x) => x.step + '#' + x.pass).slice(0, 6);
@@ -289,9 +289,9 @@ test('7: a large spec goes to the CTO: a revise sends it back to TECH-LEAD, then
 });
 
 test('8: a SECURITY refuse ends the job rejected: no commit, no merge request', async (t) => {
-  const { engine, E, approvedIssue } = engOn(t, { opts: { security: () => 'refuse' } });
+  const { engine, E, owner, approvedIssue } = engOn(t, { opts: { security: () => 'refuse' } });
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.equal(job.state, 'rejected');
   assert.match(job.reason, /SECURITY refused the change: .*no merge request is filed/);
@@ -304,9 +304,9 @@ test('8: a SECURITY refuse ends the job rejected: no commit, no merge request', 
 });
 
 test('9: a dependency change: SECURITY must give a dependencyVerdict, and the owner gets a dependency.add request beside git.merge', async (t) => {
-  const { engine, E, seen, approvedIssue } = engOn(t, { opts: { deps: true } });
+  const { engine, E, owner, seen, approvedIssue } = engOn(t, { opts: { deps: true } });
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.equal(job.state, 'approval', job.reason);
   const first = seen.find((x) => x.agent === 'security' && x.id === 'tu_x1');
@@ -323,10 +323,10 @@ test('9: a dependency change: SECURITY must give a dependencyVerdict, and the ow
 test('10: the worktree changed after the reviewers saw the diff: the commit is refused (sha256), nothing is committed', async (t) => {
   let tamper = null;
   const hooks = { onStep: ({ job, step, phase }) => { if (step === 'commit' && phase === 'start') tamper(job); } };
-  const { engine, E, approvedIssue, dataRoot } = engOn(t, { hooks });
+  const { engine, E, owner, approvedIssue, dataRoot } = engOn(t, { hooks });
   tamper = (job) => fs.appendFileSync(jobFile(dataRoot, job.id, 'repo', 'app.py'), '\n# changed after the review\n');
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.equal(job.state, 'blocked');
   assert.match(job.reason, /worktree changed after TESTER, REVIEWER and SECURITY saw the diff \(sha256 differs\): nothing was committed/);
@@ -336,9 +336,9 @@ test('10: the worktree changed after the reviewers saw the diff: the commit is r
 });
 
 test('11: no Docker: the first check (DEVELOPER\'s run_check) is refused with the reason and the job blocks; there is no fallback on the host', async (t) => {
-  const { engine, E, seen, approvedIssue } = engOn(t, { docker: { installed: false } });
+  const { engine, E, owner, seen, approvedIssue } = engOn(t, { docker: { installed: false } });
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.equal(job.state, 'blocked', job.reason);
   assert.match(job.reason, /^DEVELOPER run refused: checks run only in Docker \(owner, R0\.3\), and Docker is not installed \(no docker on PATH\).*\(no fallback on the host\)$/);
@@ -351,9 +351,9 @@ test('11: no Docker: the first check (DEVELOPER\'s run_check) is refused with th
 });
 
 test('11b: an agent that reads repo/.git ends its run refused by the locked rule (secrets-refused): the job blocks with the rule, nothing is committed', async (t) => {
-  const { engine, E, approvedIssue } = engOn(t, { opts: { gitProbe: true } });
+  const { engine, E, owner, approvedIssue } = engOn(t, { opts: { gitProbe: true } });
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.equal(job.state, 'blocked');
   assert.equal(job.step, 'developer');
@@ -407,9 +407,9 @@ test('13: the building: the engineering lines borrow the CTO and SECURITY by nam
 test('14: a git process that hangs inside a job is killed at its timeout and the job blocks with "git timeout" (it does not stall)', async (t) => {
   // the fetch from the owner's clone is turned into a real git that hangs on a pipe (helpers/r2.mjs); its timeout here is 2 s
   const pipe = await hangingPipe(t);
-  const { engine, E, r, approvedIssue } = engOn(t, { git: { runner: hangOn('fetch', pipe), fetchTimeoutMs: 2000 } });
+  const { engine, E, owner, r, approvedIssue } = engOn(t, { git: { runner: hangOn('fetch', pipe), fetchTimeoutMs: 2000 } });
   const id = await approvedIssue();
-  const t0 = Date.now(), s = E.startIssue({ productId: 'replydesk', issueId: id });
+  const t0 = Date.now(), s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner });
   await s.promise;
   assert.ok(Date.now() - t0 < 20000, 'the job ended near the timeout, it did not stall');
   const job = engine.store.getJob(s.jobId);
@@ -430,9 +430,9 @@ test('14: a git process that hangs inside a job is killed at its timeout and the
 });
 
 test('15: a check that times out in the checks step blocks the job with the timeout reason (the container stopped by name); TESTER never sees it', async (t) => {
-  const { engine, E, d, approvedIssue } = engOn(t, { docker: { timeout: true } });
+  const { engine, E, owner, d, approvedIssue } = engOn(t, { docker: { timeout: true } });
   const id = await approvedIssue();
-  const s = E.startIssue({ productId: 'replydesk', issueId: id }); await s.promise;
+  const s = E.startIssue({ productId: 'replydesk', issueId: id }, { actor: owner }); await s.promise;
   const job = engine.store.getJob(s.jobId);
   assert.deepEqual([job.state, job.step], ['blocked', 'checks'], job.reason);
   assert.match(job.reason, /^check "test" timed out after 300 s and was killed \(its container stopped\); the log is checks\/pass-1\/test\.log\. Resume to run the checks again, or archive the job$/);

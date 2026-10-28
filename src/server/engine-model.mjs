@@ -309,6 +309,9 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     ownerBriefForm: { products: formProducts(cfg.products, cfg.station), today: day },
     // R1: the seven-floor company and the Owner's office (the penthouse); read only here: decisions go through POST /api/requests/decide
     company: C ? companyView(engine, C, { agents, jobs }) : null,
+    // R2c: the Engineering panel's entry (the Floors menu, the building view): its products and how many jobs wait for the owner; the panel
+    // itself reads GET /api/eng/view with the owner's session
+    engineering: engine.engineering && cfg.lines.engineering ? { products: (cfg.lines.engineering.products || []).map((id) => (C && C.product(id)) || { id, name: id }).map((p) => ({ id: p.id, name: p.name })), waitingForYou: store.listJobs({ states: ['approval'] }).filter((j) => j.kind === 'engineering').length } : null,
     jobLimit: { maxRunning: engine.maxRunningJobs || null, perLine: Object.fromEntries(Object.values(cfg.lines).map((l) => [l.id, l.maxConcurrentJobs || 1])), running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }
   };
 }

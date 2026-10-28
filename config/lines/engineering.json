@@ -7,6 +7,11 @@
     "replydesk"
   ],
   "maxConcurrentJobs": 1,
+  "estimateUsd": {
+    "note": "the plan's estimate, not a measurement (RESTRUCTURE.md §8 R2, R0.3 models, before thinking tokens; a large spec adds the CTO's review, about USD 0.16): one pass about USD 1.36; with one rework about USD 2.14; a rework alone 2.14 - 1.36 = USD 0.78 (DEVELOPER about 0.50, TESTER 0.01, REVIEWER 0.14, SECURITY 0.13). The job cap is the limit.",
+    "job": 1.36,
+    "rework": 0.78
+  },
   "borrows": [
     "cto",
     "security"

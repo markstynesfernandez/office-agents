@@ -22,6 +22,11 @@
 //               all, then the job blocks; a REVIEWER or SECURITY refuse ends it rejected and no merge request is filed
 // The spend guard, the e-stop, the policy and the locked rules sit in front of every model call and tool call as on every line (runtime.mjs);
 // the job cap is the product's engineering cap (USD 3.00 for ReplyDesk, owner R0.3). The engine never pushes (lib/repo.mjs).
+// R2c: the owner's controls (the Engineering panel, POST /api/eng/*). Writing and deciding an issue, the triage, a start and the decision
+// on a finished job need the owner's page session (actor); a script, an agent or the engine is refused (LOCKED). The decision on a merge
+// request has three answers (ownerDecide): approve (the branch is ready: the pull command), rework with the owner's notes (back to
+// DEVELOPER on the same branch, inside what is left of the job cap) or reject with a reason. An approval holds only while the branch is at
+// the commit and the diff the request was filed for (approvalState); a later change voids it (the R1 rule: payload sha256).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -52,6 +57,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   const GIT = { runner: git.runner, timeoutMs: git.timeoutMs, fetchTimeoutMs: git.fetchTimeoutMs };
   const active = new Map();   // job id -> { line, promise }
   const stops = new Map();    // job id -> AbortController
+  const reworking = new Set(); // R2c: jobs whose merge request the owner is rejecting for a rework (the job goes back, it does not end)
   const isActive = (id) => active.has(id);
   const productRoot = (pid) => path.join(dataRoot, 'products', pid);
   const jobDir = (job) => path.join(productRoot(job.product_id || job.data.productId), 'eng', job.id);
@@ -125,7 +131,8 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   }
 
   // ---- triage: one CTO run over the approved issues -> backlog/dev-queue.json
-  function startTriage({ productId, by = 'owner (office)' } = {}) {
+  function startTriage({ productId, by = 'owner (office)' } = {}, { actor } = {}) {
+    needOwner(actor, 'starting the CTO triage');
     const p = engProduct(productId);
     if (halt.isHalted()) throw refuse('e-stop is on', 'HALTED');
     const hold = engine.lineHold ? engine.lineHold(TRIAGE_LINE) : null; if (hold) throw refuse(hold, 'PAUSED');
@@ -141,7 +148,8 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   }
 
   // ---- an engineering job on one approved, assigned issue
-  function startIssue({ productId, issueId, by = 'owner (office)' } = {}) {
+  function startIssue({ productId, issueId, by = 'owner (office)' } = {}, { actor } = {}) {
+    needOwner(actor, 'starting an engineering job');
     if (halt.isHalted()) throw refuse('e-stop is on', 'HALTED');
     if (engine.scriptRun && !engine.scriptRun.startsJobs) throw refuse('no job starts from this script (' + engine.scriptRun.purpose + ')', 'SCRIPT');
     const s = startProblems(productId, issueId);
@@ -271,7 +279,8 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     return store.getJob(id);
   }
   // the pass of a step: the spec loop for TECH-LEAD and the CTO, the rework loop for DEVELOPER and the reviewers
-  function passOf(job, step) { const l = job.loops || {}; return ['tech-lead', 'cto-review'].includes(step) ? 1 + (l.spec || 0) : ['worktree', 'commit', 'merge-request'].includes(step) ? 1 : 1 + (l.dev || 0); }
+  // R2c: an owner's rework (loops.owner) is a pass of its own too; it does not count against the agents' rework loop (reworkMax)
+  function passOf(job, step) { const l = job.loops || {}; return ['tech-lead', 'cto-review'].includes(step) ? 1 + (l.spec || 0) : ['worktree', 'commit', 'merge-request'].includes(step) ? 1 + (l.owner || 0) : 1 + (l.dev || 0) + (l.owner || 0); }
 
   // the latest verdict record of a step, or null
   const verdictFile = (job, step, pass) => path.join(jobDir(job), 'verdicts', step + '-pass' + pass + '.json');
@@ -297,7 +306,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
       input = [loopNote, 'Architecture review of spec.md (size: large) for issue ' + job.data.issueId + ' on ' + p.name + '. Read issue.md, spec.md and the code it touches in repo/. Approve, or revise with findings TECH-LEAD can act on. Record it with submit_verdict, kind "architecture".'].filter(Boolean).join('\n');
       contract = verdictContract('architecture');
     } else if (step === 'developer') {
-      const back = job.loops.dev ? reworkFrom(job) : null;
+      const back = job.loops.dev || job.loops.owner ? reworkFrom(job) : null;
       input = [loopNote, 'Implement spec.md in repo/ (branch ' + job.data.branch + ' of ' + (p.repo || p.id) + '). issue.md is the owner\'s issue.',
         'Change only what the spec needs; add or update tests for every acceptance criterion. Use fs_edit for changes to existing files. run_check runs the product\'s checks (' + Object.keys(p.runChecks || {}).join(', ') + ') in a container with no network; you have ' + ((effectiveAgent(engine, 'developer').limits || {}).maxChecks || 0) + ' run_check calls.',
         'Dependencies: you cannot install anything. A change to ' + 'requirements.txt or another dependency file becomes a dependency.add request for the owner, after SECURITY\'s audit; a change under .github/workflows/ becomes a ci.change request.',
@@ -350,8 +359,11 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   }
   // the findings DEVELOPER gets on a rework: from the step that sent it back
   function reworkFrom(job) {
-    const from = job.data.reworkFrom, v = from ? latestVerdict(job, from) : null;
-    return v ? '[REWORK ' + job.loops.dev + ' of ' + lineOf(ENG_LINE).reworkMax + '] ' + agentName(lineOf(ENG_LINE).steps[from].agent) + ' said ' + v.verdict + '. Fix every point:\n' + findingsText(v) + (v.summary ? '\nSummary: ' + v.summary : '') : '';
+    // R2c: the owner's notes on a rework stay with the job (data.ownerNotes) until its next merge request, whoever sent it back last
+    const owner = job.data.ownerNotes ? '[REWORK asked by the owner (' + (job.loops.owner || 1) + ')] The owner sent the merge request back. The branch already holds the earlier change (repo/ is at its last commit). The owner\'s notes, about this change:\n' + job.data.ownerNotes : '';
+    const from = job.data.reworkFrom, v = from && from !== 'owner' ? latestVerdict(job, from) : null;
+    const agents = v ? '[REWORK ' + job.loops.dev + ' of ' + lineOf(ENG_LINE).reworkMax + '] ' + agentName(lineOf(ENG_LINE).steps[from].agent) + ' said ' + v.verdict + '. Fix every point:\n' + findingsText(v) + (v.summary ? '\nSummary: ' + v.summary : '') : '';
+    return [owner, agents].filter(Boolean).join('\n\n');
   }
   // a verdict routes the job: on, back (a bounded loop), or out
   function route(job, step, def, v) {
@@ -377,6 +389,13 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     // fetch the mirror, then the job's worktree on dev/<job-id>, and the check image for main's requirements
     async worktree(job, def, signal) {
       const p = C.product(job.product_id);
+      // R2c: the owner's rework: the job's own branch again at its last commit (no fetch: the base and the check image stay the job's),
+      // then DEVELOPER (the spec stands)
+      if (job.data.rework) {
+        const w = await perform(job, 'repo.worktree', 'worktree ' + branchOf(job.id) + ' (the owner\'s rework)', () => addWorktree({ J, productId: p.id, jobId: job.id, dir: repoOf(job), signal, ...GIT }));
+        store.updateJob(job.id, { data: { worktreeRemoved: false, worktree: rel(job, repoOf(job)) } });
+        return { next: 'developer', note: 'the owner\'s rework: worktree ' + (w.result.created ? 'added' : 'kept') + ' on ' + w.result.branch + ' at ' + String(job.data.commitSha || '').slice(0, 10) };
+      }
       const f = await perform(job, 'repo.fetch', 'fetch ' + p.id + ' main into the Station\'s mirror', () => fetchMirror({ J, product: p, signal, env, ...GIT }));
       const m = f.result;
       const w = await perform(job, 'repo.worktree', 'worktree ' + branchOf(job.id), () => addWorktree({ J, productId: p.id, jobId: job.id, dir: repoOf(job), signal, ...GIT }));
@@ -425,10 +444,12 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
       if (sha256(d.patch) !== job.data.diffSha256) return { blocked: 'the worktree changed after TESTER, REVIEWER and SECURITY saw the diff (sha256 differs): nothing was committed' };
       const g = gateDiff({ patch: d.patch, files: d.files });
       if (!g.ok) { bus.emit('action.refused', { jobId: job.id, data: { action: 'code.commit', rule: 'secrets-refused', what: g.secrets.map((s) => s.path + ': ' + s.kind) } }); return { blocked: 'refused by a locked rule (secrets-refused): the diff holds what looks like a secret (' + g.secrets.map((s) => s.path + ': ' + s.kind).join('; ') + '); nothing was committed' }; }
+      // R2c: an owner's rework that changed nothing: the branch stays at its commit (git has nothing to commit)
+      if (job.data.commitSha && job.data.committedDiffSha256 === job.data.diffSha256) return { next: def.next, note: 'no change since ' + String(job.data.commitSha).slice(0, 10) + ': nothing new to commit on ' + branchOf(job.id) };
       const iss = readIssue(dataRoot, job.product_id, job.data.issueId), title = (iss ? iss.title : job.title || job.id);
       const msg = job.id + ': ' + title + '\n\nIssue ' + job.data.issueId + ' (approved by the owner). Spec, reviews and checks: the Station\'s job folder eng/' + job.id + '/.\nTESTER ' + ((latestVerdict(job, 'tester') || {}).verdict || '-') + ', REVIEWER ' + ((latestVerdict(job, 'reviewer') || {}).verdict || '-') + ', SECURITY ' + ((latestVerdict(job, 'security') || {}).verdict || '-') + '.';
       const c = await perform(job, 'code.commit', 'commit ' + branchOf(job.id), () => commitWorktree({ dir: repoOf(job), jobId: job.id, message: msg, signal, hooks: hooksDir(job.product_id), ...GIT }));
-      store.updateJob(job.id, { data: { commitSha: c.result } });
+      store.updateJob(job.id, { data: { commitSha: c.result, committedDiffSha256: job.data.diffSha256 } });
       return { next: def.next, note: 'committed ' + String(c.result).slice(0, 10) + ' on ' + branchOf(job.id) };
     },
     // the merge request (and dependency.add / ci.change when needed) in the Owner's office; the worktree goes, the branch stays
@@ -440,21 +461,24 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
       const security = { verdict: sec.verdict || null, by: 'security', findings: (sec.findings || []).length, dependencyVerdict: sec.dependencyVerdict || null };
       const filed = [];
       const ask = async (action, summary, payload, extra = {}) => { const r = await engine.actions.perform({ action, actor: engineActor, productId: p.id, departmentId: job.department_id, jobId: job.id, summary, payload, security: extra.security || security }); filed.push({ action, requestId: r.requestId || null, done: !!r.done }); return r; };
-      await ask('git.merge', 'Merge ' + branchOf(job.id) + ' into main: ' + (job.title || job.data.issueId), 'commit ' + head + '\nbranch ' + branchOf(job.id) + '\npull: ' + pull + '\n\n' + patch);
+      await ask('git.merge', 'Merge ' + branchOf(job.id) + ' into main: ' + (job.title || job.data.issueId), mergePayload(job, head, patch));
       if ((gates.dependencyFiles || []).length) await ask('dependency.add', 'Dependency change in ' + branchOf(job.id) + ': ' + gates.dependencyFiles.join(', '), readText(path.join(dir, 'deps.patch')) || '', { security: { verdict: sec.dependencyVerdict || null, by: 'security', findings: (sec.findings || []).length } });
       if ((gates.workflowFiles || []).length) await ask('ci.change', 'CI change in ' + branchOf(job.id) + ': ' + gates.workflowFiles.join(', '), splitFor(patch, gates.workflowFiles));
       J.put(path.join(dir, 'merge-request.json'), JSON.stringify({ jobId: job.id, branch: branchOf(job.id), commit: head, pull, requests: filed, at: new Date().toISOString() }, null, 2) + '\n');
       await removeWorktree({ J, productId: p.id, dir: repoOf(job), signal, ...GIT }).catch((e) => (e.code === 'GIT_TIMEOUT' ? log.error('git timeout', { id: job.id, step: 'merge-request', subcommand: e.subcommand, error: e.message, note: 'the commit and the merge request are made; the worktree is kept' }) : log.warn('worktree not removed (kept)', { jobId: job.id, error: e.message })));
-      store.updateJob(job.id, { data: { requests: filed, pull, worktreeRemoved: true } });
+      store.updateJob(job.id, { data: { requests: filed, pull, worktreeRemoved: true, rework: false } });
       return { approval: 'waiting for the owner: merge request ' + (filed[0] && filed[0].requestId) + (filed.length > 1 ? ' (+ ' + filed.slice(1).map((x) => x.action).join(', ') + ')' : '') + '; the engine never pushes: ' + pull, requests: filed };
     }
   };
+  // the git.merge request's payload: the commit, the branch, the pull command and the whole diff (its sha256 is what the owner approves)
+  const mergePayload = (job, head, patch) => 'commit ' + head + '\nbranch ' + branchOf(job.id) + '\npull: ' + pullCommand({ dataRoot, productId: job.product_id, jobId: job.id }) + '\n\n' + patch;
   const splitFor = (patch, files) => String(patch).split(/^(?=diff --git )/m).filter((x) => files.some((f) => x.startsWith('diff --git a/' + f + ' ') || x.includes(' b/' + f + '\n'))).join('');
 
   // ---- the owner's decision on a merge request ends the job (approved: the owner merges by hand; rejected: rejected by the owner)
   const unsub = bus.subscribe((ev) => {
     if (ev.type !== 'request.decided' || !ev.jobId || !ev.data || ev.data.action !== 'git.merge') return;
     const j = store.getJob(ev.jobId); if (!j || j.kind !== 'engineering' || j.state !== 'approval') return;
+    if (reworking.has(j.id)) return;   // R2c: rejected for the owner's rework: ownerDecide sends the job back to DEVELOPER
     const ok = ev.data.status === 'approved';
     try { setJob(j.id, { state: ok ? 'approved' : 'rejected_by_owner', reason: ok ? 'the owner approved the merge request: pull ' + branchOf(j.id) + ' from the Station\'s mirror and merge, push and deploy by hand (' + (j.data.pull || '') + ')' : 'the owner rejected the merge request', ended_at: Date.now() }, ok ? 'job.decided' : 'job.rejected', { action: 'git.merge', status: ev.data.status }); } catch (e) { log.warn('merge decision not recorded on the job', { jobId: j.id, error: e.message }); }
   });
@@ -488,6 +512,73 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     return { jobId: id, archived: true };
   }
 
+  // ---- R2c: the owner's decision on a finished job's merge request (the Engineering panel and the Owner's office: three buttons)
+  const jobCapOf = (j) => { const p = C.product(j.product_id) || {}; return (p.jobCapUsdByDepartment || {})[j.department_id] ?? null; };
+  const mergeOf = (j) => { const r = (j.data.requests || []).find((x) => x.action === 'git.merge'); return r && r.requestId ? engine.requests.get(r.requestId) : null; };
+  // does the approval (or the pending request) still hold? The branch must be at the commit the request was filed for and the payload
+  // (commit, branch, pull command, diff) must have the sha256 the request recorded -> { holds, why, head }
+  async function approvalState(j, merge = mergeOf(j)) {
+    if (!merge) return { holds: false, why: 'there is no merge request for ' + j.id, head: null };
+    const head = await branchHead({ J, productId: j.product_id, jobId: j.id, ...GIT });
+    if (!head) return { holds: false, why: 'the branch ' + branchOf(j.id) + ' is gone from the Station\'s mirror', head };
+    if (head !== j.data.commitSha) return { holds: false, why: 'the branch ' + branchOf(j.id) + ' is at ' + head.slice(0, 10) + ', not at ' + String(j.data.commitSha || '').slice(0, 10) + ', the commit the merge request was filed for', head };
+    if (sha256(mergePayload(j, head, readText(path.join(jobDir(j), 'diff.patch')) || '')) !== merge.payload_sha256) return { holds: false, why: 'the diff changed after the merge request was filed (its sha256 no longer matches)', head };
+    return { holds: true, why: null, head };
+  }
+  // an approval that no longer holds is voided (requests.mjs) and the job blocks with the reason; nothing is ready to pull
+  function voidApproval(j, merge, why) {
+    engine.requests.void(merge.id, why);
+    logDecision(j, { decision: 'approval-void', requestId: merge.id, words: why, by: 'engine' });
+    return setJob(j.id, { state: 'blocked', reason: 'your approval of ' + merge.id + ' no longer holds: ' + why + '. Nothing is ready to pull: ask for a rework, or archive the job', ended_at: Date.now(), data: { approvalVoided: merge.id } }, 'job.blocked');
+  }
+  // every owner decision on a job, next to its records (the request decisions are in data/requests/decisions.jsonl as well)
+  function logDecision(j, rec) {
+    const row = { at: new Date().toISOString(), jobId: j.id, branch: branchOf(j.id), commit: j.data.commitSha || null, diffSha256: j.data.diffSha256 || null, by: 'owner (office)', ...rec };
+    J.add(path.join(jobDir(j), 'decisions.jsonl'), JSON.stringify(row) + '\n', { fsync: true });
+    log.info('engineering decision', { jobId: j.id, decision: rec.decision, requestId: rec.requestId || null });
+  }
+  // decision: approve | rework | reject; words: the owner's words (the reason; the notes for a rework). requestVersion: from the Owner's
+  // office (the request row the page loaded); expectedVersion: from the Engineering panel (the job row)
+  async function ownerDecide({ jobId, decision, words, expectedVersion = null, requestVersion = null } = {}, { actor } = {}) {
+    needOwner(actor, 'deciding a merge request');
+    const j = store.getJob(jobId); if (!j || j.kind !== 'engineering') throw refuse('no such engineering job: ' + jobId, 'BAD_REQUEST');
+    if (expectedVersion != null && j.version !== expectedVersion) throw Object.assign(new Error('job ' + jobId + ' changed since you loaded it'), { code: 'STALE' });
+    if (!['approve', 'rework', 'reject'].includes(decision)) throw refuse('decision must be approve, rework or reject', 'BAD_REQUEST');
+    const w = String(words || '').trim(); if (!w || w.length > 2000) throw refuse(decision === 'rework' ? 'your notes for DEVELOPER (1 to 2,000 characters) go with a rework' : 'your words (1 to 2,000 characters) go with every decision', 'BAD_REQUEST');
+    if (isActive(jobId)) throw refuse('job ' + jobId + ' is running: stop it first', 'BAD_REQUEST');
+    const merge = mergeOf(j);
+    if (merge && requestVersion != null && merge.version !== requestVersion) throw Object.assign(new Error('request ' + merge.id + ' changed since you loaded it'), { code: 'STALE' });
+    if (decision === 'rework') return rework(j, merge, w, actor);
+    if (j.state !== 'approval' || !merge || merge.status !== 'pending') throw refuse('job ' + jobId + ' is ' + j.state + ': there is no merge request waiting for you', 'BAD_REQUEST');
+    if (decision === 'approve') {
+      const a = await approvalState(j, merge);
+      if (!a.holds) { voidApproval(j, merge, a.why); throw refuse('not approved: ' + a.why + '; the request is void and the job blocked', 'STALE_DIFF'); }
+    }
+    engine.requests.decide(merge.id, { decision: decision === 'approve' ? 'approve' : 'reject', words: w, expectedVersion: merge.version, actor });
+    logDecision(j, { decision, requestId: merge.id, words: w });
+    const out = store.getJob(jobId);
+    return { jobId, decision, state: out.state, pull: decision === 'approve' ? out.data.pull : null, branch: branchOf(jobId) };
+  }
+  // the owner's rework: back to DEVELOPER on the same branch, inside what is left of the job cap (the guard holds every call to it)
+  function rework(j, merge, notes, actor) {
+    const ended = j.data.commitSha && j.data.worktreeRemoved && (['approval', 'approved'].includes(j.state) || (j.state === 'blocked' && j.data.approvalVoided));
+    if (!ended) throw refuse('job ' + j.id + ' is ' + j.state + ': a rework is for a job that ended in a merge request (waiting for you, approved, or its approval void)', 'BAD_REQUEST');
+    if (halt.isHalted()) throw refuse('e-stop is on', 'HALTED');
+    const cap = jobCapOf(j), spent = r6(ledger.spent.job(j.id));
+    if (cap != null && spent >= cap - 1e-9) throw refuse('the job cap is reached: USD ' + spent.toFixed(2) + ' of USD ' + cap.toFixed(2) + ' spent on ' + j.id + '; a rework cannot run inside it', 'JOB_CAP');
+    reworking.add(j.id);
+    try {
+      if (merge && merge.status === 'pending') engine.requests.decide(merge.id, { decision: 'reject', words: 'Rework: ' + notes, expectedVersion: merge.version, actor });
+      else if (merge && merge.status === 'approved') engine.requests.void(merge.id, 'the owner asked for a rework after approving: the diff will change, so the approval no longer holds');
+    } finally { reworking.delete(j.id); }
+    // the dependency.add and ci.change requests of this diff go too: the diff will change
+    for (const x of (j.data.requests || []).filter((r) => r.action !== 'git.merge' && r.requestId)) { const r = engine.requests.get(x.requestId); if (r && ['pending', 'approved'].includes(r.status)) engine.requests.void(r.id, 'the owner asked for a rework of ' + j.id); }
+    logDecision(j, { decision: 'rework', requestId: merge ? merge.id : null, words: notes, capUsd: cap, spentUsd: spent });
+    setJob(j.id, { state: 'queued', step: 'worktree', reason: 'rework asked by the owner: ' + notes.slice(0, 200), ended_at: null, loops: { owner: (j.loops.owner || 0) + 1 }, data: { rework: true, reworkFrom: 'owner', ownerNotes: notes, requests: [], pull: null, approvalVoided: null, autoStart: false, waitingFor: null, next: false } }, 'job.stage', { step: 'worktree', rework: true });
+    const promise = start(j.id);
+    return { jobId: j.id, decision: 'rework', started: !!promise, capUsd: cap, spentUsd: spent, leftUsd: cap != null ? r6(cap - spent) : null, promise };
+  }
+
   // ---- the page: issues, the queue, the jobs, each job's card; the CI wall per product (R7 draws it)
   function view() {
     const products = (lineOf(ENG_LINE).products || []).map((pid) => C.product(pid)).filter(Boolean).map((p) => {
@@ -495,9 +586,38 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
       const q = readQueue(dataRoot, p.id), qp = q ? devQueueProblems(JSON.stringify(q), { dataRoot, productId: p.id }) : [];
       const jobs = store.listJobs().filter((j) => ENG_KINDS.includes(j.kind) && j.product_id === p.id).slice(0, 30).map(jobView);
       const wall = jobs.filter((j) => j.kind === 'engineering' && j.checks && j.checks.length).slice(0, 10).map((j) => ({ jobId: j.id, title: j.title, at: j.updatedAt, checks: j.checks }));
-      return { id: p.id, name: p.name, repo: p.repo || null, repoEnvSet: !!env[p.localRepoEnv], repoEnv: p.localRepoEnv, runChecks: Object.keys(p.runChecks || {}), issues, queue: q ? { queue: q.queue || [], notes: q.notes || null, holds: !qp.length, problems: qp } : null, jobs, ciWall: wall };
+      // R2c: the panel: each issue's place in the CTO's queue and why it cannot start yet; the month against the budget; the job cap
+      for (const i of issues) { const e = q && Array.isArray(q.queue) ? q.queue.find((x) => x.issue === i.id) : null; i.triage = e ? { order: e.order, size: e.size, note: e.note || null } : null; if (i.state === 'approved') { const sp = startProblems(p.id, i.id); i.startProblems = sp.problems; i.jobId = sp.jobId || null; } }
+      const month = dublinDay().slice(0, 7), spent = r6(ledger.spent.productMonth(p.id, month)), dept = C.deptOfAgent('developer') || 'engineering';
+      const running = jobs.filter((j) => j.running || j.state === 'running');
+      return { id: p.id, name: p.name, repo: p.repo || null, repoEnvSet: !!env[p.localRepoEnv], repoEnv: p.localRepoEnv, runChecks: Object.keys(p.runChecks || {}), issues, queue: q ? { queue: q.queue || [], notes: q.notes || null, holds: !qp.length, problems: qp } : null, jobs, ciWall: wall,
+        budget: { month, spentUsd: spent, budgetUsd: p.monthlyBudgetUsd ?? null, leftUsd: p.monthlyBudgetUsd != null ? r6(p.monthlyBudgetUsd - spent) : null }, jobCapUsd: (p.jobCapUsdByDepartment || {})[dept] ?? null,
+        line: { state: running.length ? 'running' : 'idle', running: running.map((j) => j.id), hold: (engine.lineHold ? engine.lineHold(ENG_LINE) : null) || null, waitingForYou: jobs.filter((j) => j.state === 'approval').map((j) => j.id) } };
     });
-    return { products, lines: [ENG_LINE, TRIAGE_LINE], opus: opusPriced() ? 'priced' : opusRefusal() };
+    // the line's agents (the engineering and triage lines), with their models: the issue's "default" model is theirs
+    const keys = [...new Set([TRIAGE_LINE, ENG_LINE].flatMap((l) => Object.values(lineOf(l).steps).filter((s) => s.kind === 'agent').map((s) => s.agent)))];
+    const agents = keys.map((k) => { const a = effectiveAgent(engine, k), t = cfg.engine.tiers[a.tier] || {}; return { key: k, name: agentName(k), status: (cfg.agents[k] || {}).status || null, onDuty: !!a.enabled, model: t.model || null }; });
+    return { products, lines: [ENG_LINE, TRIAGE_LINE], agents, opus: opusPriced() ? 'priced' : opusRefusal(), halted: halt.isHalted(), mock: !!(engine.providers && engine.providers.mode === 'mock') };
+  }
+  // R2c: one job for the panel: the card (issue, spec, notes, diff, checks and their logs, verdicts), every step with its agent and outcome,
+  // the cost against the cap, the owner's decisions, and whether an approval still holds (an approval that no longer holds is voided here)
+  async function jobDetail(jobId) {
+    let j = store.getJob(jobId); if (!j || !ENG_KINDS.includes(j.kind)) return null;
+    const L = lineOf(j.line), dir = jobDir(j);
+    const steps = store.stagesOf(j.id).map((s) => ({ step: s.step, pass: s.pass, status: s.status, note: s.reason, startedAt: s.started_at, endedAt: s.ended_at, agent: (L.steps[s.step] || {}).agent || null, agentName: (L.steps[s.step] || {}).agent ? agentName(L.steps[s.step].agent) : null, kind: (L.steps[s.step] || {}).kind || null }));
+    const runs = store.runsOf({ jobId: j.id, limit: 100 }).map((r) => ({ agent: r.agent_key, step: r.step, pass: r.pass, status: r.status, usd: r.usd, startedAt: r.started_at, endedAt: r.ended_at }));
+    const decisionsOf = () => (readText(path.join(dir, 'decisions.jsonl')) || '').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+    if (j.kind !== 'engineering') return { job: jobView(j), steps, runs, decisions: decisionsOf(), triage: { queue: readQueue(dataRoot, j.product_id) } };
+    let merge = mergeOf(j), approval = null;
+    if (merge && ['pending', 'approved'].includes(merge.status) && ['approval', 'approved'].includes(j.state)) {
+      const a = await approvalState(j, merge);
+      if (!a.holds && merge.status === 'approved') { j = voidApproval(j, merge, a.why); merge = engine.requests.get(merge.id); }
+      approval = { holds: a.holds, why: a.why, head: a.head };
+    }
+    const others = (j.data.requests || []).filter((x) => x.action !== 'git.merge' && x.requestId).map((x) => engine.requests.get(x.requestId)).filter(Boolean).map((r) => ({ id: r.id, action: r.action, status: r.status, summary: r.summary }));
+    const c = card(j.id), verdictsFull = ['cto-review', 'tester', 'reviewer', 'security'].map((s) => { const v = latestVerdict(j, s); return v ? { ...v, step: s, agent: agentName(L.steps[s].agent) } : null; }).filter(Boolean);
+    const ready = j.state === 'approved' && !!approval && approval.holds && merge && merge.status === 'approved';
+    return { ...c, verdicts: verdictsFull, steps, runs, decisions: decisionsOf(), merge: merge ? { id: merge.id, status: merge.status, version: merge.version, payloadSha256: merge.payload_sha256, words: merge.decision_words || null, decidedAt: merge.decided_at || null } : null, otherRequests: others, approval, ready, pull: c.pull, branch: branchOf(j.id), mirror: path.relative(dataRoot, path.join(productRoot(j.product_id), 'repo.git')).split(path.sep).join('/'), capUsd: jobCapOf(j), costUsd: r6(ledger.spent.job(j.id)), canRework: !!(j.data.commitSha && j.data.worktreeRemoved && !isActive(j.id) && (['approval', 'approved'].includes(j.state) || (j.state === 'blocked' && j.data.approvalVoided))) };
   }
   function jobView(j) {
     const out = { id: j.id, kind: j.kind, title: j.title, state: j.state, step: j.step, reason: j.reason, version: j.version, issueId: j.data.issueId || null, branch: j.data.branch || null, specSize: j.data.specSize || null, loops: j.loops, costUsd: r6(ledger.spent.job(j.id)), capUsd: (C.product(j.product_id) || {}).jobCapUsdByDepartment ? C.product(j.product_id).jobCapUsdByDepartment[j.department_id] || null : null, checks: j.data.checks || null, gates: j.data.gates || null, commit: j.data.commitSha || null, requests: j.data.requests || [], pull: j.data.pull || null, updatedAt: j.updated_at, running: isActive(j.id) };
@@ -522,5 +642,5 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     return checker.buildImage({ J, product: p, requirementsText: req, signal });
   }
 
-  return { writeIssue, decideIssue, startTriage, startIssue, startProblems, start, stop, resume, archive, wakeWaiting, isActive, active: () => [...active.keys()], activeCount: () => active.size, view, jobView, card, buildCheckImage, checks: checker, close: () => unsub() };
+  return { writeIssue, decideIssue, startTriage, startIssue, startProblems, start, stop, resume, archive, ownerDecide, approvalState: (id) => approvalState(store.getJob(id)), wakeWaiting, isActive, active: () => [...active.keys()], activeCount: () => active.size, view, jobView, jobDetail, card, buildCheckImage, checks: checker, close: () => unsub() };
 }

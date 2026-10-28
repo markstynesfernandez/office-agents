@@ -10,7 +10,9 @@ import { buildingTotals } from './floors.js';
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString('en-IE', { timeZone: 'Europe/Dublin', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
 
-export function createBuildingView({ root, onFloor = () => {}, onDecide = () => {}, onResume = () => {} }) {
+// R2c: a git.merge request of an engineering job has three buttons (approve, rework with notes, reject) and opens in the Engineering
+// panel; the panel itself is one click from the top of this view.
+export function createBuildingView({ root, onFloor = () => {}, onDecide = () => {}, onResume = () => {}, onEng = () => {} }) {
   const body = root.querySelector('#building-body');
   let reqs = [];
   function render(snap) {
@@ -27,6 +29,7 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
     body.querySelectorAll('[data-floor]').forEach((el) => el.addEventListener('click', () => onFloor(Number(el.dataset.floor))));
     body.querySelectorAll('[data-req]').forEach((el) => el.addEventListener('click', () => { const r = reqs.find((x) => x.id === el.dataset.req); if (r) onDecide(r, el.dataset.decision); }));
     body.querySelectorAll('[data-resume]').forEach((el) => el.addEventListener('click', () => onResume(el.dataset.resume)));
+    body.querySelectorAll('[data-eng-open]').forEach((el) => el.addEventListener('click', () => onEng(el.dataset.engOpen || null)));
   }
 
   // R1: the penthouse and the company
@@ -35,12 +38,13 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
     const oo = c.ownersOffice || {}; reqs = oo.requests || [];
     const prodName = Object.fromEntries((c.products || []).map((p) => [p.id, p.name]));
     const pending = reqs.filter((r) => r.status === 'pending'), recent = reqs.filter((r) => r.status !== 'pending').slice(0, 8);
+    const merge = (r) => r.action === 'git.merge' && !!r.jobId, eng = snap.engineering;
     const verdict = (v, who) => (v ? '<span class="tag' + (v.verdict === 'pass' || v.verdict === 'approve' ? '' : ' tag-warn') + '">' + esc(who) + ': ' + esc(v.verdict) + '</span>' : '');
     const reqRow = (r, live) => '<div class="bldg-floor" style="cursor:default"><span class="fl-num" style="font-size:12px">' + esc(r.status) + '</span><span>'
       + '<span class="fl-name">' + esc(r.summary) + '</span> <span class="tag">' + esc(r.action) + '</span> ' + verdict(r.compliance, 'COMPLIANCE') + ' ' + verdict(r.security, 'SECURITY')
       + '<div class="muted" style="font-size:11px">' + esc(prodName[r.productId] || r.productId) + ' · ' + esc(r.departmentId) + (r.jobId ? ' · job <span class="mono">' + esc(r.jobId) + '</span>' : '') + ' · filed by ' + esc(r.filedBy) + ' ' + esc(when(r.filedAt)) + ' · payload <span class="mono">' + esc(String(r.payloadSha256 || '').slice(0, 12)) + '</span></div>'
       + (r.words ? '<div class="muted" style="font-size:11px">the owner: “' + esc(r.words) + '” ' + esc(when(r.decidedAt)) + '</div>' : '')
-      + (live ? '<div class="fl-stats"><button class="btn btn-mini btn-ok" data-req="' + esc(r.id) + '" data-decision="approve">Approve…</button><button class="btn btn-mini btn-danger" data-req="' + esc(r.id) + '" data-decision="reject">Reject…</button></div>' : '')
+      + (live ? '<div class="fl-stats"><button class="btn btn-mini btn-ok" data-req="' + esc(r.id) + '" data-decision="approve">Approve…</button>' + (merge(r) ? '<button class="btn btn-mini" data-req="' + esc(r.id) + '" data-decision="rework">Rework with notes…</button>' : '') + '<button class="btn btn-mini btn-danger" data-req="' + esc(r.id) + '" data-decision="reject">Reject…</button>' + (merge(r) ? '<button class="btn btn-mini" data-eng-open="' + esc(r.jobId) + '">Open in Engineering</button>' : '') + '</div>' : '')
       + '</span></div>';
     const fin = ((snap.spend && snap.spend.byProduct) || []).map((p) => '<div><span class="m">' + esc(p.name) + (p.status === 'archived' ? ' (archived)' : '') + '</span> this month ' + money(p.monthUsd) + ' of ' + money(p.budgetUsd) + (p.budgetProposal ? ' <span class="tag">proposal</span>' : '') + ' · today ' + money(p.todayUsd) + ' · MRR ' + esc(p.mrr) + '</div>').join('');
     const floors = (c.floors || []).map((f) => '<div class="bldg-floor" style="cursor:default"><span class="fl-num">' + esc(f.floor) + '</span><span><span class="fl-name">' + esc(f.name) + '</span>'
@@ -48,7 +52,8 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
       + '<div class="muted" style="font-size:11px">' + (f.agents || []).map((a) => esc(a.name) + ' <span class="tag' + (a.status === 'active' ? '' : ' tag-warn') + '">' + esc(a.label) + '</span>').join(' ') + '</div>'
       + ((f.lines || []).length ? '<div class="muted" style="font-size:11px">lines ' + f.lines.map((l) => esc(l.id) + (l.archived ? ' (archived)' : '') + (l.paused ? ' (paused)' : '')).join(', ') + '</div>' : '') + '</span></div>').join('');
     const pol = oo.policy, paused = oo.pausedLines || [];
-    return '<h3 style="margin:18px 0 6px">Penthouse · the Owner\'s office</h3>'
+    return (eng ? '<h3 style="margin:18px 0 6px">Engineering</h3><div class="bldg-total"><button class="btn btn-mini btn-primary" data-eng-open="">Open the Engineering panel</button> <span class="muted">' + esc(eng.products.map((p) => p.name).join(', ')) + ': issues, jobs, the diff and checks, your decisions' + (eng.waitingForYou ? ' · <b>' + eng.waitingForYou + ' waiting for you</b>' : '') + '</span></div>' : '')
+      + '<h3 style="margin:18px 0 6px">Penthouse · the Owner\'s office</h3>'
       + '<div class="muted" style="font-size:12px;margin-bottom:6px">Requests: every action that leaves the building, or cannot be undone, waits here for you. Only you decide one, on this page, with your words; each decision is logged. Nothing is sent from here.</div>'
       + (pending.length ? pending.map((r) => reqRow(r, true)).join('') : '<div class="muted">No request is waiting.</div>')
       + (recent.length ? '<div class="muted" style="margin-top:8px;font-size:12px">Decided</div>' + recent.map((r) => reqRow(r, false)).join('') : '')

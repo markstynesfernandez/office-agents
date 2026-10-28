@@ -7,6 +7,10 @@
     "replydesk"
   ],
   "maxConcurrentJobs": 1,
+  "estimateUsd": {
+    "note": "the plan's estimate, not a measurement (RESTRUCTURE.md §8 R2: one CTO triage, about 40k tokens in and 3k out)",
+    "job": 0.11
+  },
   "borrows": [
     "cto"
   ],

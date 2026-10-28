@@ -30,5 +30,5 @@ test('2: the page has the Floors button; F opens it, Shift+F is the fps readout'
   assert.match(html, /<div id="floor-menu" class="floor-menu hidden"/);
   assert.match(html, /<span><b>F<\/b> floors<\/span><span><b>⇧F<\/b> fps<\/span>/);
   assert.match(main, /else if \(\(k === 'f' \|\| k === 'F'\) && e\.shiftKey\) togglePerf\(\);\n  else if \(k === 'f' \|\| k === 'F'\) \{ if \(floorMenu\.isOpen\(\)\) floorMenu\.hide\(\); else/);
-  assert.match(main, /createFloorMenu\(\{ button: \$\('#floor-btn'\), root: \$\('#floor-menu'\), onFloor: \(n\) => setFloor\(n\), onDept: \(key\) => focusDept\(key\) \}\)/);
+  assert.match(main, /createFloorMenu\(\{ button: \$\('#floor-btn'\), root: \$\('#floor-menu'\), onFloor: \(n\) => setFloor\(n\), onDept: \(key\) => focusDept\(key\), onEng: \(\) => openEng\(\) \}\)/);
 });

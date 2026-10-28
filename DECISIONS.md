@@ -3198,3 +3198,65 @@ Dev only, mock only, $0, no model call; the live worktree and every `.env` untou
    so live's 55 lines become 57.
 
 Measured on main with these changes: `npm test` 585 of 585 (100 s, the temp check clean); `npm run test:docker` 10 of 10 (37 s).
+
+## R2c (28/10/2026): the owner's controls for the engineering line
+
+Dev only, mock provider, $0, no model call; the live worktree and every `.env` untouched; no new dependency. Built on R2b's line
+(`src/engine/engineering.mjs`, `lib/eng-records.mjs`, `lib/eng-gates.mjs`, `config/lines/engineering.json`, `eng-triage.json`).
+
+1. **The flow stays the plan's** (owner, 28/10/2026, asked because the brief put TECH-LEAD's breakdown in the triage): write an issue
+   (free), approve it (free), the CTO's triage (a paid run, its own spend confirmation), Start (a paid run, the spend confirmation).
+   The triage shows the CTO's order, size and note for each issue; TECH-LEAD's spec is the job's first step and shows in the job view.
+2. **Rework needs the spend confirmation** like a start (owner, 28/10/2026; the L2 rule: every page action that can spend). A new spend
+   action `eng-rework`, bound to the job: its headroom is the job cap less what the job has spent; a job with nothing left is refused
+   ("job cap reached") and the engine refuses the rework itself (`JOB_CAP`). Inside the job the guard holds every call to the USD 3.00
+   cap; a rework that would pass it blocks at the call with the cap reason, nothing spent past it. An owner's rework is a pass of its
+   own (`loops.owner`) and does not use up the agents' rework loop (`reworkMax` 2); the owner's notes go to DEVELOPER with the job.
+3. **Owner only.** Writing and deciding an issue, the triage, a start and the decision on a merge request need the owner's page session
+   (`actor`); an agent, the engine, a script run or an owner actor without the registered session is refused (`LOCKED`). The server's
+   engineering routes (`/api/eng/*`) answer the loopback address only, need the page's action token (the reads too), check the session
+   before the spend gate, and on a script engine's server (no owner session) refuse everything. Stop is the owner's button as well; the
+   engine-level stop stays unguarded, like the e-stop (stopping is never refused).
+4. **The decision on a finished job has three answers** (the Engineering panel and the Owner's office): Approve (the job is "approved:
+   ready to pull" and the panel shows the engine's pull command), Rework with notes (the merge request is rejected with "Rework: <notes>",
+   or voided when already approved; dependency.add and ci.change requests of that diff are voided; the worktree comes back on the
+   same branch at its last commit, then DEVELOPER, the checks, TESTER, REVIEWER, SECURITY, a new commit on top and a new merge
+   request), Reject with a reason (the job ends rejected by the owner). Every decision goes to `data/requests/decisions.jsonl`
+   (requests.mjs) and to the job's own `eng/<job-id>/decisions.jsonl` with the commit and the diff's sha256. A git.merge request decided
+   from the Owner's office goes through the same path (`/api/requests/decide` hands it to the engineering line).
+5. **An approval holds only while the branch and the diff are what the request was filed for** (the R1 rule). Before an approve and
+   whenever the job view is read, the engine compares the branch head in the mirror with the committed sha and the payload (commit,
+   branch, pull command, diff) with the request's sha256. On a mismatch the request is voided, the job blocks with the reason, no pull
+   command is shown, and the owner can ask for a rework or archive the job.
+6. **The spend dialog shows the plan's estimate** beside the cap and the budget left: `estimateUsd` in the two line configs, from
+   RESTRUCTURE.md §8 R2 (not measured; before thinking tokens): triage about USD 0.11; a job about USD 1.36 a pass; a rework 2.14 - 1.36
+   = USD 0.78. The product row now says what is left of the month's budget.
+7. **Opus** stays refused until it is priced from Anthropic's official page; the issue form offers it only with that label, and the
+   engine refuses it as before (R0.3).
+8. **REPLYDESK_REPO in the live `.env`** (owner, the R2c brief): the live server reads the clone's path from its `.env`; the owner adds
+   the line by hand (the deploy plan, step f). This replaces, for the server, the 26/10/2026 note that the path is set on the command line
+   only; `npm run check-image` still reads it from the shell only and never reads an `.env`.
+
+The page: an Engineering overlay (from the building view G, the Floors menu F and a merge request in the Owner's office) with the
+line's month against USD 80, the USD 3.00 job cap, the issue form (title, what happens, what should happen, where, acceptance criteria;
+`lib/eng-records.mjs` issueFromForm), each issue's triage and why it cannot start yet, the jobs, and a job view: every step with its
+agent and outcome, the checks with their logs, TESTER's, REVIEWER's and SECURITY's verdicts with findings, the diff read only, the
+spec, notes and issue, the cost against the cap, Stop, Resume (spend confirmation), Archive, and the three decision buttons. All text
+from an issue, an agent, a log or a diff is escaped (`src/web/ui/eng-view.js`).
+
+Tests: `tests/r2c-controls.test.mjs` (10): every new route refuses a caller without the owner's session (no token, a wrong token,
+another origin, another address, a script engine's server) and the engine refuses an agent, the engine or a script; triage and start
+need the confirmation; Stop mid-step (the call in flight aborted, every stage and run closed, nothing half-written, then a clean
+resume); a rework inside the cap and one blocked by it; the views escape HTML and JS; an approval voided by a later change (the branch
+moved after approval; a change while it waits, from the panel and the Owner's office; a rework after approval); the pull command is the
+engine's and fetches the committed branch. R2b's tests and the Docker test pass the owner's actor now.
+
+Dry run on dev (28/10/2026, mock agents with a scripted DEVELOPER, real Docker, the dev mirror of ReplyDesk at `d03a9ab`, through the
+page): a test-only file added; the sandbox ran ReplyDesk's suite (28 passed); TESTER, REVIEWER and SECURITY approved; the request in
+the Owner's office with three buttons; a rework with the owner's notes (29 passed, a new commit on the branch); approved, the pull
+command shown matches the engine's and the mirror's branch head; a second job stopped during its checks (the container killed, gone
+within 0.3 s, no half-written file, no merge request) and archived. A first attempt stopped at the rework dialog (a bug in the driver
+script, not the Station); its waiting request was rejected through the page with that reason. Screenshots in `screenshots/r2c/`
+(git-ignored). The dry-run branches stay in the dev mirror.
+
+Measured on main with these changes: `npm test` 595 of 595 (112 s, the temp check clean); `npm run test:docker` 10 of 10 (37 s).

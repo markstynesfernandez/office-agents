@@ -32,7 +32,9 @@ export const SPEND_ACTIONS = {
   'routine-arm': { label: 'Arm the routine', params: ['id'] },
   // R2: the engineering line: the CTO's triage of a product's approved issues, and an engineering job on one assigned issue
   'eng-triage': { label: 'CTO triage of the approved issues', params: ['productId'] },
-  'eng-start': { label: 'Start the engineering line on the issue', params: ['productId', 'issueId'] }
+  'eng-start': { label: 'Start the engineering line on the issue', params: ['productId', 'issueId'] },
+  // R2c: the owner's rework of a finished engineering job (back to DEVELOPER with the owner's notes, inside what is left of its cap)
+  'eng-rework': { label: 'Rework: back to DEVELOPER with your notes', params: ['jobId'] }
 };
 const bind = (action, body) => JSON.stringify([action, ...SPEND_ACTIONS[action].params.map((k) => (body[k] == null ? null : String(body[k])))]);
 
@@ -47,6 +49,8 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     const dc = p && p.jobCapUsdByDepartment ? p.jobCapUsdByDepartment[lp.departmentId] : null;
     return dc > 0 && dc < base ? dc : base;
   };
+  // R2c: the plan's estimate for a start (config/lines/<id>.json estimateUsd; not a cap, not measured): { usd, note } or null
+  const estimateOf = (line, kind) => { const e = (cfg.lines[line] || {}).estimateUsd; return e && e[kind] != null ? { usd: e[kind], note: e.note || null } : null; };
   const lineDayCapOf = (line) => ((caps.perLineDayUsd || {})[line] ?? (caps.perLineDayUsd || {}).default ?? 0);
   // the worst case still open on a job: its cap less what it has spent
   const remaining = (j) => Math.max(0, jobCapOf(j.line) - ledger.spent.job(j.id));
@@ -77,8 +81,14 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     }
     if (action === 'routine-arm') return routineTarget(p('id'));
     // R2: the engineering line (engine.engineering): the job cap of the line's product and department; why it cannot start, if it cannot
-    if (action === 'eng-triage') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); return { line: 'eng-triage', jobId: null, headroomUsd: jobCapOf('eng-triage'), what: 'the CTO orders the approved issues of ' + p('productId') + ' (one CTO run, writes backlog/dev-queue.json)' }; }
-    if (action === 'eng-start') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); const sp = E.startProblems(p('productId'), p('issueId')); return { line: 'engineering', jobId: null, headroomUsd: jobCapOf('engineering'), what: 'job ' + (sp.jobId || '?') + ' on issue ' + p('issueId') + ': TECH-LEAD spec, DEVELOPER, checks in Docker, TESTER, REVIEWER, SECURITY, then a merge request for you (the engine never pushes)', refuse: sp.problems }; }
+    if (action === 'eng-triage') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); return { line: 'eng-triage', jobId: null, headroomUsd: jobCapOf('eng-triage'), what: 'the CTO orders the approved issues of ' + p('productId') + ' (one CTO run, writes backlog/dev-queue.json)', estimate: estimateOf('eng-triage', 'job') }; }
+    if (action === 'eng-start') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); const sp = E.startProblems(p('productId'), p('issueId')); return { line: 'engineering', jobId: null, headroomUsd: jobCapOf('engineering'), what: 'job ' + (sp.jobId || '?') + ' on issue ' + p('issueId') + ': TECH-LEAD spec, DEVELOPER, checks in Docker, TESTER, REVIEWER, SECURITY, then a merge request for you (the engine never pushes)', refuse: sp.problems, estimate: estimateOf('engineering', 'job') }; }
+    // R2c: the rework runs inside what is left of the job's cap; a job with nothing left is refused here, and the guard holds every call to it
+    if (action === 'eng-rework') {
+      const j = store.getJob(p('jobId')); if (!j || j.kind !== 'engineering') throw err('no such engineering job: ' + p('jobId'), 'BAD_REQUEST');
+      const rest = remaining(j);
+      return { line: j.line, jobId: j.id, headroomUsd: r6(rest), what: 'DEVELOPER reworks ' + j.id + ' on ' + ((j.data && j.data.branch) || 'its branch') + ' with your notes, then the checks in Docker, TESTER, REVIEWER and SECURITY again, a new commit and a new merge request; inside what is left of its cap', refuse: rest <= 0 ? ['job cap reached: ' + usd(ledger.spent.job(j.id)) + ' of ' + usd(jobCapOf(j.line)) + ' spent on this job'] : [], estimate: estimateOf('engineering', 'rework') };
+    }
     const j = store.getJob(p('jobId')); if (!j) throw err('no such job: ' + p('jobId'), 'BAD_REQUEST');
     const rest = remaining(j), refuse = rest <= 0 ? ['job cap reached: ' + usd(ledger.spent.job(j.id)) + ' of ' + usd(jobCapOf(j.line)) + ' spent on this job'] : [];
     if (action === 'qa-only' || action === 'listing-only') { const m = Number(body.maxUsd); return { line: j.line, jobId: j.id, headroomUsd: r6(Math.min(rest, m > 0 ? m : rest)), what: SPEND_ACTIONS[action].label + ' on ' + j.id + ' within your cap ' + usd(m), refuse }; }
@@ -161,6 +171,7 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       provider: engine.providers.mode, mock, mockNote: mock ? 'mock: $0 (no model is called and nothing is charged)' : null,
       agents: lineAgents(t.line), imageModel: lineAgents(t.line).some((a) => a.images) ? (mock ? 'mock (' + cfg.engine.image.allowedModels.join(', ') + ')' : cfg.engine.image.allowedModels.join(', ')) : null,
       job: { capUsd: jobCapOf(t.line), spentUsd: t.jobId ? r6(ledger.spent.job(t.jobId)) : 0, headroomUsd: t.headroomUsd, perRunUsd: caps.perRunUsd },
+      estimate: t.estimate || null,
       day: { date: day, spentUsd: spentToday, openJobsUsd: committed, worstUsd: worst, capUsd: caps.perDayUsd, line: { spentUsd: lineSpent, worstUsd: lineWorst, capUsd: lineCap } },
       console: consoleLimit ? { configured: true, month, limitUsd: consoleLimit, usedUsd: consoleUsed, leftUsd: r6(consoleLimit - consoleUsed), openJobsUsd: committed, worstUsd: consoleWorst, leftAfterWorstUsd: r6(consoleLimit - consoleWorst), note: 'estimate from the station ledger; the Console is the authority' } : { configured: false, month, usedUsd: consoleUsed, note: 'not configured (config/engine.json outerLimits.anthropicConsoleMonthlyUsd)' },
       openrouterDailyUsd: ol.openrouterDailyUsd ?? null, openrouter: ol.openrouterDailyUsd != null ? { limitUsd: ol.openrouterDailyUsd, usedTodayUsd: orToday, note: 'every job\'s image calls today (station ledger); the engine refuses an image call that would pass the key\'s limit' } : null,
