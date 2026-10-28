@@ -37,7 +37,8 @@
   <main id="stage">
     <canvas id="scene"></canvas>
     <div id="labels"></div>
-    <div id="floor-caption" class="floor-caption hidden"></div>
+    <div id="floor-nav"><button id="floor-btn" class="floor-btn hidden" aria-haspopup="true" aria-expanded="false" aria-controls="floor-menu" title="floors and departments: go to any department (F)"><span class="fb-icon" aria-hidden="true">☰</span>Floors <b>F</b></button><div id="floor-caption" class="floor-caption hidden"></div></div>
+    <div id="floor-menu" class="floor-menu hidden" role="menu" aria-label="floors and departments"></div>
     <div id="scene-controls">
       <button id="zoom-in" class="btn-icon" title="zoom in (+)">+</button>
       <button id="zoom-out" class="btn-icon" title="zoom out (−)">−</button>
@@ -82,7 +83,7 @@
   <section id="building" class="overlay hidden"><div class="overlay-head"><h2>Whole building</h2><span class="muted">every floor's totals · click a floor to go there · Esc to close</span></div><div id="building-body"></div></section>
   <section id="ledger" class="overlay hidden"><div class="overlay-head"><h2>Station memory</h2><span class="muted">notebooks + ledger · Esc to close</span></div><div id="ledger-body"></div></section>
 
-  <footer id="hints"><span><b>B</b> board</span><span><b>C</b> calendar</span><span><b>T</b> today</span><span><b>←↑↓→</b> move</span><span><b>+ −</b> zoom</span><span id="hint-reset"><b>R</b> reset</span><span id="hint-demo" class="hidden"><b>Space</b> pause <b>1 2 4</b> speed <b>R</b> restart</span><span><b>P</b> presenter</span><span><b>D</b> dark</span><span><b>F</b> fps</span><span><b>Esc</b> close</span><span id="hint-status" class="muted"></span><span id="etsy-notice" class="muted etsy-notice">The term 'Etsy' is a trademark of Etsy, Inc. This Application uses Etsy's API, but is not endorsed or certified by Etsy.</span></footer>
+  <footer id="hints"><span><b>B</b> board</span><span><b>C</b> calendar</span><span><b>T</b> today</span><span><b>←↑↓→</b> move</span><span><b>+ −</b> zoom</span><span id="hint-reset"><b>R</b> reset</span><span id="hint-demo" class="hidden"><b>Space</b> pause <b>1 2 4</b> speed <b>R</b> restart</span><span><b>P</b> presenter</span><span><b>D</b> dark</span><span><b>F</b> floors</span><span><b>⇧F</b> fps</span><span><b>Esc</b> close</span><span id="hint-status" class="muted"></span><span id="etsy-notice" class="muted etsy-notice">The term 'Etsy' is a trademark of Etsy, Inc. This Application uses Etsy's API, but is not endorsed or certified by Etsy.</span></footer>
 </div>
 <div id="dialogs"></div>
 <script type="module" src="/main.js"></script>

@@ -48,3 +48,12 @@ export function buildingTotals(snap) {
     };
   });
 }
+
+// the floors menu (the Floors button, F): every floor, top floor first like a lift, with its departments to jump to. A snapshot without
+// a building (the legacy and fixtures views) is one unnamed floor holding every department.
+export function floorMenu(snap) {
+  const depts = (floor) => ((snap && snap.departments) || []).filter((d) => floor == null || d.floor === floor).map((d) => ({ key: d.key, name: d.name }));
+  const fl = floorsOf(snap);
+  if (!fl.length) return [{ floor: null, name: 'This office', shared: false, empty: false, departments: depts(null) }];
+  return fl.slice().sort((a, b) => b.floor - a.floor).map((f) => ({ floor: f.floor, name: f.shared ? 'Shared services' : f.name, shared: !!f.shared, empty: !!f.empty, departments: depts(f.floor) }));
+}

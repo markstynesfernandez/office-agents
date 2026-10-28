@@ -60,7 +60,7 @@ body[data-theme="dark"] .badge-preview, body[data-theme="dark"] .badge-warn { co
 body[data-theme="dark"] .badge-on { color: #7fdc9c; }
 #scene-controls { position: absolute; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
 .warnings { position: absolute; left: 14px; bottom: 14px; max-width: 460px; background: var(--panel); border: 1px solid var(--warn); border-radius: var(--radius); padding: 8px 12px; font-size: 12px; box-shadow: var(--shadow); }
-.perf { position: absolute; left: 14px; top: 12px; background: rgba(20, 24, 32, 0.82); color: #e9eef6; border-radius: 8px; padding: 6px 10px; font: 11.5px/1.45 var(--mono); pointer-events: none; z-index: 3; }
+.perf { position: absolute; left: 14px; top: 54px; background: rgba(20, 24, 32, 0.82); color: #e9eef6; border-radius: 8px; padding: 6px 10px; font: 11.5px/1.45 var(--mono); pointer-events: none; z-index: 3; }
 .perf b { font-size: 15px; } .perf .muted { color: #9aa6b8; }
 .hidden { display: none !important; }
 .syn { display: inline-block; font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--syn); border: 1px dashed var(--syn); border-radius: 4px; padding: 0 4px; margin-left: 5px; vertical-align: middle; line-height: 14px; }
@@ -391,7 +391,22 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
 .tb-floors button { font: inherit; font-size: 11px; padding: 3px 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; cursor: pointer; white-space: nowrap; }
 .tb-floors button[aria-selected="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
 .tb-floors button .fl-n { font-weight: 700; margin-right: 4px; }
-.floor-caption { position: absolute; left: 14px; top: 12px; z-index: 4; padding: 5px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; pointer-events: none; }
+#floor-nav { position: absolute; left: 14px; top: 12px; z-index: 4; display: flex; gap: 8px; align-items: center; }
+.floor-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--text); background: var(--text); color: var(--bg); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.floor-btn:hover, .floor-btn[aria-expanded="true"] { filter: brightness(1.15); }
+.floor-btn b { font-weight: 700; font-size: 11px; padding: 0 5px; border-radius: 4px; background: var(--bg); color: var(--text); }
+.floor-btn .fb-icon { font-size: 14px; line-height: 1; }
+.floor-menu { position: absolute; left: 14px; top: 52px; z-index: 6; width: min(360px, calc(100% - 28px)); max-height: calc(100% - 70px); overflow: auto; padding: 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.18); display: grid; gap: 8px; }
+.floor-menu .fm-head { font-weight: 600; font-size: 13px; }
+.floor-menu .fm-head .muted { font-weight: 400; font-size: 11px; margin-left: 6px; }
+.fm-floor { border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: grid; gap: 6px; }
+.fm-floor.fm-cur { border-color: var(--text); }
+.fm-go { display: flex; align-items: center; gap: 8px; width: 100%; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.fm-go .muted { margin-left: auto; font-size: 11px; }
+.fm-n { font-size: 18px; font-weight: 700; min-width: 20px; }
+.fm-name { font-weight: 600; }
+.fm-depts { display: flex; flex-wrap: wrap; gap: 6px; }
+.floor-caption { padding: 5px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; pointer-events: none; }
 .floor-caption .muted { margin-left: 6px; }
 .bldg { display: grid; gap: 10px; }
 .bldg-floor { display: grid; grid-template-columns: 70px 1fr; gap: 12px; align-items: start; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); cursor: pointer; text-align: left; font: inherit; color: inherit; }

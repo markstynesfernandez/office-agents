@@ -19,6 +19,7 @@ import { createEtsyPanel } from './ui/etsy.js';
 import { QUALITY_KEY } from './scene/quality.js';
 import { floorsOf, pickFloor, floorSnapshot } from './ui/floors.js';
 import { createBuildingView } from './ui/building.js';
+import { createFloorMenu } from './ui/floormenu.js';
 
 const q = new URLSearchParams(location.search);
 const $ = (s) => document.querySelector(s);
@@ -51,6 +52,8 @@ const building = createBuildingView({ root: $('#building'), onFloor: (n) => setF
     const v = await ctl.dialog({ title: 'Resume the ' + line + ' line', intro: 'The line starts jobs again from now on.', fields: [{ name: 'words', label: 'Your words (logged)', type: 'textarea', required: true, rows: 2 }], confirm: 'Resume' });
     if (v) await ctl.act('/api/lines/resume', { line, words: v.words.trim() }, { ok: 'Resumed: ' + line });
   } });
+// the Floors button (F): every floor and its departments; a department goes to its floor and flies the camera there
+const floorMenu = createFloorMenu({ button: $('#floor-btn'), root: $('#floor-menu'), onFloor: (n) => setFloor(n), onDept: (key) => focusDept(key) });
 let floorChoice = q.get('floor') != null ? q.get('floor') : store.get('office-floor'), curFloor = null, view = null;
 // E7a: the own-shop Etsy connection (top-bar button; the API Terms' notice is in the footer)
 const etsyPanel = createEtsyPanel({ ctl, button: $('#etsy-btn') });
@@ -61,6 +64,7 @@ let presenterOn = q.get('presenter') === '1' ? true : q.get('presenter') === '0'
 let snap = null, ready = false, labelsDirty = true, perfOn = q.get('fps') === '1';
 
 function handlePick(hit) {
+  floorMenu.hide();   // a click on the office closes the floors menu
   if (!hit) return;
   if (hit.kind === 'agent') openAgent(hit.id);
   else if (hit.kind === 'hub') openLedger();
@@ -79,7 +83,7 @@ function openJob(id) { office.setSelected(null); labelsDirty = true; sidepanel.s
 function focusDept(key, zoom = 1.7) { const a = office.anchors.depts[key]; if (a) office.focus(a, zoom); taskpanel.setDept(key); }
 // the 3D scene is paused (no renders, no animation) while an overlay covers the stage
 function syncPause() { office.setPaused(board.isOpen() || calendar.isOpen() || ledger.isOpen() || building.isOpen()); }
-function closeOverlays() { board.hide(); calendar.hide(); ledger.hide(); building.hide(); syncPause(); }
+function closeOverlays() { floorMenu.hide(); board.hide(); calendar.hide(); ledger.hide(); building.hide(); syncPause(); }
 function openLedger() { closeOverlays(); ledger.render(snap); ledger.show(); syncPause(); }
 function openBoard() { closeOverlays(); board.render(view || snap); board.show(); syncPause(); }
 function openCalendar() { closeOverlays(); calendar.render(view || snap); calendar.show(); syncPause(); }
@@ -100,6 +104,7 @@ function applyView() {
 // the floor switcher (top bar): Building, then each floor from 0 up; the stage caption names the floor shown
 function renderFloors(s) {
   const fl = floorsOf(s), el = $('#floors'), cap = $('#floor-caption');
+  floorMenu.setData(s, curFloor);
   el.classList.toggle('hidden', !fl.length); cap.classList.toggle('hidden', !fl.length || building.isOpen());
   if (!fl.length) return;
   const btn = (k, label, sel, title) => '<button role="tab" data-fl="' + k + '" aria-selected="' + (sel ? 'true' : 'false') + '" title="' + esc(title) + '">' + label + '</button>';
@@ -225,7 +230,7 @@ function renderPerf() {
   $('#perf').innerHTML = '<b>' + s.fps + '</b> fps <span class="muted">rendered/s</span><br>' + (s.frameMs ? s.frameMs.toFixed(1) + ' ms' : '—') + ' <span class="muted">frame</span> · ' + s.cpuMs.toFixed(1) + ' ms <span class="muted">cpu</span><br>' + s.calls + ' <span class="muted">calls</span> · ' + (s.tris / 1000).toFixed(1) + 'k <span class="muted">tris</span><br><span class="muted">' + s.mode + ' · dpr ' + s.dpr + ' · AO ' + s.ao + '</span>';
 }
 
-// keyboard: B board, C calendar, T today, arrows pan, +/- zoom, R reset, D dark, F fps, W/M calendar mode, Esc close,
+// keyboard: B board, C calendar, T today, arrows pan, +/- zoom, R reset, D dark, F floors, Shift+F fps, W/M calendar mode, Esc close,
 // P presenter view; demo mode: Space pause/resume, 1/2/4 speed, R restart (instead of reset; the ⌂ button still resets)
 window.addEventListener('keydown', (e) => {
   if (ctl.isDialogOpen()) return;   // a dialog takes the keys (Esc closes it)
@@ -237,7 +242,8 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault(); return;
   }
   if (k === 'p' || k === 'P') { setPresenter(!presenterOn); e.preventDefault(); return; }
-  if (k === 'Escape') { if (calendar.hasPopover()) calendar.closePopover(); else if (sidepanel.isOpen()) sidepanel.close(); else { closeOverlays(); if (snap) renderFloors(snap); } }
+  if (k === 'Escape' && floorMenu.isOpen()) floorMenu.hide();
+  else if (k === 'Escape') { if (calendar.hasPopover()) calendar.closePopover(); else if (sidepanel.isOpen()) sidepanel.close(); else { closeOverlays(); if (snap) renderFloors(snap); } }
   else if (k === 'g' || k === 'G') { if (building.isOpen()) { building.hide(); syncPause(); renderFloors(snap); } else if (floorsOf(snap).length) openBuilding(); }
   else if (k === '[') stepFloor(-1); else if (k === ']') stepFloor(1);
   else if (k === 'b' || k === 'B') { if (board.isOpen()) { board.hide(); syncPause(); } else openBoard(); }
@@ -249,7 +255,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === '+' || k === '=') office.zoomBy(1.2); else if (k === '-' || k === '_') office.zoomBy(1 / 1.2);
   else if (k === 'r' || k === 'R') office.resetView();
   else if (k === 'd' || k === 'D') setTheme(theme === 'dark' ? 'light' : 'dark');
-  else if (k === 'f' || k === 'F') togglePerf();
+  else if ((k === 'f' || k === 'F') && e.shiftKey) togglePerf();
+  else if (k === 'f' || k === 'F') { if (floorMenu.isOpen()) floorMenu.hide(); else { closeOverlays(); if (snap) renderFloors(snap); floorMenu.show(); } }
   else return;
   e.preventDefault();
 });
