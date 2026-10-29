@@ -36,7 +36,7 @@ const office = createOffice({ canvas: $('#scene'), theme, onPick: handlePick, op
 const ctl = createControls({ root: $('#dialogs'), toastRoot: $('#toasts'), onRefresh: (fresh) => { load(!!fresh).catch(() => {}); } });
 const labels = createLabels({ container: $('#labels'), office, onDept: focusDept, onHub: openLedger });
 const sidepanel = createSidePanel({ root: $('#sidepanel'), onOpenJob: openJob, onOpenAgent: openAgent, onClose: () => { office.setSelected(null); labelsDirty = true; }, getNow: () => (snap ? snap.generatedAt : Date.now()), getSnap: () => snap, ctl });
-const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob, ctl });
+const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob, ctl, onNewIssue: () => { closeOverlays(); engPanel.newIssue().catch(() => {}); syncPause(); } });
 const board = createBoard({ root: $('#board'), onOpenJob: openJob, ctl });
 const calendar = createCalendar({ root: $('#calendar'), onOpenJob: openJob, ctl });
 const ledger = createLedgerView({ root: $('#ledger') });

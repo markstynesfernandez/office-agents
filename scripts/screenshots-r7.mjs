@@ -4,7 +4,7 @@
 //   node scripts/screenshots-r7.mjs --headed --channel chromium --expect-gpu intel     the laptop's iGPU, the budget figure
 //        -> screenshots/r7/: every floor (6 Penthouse HQ .. G Lobby) in light and dark, the whole-building view (the lift), the
 //           floor menu (F); fps-r7.json with each floor's frame time (moving and at full quality) and the building view's
-//   --bench-ms N (default 3000), --only floors,building,menu, --no-bench
+//   --bench-ms N (default 3000), --only floors,building,menu, --floors 6,4,G (R7a.2: only these floors), --no-bench
 // Starts its own Station server on a random port: the mock provider, a throwaway data root in the OS temp folder, the repo's config/
 // (read only). Opens only that page. Every file goes through shotJail(): screenshots/r7/ (git-ignored) only. No model call, $0.
 import fs from 'node:fs';
@@ -59,7 +59,7 @@ async function openPage(url, tag) {
 }
 const shot = async (page, file) => { const png = await page.screenshot({ type: 'png' }); fs.writeFileSync(shotJail(file), png); const rel = path.relative(ROOT, shotJail(file)); files.push(rel); console.log('wrote', rel); log.written(rel); };
 
-const FLOORS = ['6', '5', '4', '3', '2', '1', 'G'];
+const FLOORS = ['6', '5', '4', '3', '2', '1', 'G'].filter((f) => !arg('--floors', null) || arg('--floors', '').toUpperCase().split(',').includes(f));
 async function floorView(floor, theme) {
   const name = 'floor ' + floor + ' ' + theme, page = await openPage(base + '/?anim=0&quality=default&theme=' + theme + '&floor=' + floor, name);
   try {

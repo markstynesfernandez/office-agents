@@ -418,13 +418,14 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
 .bldg-total { font-size: 12px; margin-top: 4px; }
 /* R7a: the lift (the whole-building view of the seven-floor stack): a section of the building, a slab per floor in its own colours */
 .lift { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel-2); }
-.lift-floor { position: relative; display: grid; grid-template-columns: 22px 44px 1fr; gap: 8px; align-items: center; padding: 10px 14px 14px 8px; border: 0; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, var(--fl-wall) 0 64px, var(--panel) 64px); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.lift-floor { position: relative; display: grid; grid-template-columns: 22px 44px 1fr; gap: 8px; align-items: center; padding: 10px 14px 14px 8px; border: 0; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, var(--fl-wall) 0 86px, var(--panel) 86px); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .lift-floor:last-child { border-bottom: 0; }
 .lift-floor:hover { filter: brightness(1.04); }
 .lift-floor .lift-slab { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: linear-gradient(90deg, var(--fl-floor), var(--fl-acc)); }
 .lift-car { color: var(--fl-acc); font-size: 13px; text-align: center; }
-.lift-n { font-size: 24px; font-weight: 700; line-height: 1; color: #2b2a28; text-align: center; }
-.lift-body { display: grid; gap: 3px; }
+/* R7a.2: the number on its own chip (the panel colours), so it reads on every floor's wall colour in light and dark mode */
+.lift-n { font-size: 22px; font-weight: 700; line-height: 1; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; height: 36px; display: grid; place-items: center; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.lift-body { display: grid; gap: 3px; padding-left: 8px; }
 .lift-meta { font-size: 11.5px; color: var(--muted); }
 .lift-floor .fl-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
 .lift-floor .fl-stats .m { color: var(--muted); }
@@ -432,6 +433,10 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
 .lift-cur .lift-n { text-decoration: underline; text-underline-offset: 4px; }
 /* R7a: an empty desk's tag (not hired yet) */
 .lbl-vacant .lbl-name { background: var(--panel-2); border-style: dashed; color: var(--muted); font-weight: 600; }
+/* R7a.2: a desk tag stands on its own monitor: a short stem (labels.js STEM) from the tag down to the desk; a hired agent's dot is working or idle */
+.lbl-desk::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1.5px; height: 12px; margin-left: -0.75px; background: var(--muted); opacity: 0.85; }
+.lbl-desk::before { content: ''; position: absolute; left: 50%; top: calc(100% + 10px); width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--muted); }
+.lbl-name i.dot-working { box-shadow: 0 0 0 2px rgba(79, 191, 115, 0.28); }
 /* R2c: the Engineering panel (overlay): the line, issues, jobs, one job's steps, checks, verdicts, the read-only diff and the decision */
 #eng .eng-h { margin: 16px 0 6px; font-size: 14px; display: flex; align-items: center; gap: 10px; }
 #eng .eng-acts { display: inline-flex; gap: 6px; font-weight: 400; }
@@ -458,3 +463,16 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
 #eng .eng-verdict { padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 12px; }
 #eng .eng-find { margin: 4px 0 2px 18px; padding: 0; }
 .floor-menu .fm-eng .fm-n { font-size: 14px; }
+/* R7a.2: the lobby's trophy cabinet plaque (labels.js trophyCard) and the retired agent's plaque on its portrait */
+.dept-card.trophy-card { width: 290px; border-top-color: #b8955a; }
+.trophy-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.trophy-head small { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.trophy-card h3.trophy-name { margin: 2px 0 0; font-size: 15px; letter-spacing: 0.01em; display: block; overflow-wrap: anywhere; }
+.trophy-sub { font-size: 11px; color: var(--muted); margin: 1px 0 5px; }
+.plaques { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.plaque { font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em; text-align: center; padding: 2px 3px; border-radius: 3px; background: linear-gradient(#e7cf9c, #c9a462); color: #3a2c14; border: 1px solid #a88446; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbl-plaque .lbl-name { border-color: #b8955a; }
+/* R7a.2: the task box on a floor without the Etsy controls: Engineering's New issue, or the floor's phase */
+.tp-floor { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0 2px; }
+.tp-floor .tp-floor-text { white-space: normal; font-size: 12px; }
+.tp-floor .btn { flex: none; }

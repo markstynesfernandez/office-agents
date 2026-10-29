@@ -641,16 +641,20 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     M.wood.color.set(c.floor); M.tile.color.set(c.floor);
     renderer.shadowMap.needsUpdate = true;
   }
+  // R7a.2: a desk's name tag stands on its monitor (labels.js draws a short stem down to it), the same for a hired and an empty desk, so
+  // a tag reads as its own desk's and never as a neighbour's person's
+  const tagAnchor = (s) => { const f = monitorFace(s); return new THREE.Vector3(f.x, f.y + 0.34, f.z); };
   function buildTower(snap) {
     clearFloor(); hub.visible = false; updateBaked();
     pickables = []; while (pickRoot.children.length > 1) pickRoot.remove(pickRoot.children[pickRoot.children.length - 1]);
-    anchors.depts = {}; anchors.deptCorners = {}; anchors.agents = {}; anchors.desks = {}; anchors.vacant = {}; anchors.services = {};
+    anchors.depts = {}; anchors.deptCorners = {}; anchors.agents = {}; anchors.desks = {}; anchors.vacant = {}; anchors.services = {}; anchors.retired = null;
     buildTowerStatic();
     // the floor: one pick box for its department; the card on the back corner (the lobby's above the trophy cabinet)
     const { x0, x1, z0, z1 } = SLAB, cab = T.trophy ? T.props.find((p) => p.kind === 'cabinet') : null;
     for (const d of T.departments) {
       anchors.depts[d.key] = new THREE.Vector3((x0 + x1) / 2, PT, (z0 + z1) / 2);
-      anchors.deptCorners[d.key] = new THREE.Vector3(x0 + T_WALL_T + 0.55, FLOOR + T_WALL_H + 0.05, z0 + T_WALL_T + 0.55);
+      // R7a.2: the lobby's card is the trophy cabinet's plaque (labels.js), on the cabinet's top
+      anchors.deptCorners[d.key] = cab ? new THREE.Vector3(cab.x, PT + cab.h + 0.1, cab.z) : new THREE.Vector3(x0 + T_WALL_T + 0.55, FLOOR + T_WALL_H + 0.05, z0 + T_WALL_T + 0.55);
       const pick = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.6, z1 - z0)); pick.position.set((x0 + x1) / 2, FLOOR, (z0 + z1) / 2); pickRoot.add(pick); pickables.push({ object: pick, kind: 'dept', id: d.key });
     }
     // people and their desks: the hired agents (the snapshot's agents) only; an empty desk has its tag (labels.js) and no person
@@ -666,12 +670,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const face = monitorFace(s), mesh = new THREE.Mesh(G.screen, glowMat); mesh.position.set(face.x, face.y, face.z); mesh.rotation.y = face.yaw; world.add(mesh);
       screens.push({ agentId: s.agentId, mesh, tex, glowMat, texMat, textured: false });
       const top = PT + (f.stand ? 2.55 : 2.25);
-      anchors.agents[s.agentId] = new THREE.Vector3(s.x, top, s.z - 0.2);
+      anchors.agents[s.agentId] = tagAnchor(s);
       anchors.desks[s.agentId] = { x: s.x, z: s.z, min: new THREE.Vector3(s.x - 1.15, PT, s.z - 0.65), max: new THREE.Vector3(s.x + 1.15, top - 0.1, s.z + 1.4) };
       const pick = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.3, 2.7)); pick.position.set(s.x, PT + 1.1, s.z + 0.35); pickRoot.add(pick); pickables.push({ object: pick, kind: 'agent', id: s.agentId });
     });
     for (const s of T.seats.filter((x) => x.state === 'not-hired')) {
-      anchors.vacant[s.agentId] = new THREE.Vector3(s.x, PT + 1.95, s.z - 0.2);
+      anchors.vacant[s.agentId] = tagAnchor(s);
       const pick = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.0, 2.4)); pick.position.set(s.x, PT + 1.0, s.z + 0.3); pickRoot.add(pick); pickables.push({ object: pick, kind: 'vacancy', id: s.agentId });
     }
     // the services on the racks (Security & Data): a small screen and a status light on the first racks, the rack label above the row
@@ -694,6 +698,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       const kind = sc.kind === 'checks' || sc.kind === 'kanban' ? 'eng' : sc.kind === 'requests' ? 'requests' : sc.id === T.hub ? 'hub' : sc.kind === 'trophy' || sc.kind === 'names' ? 'trophy' : null;
       if (kind) { const pick = new THREE.Mesh(new THREE.BoxGeometry(sc.w, sc.h, 0.3)); pick.position.set(face.x, face.y, face.z); pick.rotation.y = face.ry; pickRoot.add(pick); pickables.push({ object: pick, kind, id: sc.id }); }
       if (sc.id === T.hub) anchors.hub.set(face.x, face.y + sc.h / 2 + 0.25, face.z);
+      if (sc.kind === 'retired') anchors.retired = new THREE.Vector3(face.x, face.y + sc.h / 2 + 0.12, face.z);   // R7a.2: the retired plaque
     }
     if (cab) { const pick = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2.3, cab.w)); pick.position.set(cab.x, PT + 1.15, cab.z); pickRoot.add(pick); pickables.push({ object: pick, kind: 'trophy', id: 'cabinet' }); }
     for (const m of Object.values(inst)) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
@@ -880,7 +885,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   }
   function obstacles() {
     const out = Object.entries(anchors.desks).map(([id, d]) => ({ kind: 'desk', id, ...boxRect(d.min, d.max) }));
-    if (T) return out;   // R7a: the floor's desks (the cards sit above the back corner)
+    // R7a: the floor's desks (the cards sit above the back corner); R7a.2: and the lobby's trophy cabinet and portrait, so no card hides them
+    if (T) { const cab = T.trophy ? T.props.find((p) => p.kind === 'cabinet') : null; if (cab) { out.push({ kind: 'trophy', ...boxRect(new THREE.Vector3(cab.x - 0.4, PT, cab.z - cab.w / 2), new THREE.Vector3(cab.x + 0.4, PT + cab.h, cab.z + cab.w / 2)) }); const pt = T.screens.find((x) => x.kind === 'retired'); if (pt) { const r = pt.w / 2 + 0.1; out.push({ kind: 'portrait', ...boxRect(new THREE.Vector3(pt.x - r, PT + pt.y - pt.h / 2, pt.z - r), new THREE.Vector3(pt.x + r, PT + pt.y + pt.h / 2, pt.z + r)) }); } } return out; }
     out.push({ kind: 'hub', ...boxRect(new THREE.Vector3(-0.8, FLOOR + 0.4, -0.8), new THREE.Vector3(0.8, CORE_Y + 1.05, 0.8)) });
     if (L && terminals.length) { const c = L.closet; out.push({ kind: 'rack', ...boxRect(new THREE.Vector3(c.x0 + 0.25, FLOOR, c.z0 + 0.4), new THREE.Vector3(c.x0 + 1.1, FLOOR + 2.1, c.z1 - 0.2)) }); }
     if (L && L.lounge.furniture) { const r = L.lounge.furniture.rug; out.push({ kind: 'lounge', ...boxRect(new THREE.Vector3(r.x0 + 0.3, FLOOR, r.z0 + 0.3), new THREE.Vector3(r.x1 - 0.3, FLOOR + 1.4, r.z1 - 0.3)) }); }

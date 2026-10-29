@@ -53,6 +53,9 @@
   <aside id="taskpanel">
     <section class="tp-new">
       <div class="tp-head"><span>New task</span><span id="task-mode" class="muted small"></span></div>
+      <!-- R7a.2: what the floor shown can start (taskpanel.js floorWork): Engineering's New issue, or the floor's phase; the Etsy controls only in the archive -->
+      <div id="task-floor" class="tp-floor hidden"><div class="tp-note tp-floor-text" id="task-floor-text"></div><button class="btn btn-primary hidden" id="task-new-issue" title="open the Engineering panel's issue form">New issue</button></div>
+      <div id="task-etsy">
       <div class="tp-tabs" role="tablist"><button class="chip chip-on" data-tab="research" role="tab">Research this</button><button class="chip" data-tab="brief" role="tab">Start line on brief</button><button class="chip" data-tab="rerun" role="tab">Re-run listing</button></div>
       <div class="tp-pane" data-pane="research">
         <textarea id="task-research" rows="3" maxlength="2000" placeholder="What should DEMAND-RESEARCHER look into? e.g. cosy autumn sticker niches with steady demand"></textarea>
@@ -67,6 +70,7 @@
       <div class="tp-pane hidden" data-pane="rerun">
         <select id="task-rerun"></select>
         <div class="tp-row"><span class="tp-note">the old listing moves to rerun-archive-*</span><button class="btn btn-primary" data-go="rerun">Re-run listing</button></div>
+      </div>
       </div>
     </section>
     <section class="tp-filters">

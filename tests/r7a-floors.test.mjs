@@ -7,6 +7,8 @@
 //   4 the screens: only data the snapshot has; the honest empty state where there is none
 //   5 the page (Playwright, headless, the engine view on the mock provider): every floor in light and dark with no page error, the
 //     right people and tags, the menu and the lift reach every floor, the Etsy button still opens its panel, frame time per floor
+//   6 R7a.2 (owner's screenshot review, 29/10/2026): every desk's tag on its own desk (a hired agent's with its working/idle dot), the
+//     trophy cabinet's plaque (the product's name, the eight names) and OVERSEER's own plaque, the floor-aware task box, the lift's numbers
 // Mock provider, temp data roots, no model call, $0.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,6 +23,8 @@ import { towerFloors, planFloor, floorPeople, screenContent, levelOf, DESIGNS } 
 import { floorMenu, floorSnapshot, pickFloor, buildingTotals, isTower } from '../src/web/ui/floors.js';
 import { createBuildingView } from '../src/web/ui/building.js';
 import { KIT_PROPS } from '../src/web/scene/kit.js';
+import { workDot, trophyCard } from '../src/web/ui/labels.js';
+import { floorWork } from '../src/web/ui/taskpanel.js';
 
 const FLOORS = ['6', '5', '4', '3', '2', '1', 'G'];
 const ETSY = ['demand-researcher', 'evidence-checker', 'trend-scout', 'designer', 'qa-design', 'lister', 'qa-listing', 'rejects-desk'];
@@ -146,6 +150,30 @@ test('5: the page: every floor in light and dark, no page error, people and tags
       for (const sc of st.tower.screens) if (['leaderboard', 'support', 'roadmap', 'metrics', 'pipeline', 'onboarding', 'kanban', 'checks'].includes(sc.kind)) assert.ok(sc.empty, f + ' ' + sc.kind + ' shows its empty state');
       assert.match(st.caption, f === 'G' ? /^Ground floor · Lobby/ : new RegExp('^Floor ' + f + ' · '));
       if (f === 'G') assert.deepEqual([st.tower.cabinet.length, st.tower.retired], [8, ['overseer']]);
+      // R7a.2: every desk's tag is shown, and its stem's foot is nearer its own desk than any other desk on the floor
+      const tags = await page.evaluate((seats) => {
+        const o = window.__office.office, out = [];
+        for (const s of seats) {
+          const el = document.querySelector('#labels .lbl-desk[data-agent="' + s.agentId + '"]');
+          if (!el) { out.push({ id: s.agentId, missing: true }); continue; }
+          const r = el.getBoundingClientRect(), stage = document.querySelector('#labels').getBoundingClientRect(), pin = { x: r.left + r.width / 2 - stage.left, y: r.bottom + 12 - stage.top };
+          const y = (o.anchors.agents[s.agentId] || o.anchors.vacant[s.agentId]).y;
+          const d = seats.map((x) => { const p = o.project({ x: x.frame.monitor.x, y, z: x.frame.monitor.z }); return { id: x.agentId, d: Math.hypot(p.x - pin.x, p.y - pin.y) }; }).sort((a, b) => a.d - b.d);
+          out.push({ id: s.agentId, shown: el.style.display !== 'none', nearest: d[0].id, dot: (el.querySelector('i.dot') || {}).className || null, text: el.textContent });
+        }
+        return out;
+      }, plan.seats.map((x) => ({ agentId: x.agentId, state: x.state, frame: x.frame })));
+      for (const x of tags) { assert.ok(!x.missing && x.shown, f + ' ' + x.id + ': its tag is shown'); assert.equal(x.nearest, x.id, f + ' ' + x.id + ': its tag stands on its own desk'); }
+      for (const x of tags.filter((y) => plan.seats.find((z) => z.agentId === y.id).state === 'hired')) assert.match(x.dot, /dot-(working|idle)/, f + ' ' + x.id + ': a status dot');
+      // R7a.2: the task box follows the floor
+      const box = await page.evaluate(() => ({ etsy: !document.querySelector('#task-etsy').classList.contains('hidden'), floor: !document.querySelector('#task-floor').classList.contains('hidden'), text: document.querySelector('#task-floor-text').textContent, issue: !document.querySelector('#task-new-issue').classList.contains('hidden'), etsyOff: [...document.querySelectorAll('#task-etsy [data-go]')].every((b) => b.disabled), mode: document.querySelector('#task-mode').textContent }));
+      if (f === 'G') assert.deepEqual([box.etsy, box.floor, box.etsyOff, box.mode], [true, false, true, 'archived · refused'], 'G: the Etsy controls, refused as archived');
+      else if (f === '4') assert.deepEqual([box.etsy, box.floor, box.issue], [false, true, true], '4: New issue');
+      else assert.deepEqual([box.etsy, box.floor, box.issue, box.text], [false, true, false, floorWork(await page.evaluate(() => window.__office.view()), null).text], f + ': no work line yet');
+      if (f === 'G') {
+        const tc = await page.evaluate(() => { const c = document.querySelector('#labels .trophy-card'), p = document.querySelector('#labels .lbl-plaque'); return { name: c && c.querySelector('.trophy-name').textContent, plaques: c ? c.querySelectorAll('.plaque').length : 0, shown: !!c && c.style.display !== 'none', retired: p && p.textContent, retiredShown: !!p && p.style.display !== 'none' }; });
+        assert.deepEqual(tc, { name: 'TheStationShopFinds', plaques: 8, shown: true, retired: 'STATION-OVERSEERretired into COO', retiredShown: true });
+      }
       if (theme === 'light') {
         const b = await page.evaluate(() => window.__office.bench(1500, { move: true }));
         frames.push({ floor: f, avgFrameMs: b.avgFrameMs, p95FrameMs: b.p95FrameMs, avgCpuMs: b.avgCpuMs, calls: b.calls, tris: b.tris });
@@ -158,6 +186,17 @@ test('5: the page: every floor in light and dark, no page error, people and tags
     await page.click('#floor-menu .fm-go[data-floor="' + f + '"]'); await settle();
     assert.equal(await page.evaluate(() => window.__office.floor()), f, 'menu → ' + f);
   }
+  // R7a.2: the lift's floor numbers read in both themes: on their own chip, inside their floor's row, the text against the chip at 4.5:1 or more
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((th) => window.__office.setTheme(th), theme);
+    await page.evaluate(() => window.__office.openBuilding()); await page.waitForSelector('#building:not(.hidden) .lift');
+    const nums = await page.evaluate(() => [...document.querySelectorAll('#building .lift-n')].map((n) => { const r = n.getBoundingClientRect(), b = n.closest('.lift-floor').getBoundingClientRect(), cs = getComputedStyle(n); return { n: n.textContent, inside: r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom && r.width > 0, fg: cs.color, bg: cs.backgroundColor }; }));
+    const lum = (c) => { const v = c.match(/[\d.]+/g).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+    assert.deepEqual(nums.map((x) => x.n), FLOORS);
+    for (const x of nums) { const a = lum(x.fg), b = lum(x.bg), ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); assert.ok(x.inside, theme + ' ' + x.n + ' inside its row'); assert.ok(ratio >= 4.5, theme + ' floor ' + x.n + ' contrast ' + ratio.toFixed(2)); }
+    await page.keyboard.press('Escape');
+  }
+  await page.evaluate(() => window.__office.setTheme('light'));
   for (const f of ['G', '6']) {
     await page.evaluate(() => window.__office.openBuilding()); await page.waitForSelector('#building:not(.hidden) .lift');
     await page.click('#building .lift-floor[data-floor="' + f + '"]'); await settle();
@@ -171,4 +210,20 @@ test('5: the page: every floor in light and dark, no page error, people and tags
   t.diagnostic('GL renderer: ' + gl + (swift ? ' (software: the frame times are not the laptop\'s figure)' : ''));
   for (const x of frames) t.diagnostic('floor ' + x.floor + ': ' + x.avgFrameMs + ' ms a frame (p95 ' + x.p95FrameMs + ' ms, cpu ' + x.avgCpuMs + ' ms), ' + x.calls + ' draw calls, ' + x.tris + ' triangles');
   if (!swift) for (const x of frames) assert.ok(x.avgFrameMs > 0 && x.avgFrameMs < 16.7, 'floor ' + x.floor + ' frame ' + x.avgFrameMs + ' ms (60 fps: 16.7 ms)');
+});
+
+test('6: R7a.2: the tag dot, the trophy cabinet plaque and the floor-aware task box (pure)', (t) => {
+  const s = buildEngineSnapshot(engineOn(t, 'r7a6'));
+  assert.deepEqual(['working', 'idle', 'waiting', 'error', undefined].map(workDot), ['working', 'idle', 'idle', 'idle', 'idle']);
+  // the cabinet's plaque: the product's name, the eight archived Etsy agents by name, never OVERSEER (it has its own plaque)
+  const g = planFloor(s, 'G'), html = trophyCard(g);
+  assert.match(html, /<h3 class="trophy-name">TheStationShopFinds<\/h3>/);
+  assert.equal((html.match(/class="plaque"/g) || []).length, 8);
+  for (const a of g.cabinet) assert.ok(html.includes('>' + a.name + '<'), a.name);
+  assert.ok(!html.includes('OVERSEER'));
+  assert.deepEqual(g.retired.map((a) => [a.name, a.label]), [['STATION-OVERSEER', 'retired into COO']]);
+  // the task box per floor: the Etsy controls only in the archive (refused), New issue on Engineering, the phase elsewhere
+  const work = Object.fromEntries(FLOORS.map((f) => { const w = floorWork(floorSnapshot(s, f)); return [f, w.kind === 'etsy' ? 'etsy' + (w.archived ? ' (archived)' : '') : w.kind === 'eng' ? 'eng' : w.text]; }));
+  assert.deepEqual(work, { 6: 'No work line on this floor yet (opens in R3)', 5: 'No work line on this floor yet (opens in R6)', 4: 'eng', 3: 'No work line on this floor yet (opens in R4)', 2: 'No work line on this floor yet (opens in R5)', 1: 'No work line on this floor yet (opens in R6)', G: 'etsy (archived)' });
+  assert.equal(floorWork(s), null, 'off the stack the box is as it was');
 });

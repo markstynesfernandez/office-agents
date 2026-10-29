@@ -203,7 +203,7 @@ const LAYOUTS = {
     screens: [onZ('support', 'support', 5.6, 1.45, 4.4, 2.0), onX('onboarding', 'onboarding', -1.0, 1.4, 3.2, 1.7, 'board')]
   }),
   // G: the lobby: the station's sign over reception, the trophy cabinet of the archived Etsy agents (TheStationShopFinds), OVERSEER's
-  // portrait (retired), the directory by the lift, a pool, the lounge
+  // portrait (retired; R7a.2: on the back wall over the pool, apart from the cabinet), the directory by the lift, a pool, the lounge
   lobby: () => ({
     walls: { x: 'solid', z: 'solid' }, lobby: true,
     slots: [],
@@ -216,7 +216,7 @@ const LAYOUTS = {
       { kind: 'coffeeTable', x: 6.0, z: 4.3, w: 2.0, d: 1.1 }, { kind: 'floorLamp', x: 11.2, z: 6.8 },
       ...plants([[-6.0, -6.9, 1], [3.6, -6.9, 1], [11.2, -6.9, 1], [11.2, 1.6, 1], [0.8, 6.9, 1], [-9.6, 6.9]]), LIFT
     ],
-    screens: [onZ('sign', 'sign', -1.0, 1.75, 5.4, 0.8, 'sign'), { id: 'trophy', kind: 'trophy', x: SLAB.x0 + T_WALL_T + 0.04, y: 2.45, z: -3.2, yaw: -Math.PI / 2, w: 5.0, h: 0.3, style: 'plate' }, onX('retired', 'retired', 0.9, 1.45, 1.3, 1.6, 'portrait'), onX('directory', 'directory', 3.0, 1.4, 1.8, 2.0)],
+    screens: [onZ('sign', 'sign', -1.0, 1.75, 5.4, 0.8, 'sign'), { id: 'trophy', kind: 'trophy', x: SLAB.x0 + T_WALL_T + 0.04, y: 2.45, z: -3.2, yaw: -Math.PI / 2, w: 5.0, h: 0.3, style: 'plate' }, onZ('retired', 'retired', 5.4, 1.45, 1.3, 1.6, 'portrait'), onX('directory', 'directory', 3.0, 1.4, 1.8, 2.0)],
     trophy: true
   }),
   generic: () => ({ walls: { x: 'solid', z: 'solid' }, slots: [], props: [LIFT], screens: [] })

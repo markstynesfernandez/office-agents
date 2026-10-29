@@ -29,10 +29,30 @@ export function briefOptions(list) {
   return { startable, html };
 }
 
+// R7a.2 (owner, 29/10/2026): what the task box shows on a floor of the seven-floor stack (pure, tests/r7a-floors.test.mjs). The Etsy
+// research controls only where the selected department runs an Etsy line (the archive, G), refused as archived there; Engineering's
+// New issue (the Engineering panel's form); any other floor says it has no work line yet and the phase that opens it (its earliest
+// not-hired agent's). null off the stack (the B0 and legacy views keep the box as it was). -> { kind: 'etsy'|'eng'|'none', ... }
+const ETSY_LINES = ['research', 'genre-scout', 'room1-digital'];
+const phaseNo = (p) => { const m = /^R(\d+)/.exec(p || ''); return m ? Number(m[1]) : Infinity; };
+export function floorWork(snap, deptKey = null) {
+  const fv = snap && snap.floorView; if (!fv || !fv.tower) return null;
+  const all = ((snap.company && snap.company.floors) || []).filter((d) => String(d.floor).toUpperCase() === String(fv.floor).toUpperCase());
+  const lineIds = (d) => (d.lines || []).map((l) => (typeof l === 'string' ? l : l.id));
+  const sel = all.find((d) => d.id === deptKey) || all[0] || null;
+  if (sel && lineIds(sel).some((l) => ETSY_LINES.includes(l))) {
+    const archived = sel.status === 'archived' || (sel.lines || []).some((l) => l && l.archived);
+    return { kind: 'etsy', archived, text: archived ? 'archived: the Etsy lines are in the archive; nothing starts on them' : null };
+  }
+  if (all.some((d) => lineIds(d).includes('engineering'))) return { kind: 'eng', text: 'an issue for the engineering line: saving it costs nothing; you approve it next' };
+  const phases = all.flatMap((d) => (d.agents || []).filter((a) => a.status === 'not-hired').map((a) => a.phase)).filter(Boolean).sort((a, b) => phaseNo(a) - phaseNo(b));
+  return { kind: 'none', phase: phases[0] || null, text: 'No work line on this floor yet' + (phases[0] ? ' (opens in ' + phases[0] + ')' : '') };
+}
+
 // agent · department · stage, leaving out what is unknown (lane jobs show their stage as the pill instead)
 const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(Boolean).join(' · ') || j.id;
 
-export function createTaskPanel({ root, onOpenJob, ctl = null }) {
+export function createTaskPanel({ root, onOpenJob, ctl = null, onNewIssue = null }) {
   const sel = root.querySelector('#task-dept');
   const filtersEl = root.querySelector('#task-filters'), list = root.querySelector('#task-list');
   const research = root.querySelector('#task-research'), briefSel = root.querySelector('#task-brief'), rerunSel = root.querySelector('#task-rerun'), productSel = root.querySelector('#task-product');
@@ -96,6 +116,8 @@ export function createTaskPanel({ root, onOpenJob, ctl = null }) {
     }
   }
   root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); go(b.dataset.go); }));
+  const newIssueBtn = root.querySelector('#task-new-issue');
+  if (newIssueBtn) newIssueBtn.addEventListener('click', (e) => { e.preventDefault(); if (onNewIssue && live()) onNewIssue(); });
   research.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go('research'); } });
 
   function renderBox() {
@@ -127,11 +149,28 @@ export function createTaskPanel({ root, onOpenJob, ctl = null }) {
       if (!lines.includes('room1-digital')) for (const k of ['brief', 'owner-brief', 'rerun']) root.querySelector('[data-go="' + k + '"]').disabled = true;
       if (!lines.includes('research') && !lines.includes('room1-digital')) { const m = root.querySelector('#task-mode'); m.textContent = 'no line on floor ' + fv.floor; m.title = 'floor ' + fv.floor + (fv.shared ? ' (shared services)' : '') + ' runs no line: new tasks start on a business floor'; }
     }
+    renderFloorWork();
+  }
+  // R7a.2: the seven-floor stack: the Etsy box only in the archive (refused there), Engineering's New issue, else the floor's phase
+  function renderFloorWork() {
+    const s = state.snap, w = floorWork(s, state.dept), etsy = root.querySelector('#task-etsy'), box = root.querySelector('#task-floor');
+    if (!etsy || !box) return;
+    etsy.classList.toggle('hidden', !!w && w.kind !== 'etsy');
+    box.classList.toggle('hidden', !w || w.kind === 'etsy');
+    if (!w) return;
+    const m = root.querySelector('#task-mode');
+    if (w.kind === 'etsy') {
+      if (w.archived) { root.querySelectorAll('#task-etsy [data-go], #task-research, #task-brief, #task-rerun, #task-product').forEach((el) => { el.disabled = true; }); research.placeholder = 'Archived: ' + w.text.replace(/^archived: /, ''); m.textContent = 'archived · refused'; m.title = w.text; }
+      return;
+    }
+    root.querySelector('#task-floor-text').textContent = w.text;
+    newIssueBtn.classList.toggle('hidden', w.kind !== 'eng'); newIssueBtn.disabled = !live();
+    m.textContent = w.kind === 'eng' ? 'Engineering' : 'floor ' + s.floorView.floor; m.title = w.text;
   }
 
   // ---- the list
   root.querySelectorAll('.scope .chip').forEach((b) => b.addEventListener('click', () => { state.scope = b.dataset.scope; root.querySelectorAll('.scope .chip').forEach((x) => x.classList.toggle('chip-on', x === b)); render(); }));
-  sel.addEventListener('change', () => { state.dept = sel.value || null; render(); });
+  sel.addEventListener('change', () => { state.dept = sel.value || null; renderBox(); render(); });
 
   function setSnapshot(snap) {
     state.snap = snap;
@@ -140,7 +179,7 @@ export function createTaskPanel({ root, onOpenJob, ctl = null }) {
     if (cur && snap.departments.some((d) => d.key === cur)) sel.value = cur; state.dept = sel.value || null;
     renderBox(); render();
   }
-  function setDept(key) { if (state.snap && state.snap.departments.some((d) => d.key === key)) { sel.value = key; state.dept = key; render(); } }
+  function setDept(key) { if (state.snap && state.snap.departments.some((d) => d.key === key)) { sel.value = key; state.dept = key; renderBox(); render(); } }
   const scoped = () => { const s = state.snap; return state.scope === 'dept' && state.dept ? s.jobs.filter((j) => j.dept === state.dept) : s.jobs; };
   function counts() { const base = scoped(); return Object.fromEntries(FILTERS.map(([k]) => [k, base.filter((j) => matchesFilter(j, k)).length])); }
   function render() {

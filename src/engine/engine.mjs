@@ -172,6 +172,9 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
       return effectiveAgent(engine, t.firstAgent).enabled ? null : ((cfg.agents[t.firstAgent] || {}).name || t.firstAgent) + ' is off duty';
     };
     engine.scheduler = createScheduler({ store, halt, ledger, caps: cfg.engine.caps, bus, log, clock, hold: routineHold, locked: engine.scriptRun ? 'script: ' + engine.scriptRun.purpose : null, run: (routine) => (engine.runRoutine ? engine.runRoutine(routine) : Promise.reject(new Error('no routine runner'))) });
+    // R7a.2 (owner, 29/10/2026): an enabled routine on an archived line (or of an archived department) is disabled at start, logged, and
+    // never armed or fired; a script's engine changes no routine, and the archive sandbox archives nothing
+    if (!engine.scriptRun) engine.disabledAtStart = disableArchivedRoutines(engine);
     if (startScheduler) engine.scheduler.start();
     engine.routines = routineAdmin(engine);
     engine.seededRoutines = seedRoutines(engine);
@@ -256,6 +259,23 @@ function routineAdmin(engine) {
       scheduler.refresh(id); emit(id, 'deleted', null); return { id, deleted: true };
     }
   };
+}
+
+// R7a.2: the enabled routines on an archived line or of an archived department, disabled before the scheduler arms anything -> their ids
+export function disableArchivedRoutines(engine) {
+  const { store, company: C, bus, log } = engine, out = [];
+  if (engine.archiveSandbox) return out;
+  for (const r of store.listRoutines()) {
+    if (!r.enabled) continue;
+    const l = /^line:(.+)$/.exec(String(r.target || '')), dept = r.department_id ? C.department(r.department_id) : null;
+    const why = l && C.lineArchived(l[1]) ? 'the ' + l[1] + ' line is archived' : dept && dept.status === 'archived' ? 'its department (' + dept.id + ') is archived' : null;
+    if (!why) continue;
+    const d = store.setRoutineEnabled(r.id, false, { expectedVersion: r.version });
+    bus.emit('routine.changed', { data: { routineId: r.id, what: 'disabled at start: ' + why, name: r.name, enabled: false, productId: r.product_id || undefined, departmentId: r.department_id || undefined } });
+    log.warn('routine disabled at start: archived', { id: r.id, name: r.name, target: r.target, why, version: d.version });
+    out.push(r.id);
+  }
+  return out;
 }
 
 // R1: why a routine target cannot be armed: its line is archived or paused, or its agent is not hired yet or archived -> reason or null

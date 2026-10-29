@@ -75,5 +75,7 @@ export function createEngPanel({ root, ctl }) {
   });
   function open(id = null) { jobId = id; detail = null; root.classList.remove('hidden'); render(); refresh(); }
   function isOpen() { return !root.classList.contains('hidden'); }
-  return { open, refresh, rework: (id) => { open(id); return get('/api/eng/job/' + encodeURIComponent(id)).then((d) => decide(id, 'rework', d.job.version)).catch(() => {}); }, show: () => open(jobId), hide: () => root.classList.add('hidden'), isOpen, current: () => jobId };
+  // R7a.2: the right-hand panel's New issue (on Engineering): the panel, then its issue form for the product (the first, as the panel's own)
+  async function newIssueForm() { open(null); await refresh(); const p = product(); if (p) await newIssue(p.id); else ctl.toast('No engineering product to file an issue for.', 'err'); }
+  return { open, refresh, newIssue: newIssueForm, rework: (id) => { open(id); return get('/api/eng/job/' + encodeURIComponent(id)).then((d) => decide(id, 'rework', d.job.version)).catch(() => {}); }, show: () => open(jobId), hide: () => root.classList.add('hidden'), isOpen, current: () => jobId };
 }
