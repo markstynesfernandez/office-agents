@@ -62,10 +62,12 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
   const warnings = [];
   const day = dublinDay(now), dayStart = dublinDayStart(now);
   const L = cfg.lines['room1-digital'];
-  // R1: not hired yet: no desk until its phase. R2: an agent hired before its floor is drawn (R7: Engineering, Security & Data, the
-  // penthouse) has no desk on B0's page either: the company view lists it and the Engineering panel shows its work
+  // R1: not hired yet: no desk until its phase. R7a: an active agent of a company department (config/departments) is drawn at its desk
+  // on its department's floor, though it has no room on B0's plan (config/office.json); it is not on B0's floors (floor null)
   const hired = Object.values(cfg.agents).filter((a) => a.status !== 'not-hired'), rooms = new Set((cfg.office.departments || []).map((d) => d.key));
-  const agentsCfg = hired.filter((a) => rooms.has(String(a.department).toLowerCase()));
+  const C0 = engine.company || (cfg.company ? companyOf(cfg) : null), deptIdOf = (k) => (C0 ? C0.deptOfAgent(k) : null);
+  const inRoom = (a) => rooms.has(String(a.department).toLowerCase()), onFloor = (a) => !inRoom(a) && a.status === 'active' && !!deptIdOf(a.key);
+  const agentsCfg = hired.filter((a) => inRoom(a) || onFloor(a));
   const nameOf = Object.fromEntries(hired.map((a) => [a.key, a.name]));
   const stepDef = (job, step) => { const l = cfg.lines[job.line]; return l && l.steps[step]; };
   const runs = store.runsOf({ limit: 500 });
@@ -197,12 +199,12 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     if (live) { status = 'working'; statusText = 'working · ' + ((liveJob && liveJob.stageLabel) || live.step || '') + ' pass ' + (live.pass || 1); }
     else if (last && ['failed', 'refused', 'cap', 'max-turns'].includes(last.status)) { status = 'error'; statusText = 'error · ' + last.status + ': ' + String(last.end_reason || last.error || '').slice(0, 80); }
     const desk = cfg.office.desks && cfg.office.desks[a.key] ? { propId: a.key, ...cfg.office.desks[a.key], roomId: deptOf[a.key] ? deptOf[a.key].key : null, roomName: deptOf[a.key] ? deptOf[a.key].name : null } : null;
-    if (!desk) warnings.push(a.name + ' has no desk in config/office.json');
+    if (!desk && inRoom(a)) warnings.push(a.name + ' has no desk in config/office.json');
     const myJobs = jobs.filter((j) => j.hops.some((h) => h.agentId === a.key));
     const imgJob = a.key === 'designer' ? myJobs.find((j) => j.images.length) : null;
-    const aBiz = B.ofAgent(a.key) || SHARED;
+    const aBiz = onFloor(a) ? null : B.ofAgent(a.key) || SHARED;
     return {
-      businessId: aBiz, floor: floorOf(aBiz),
+      businessId: aBiz, floor: aBiz ? floorOf(aBiz) : null, departmentId: deptIdOf(a.key),
       id: a.key, name: a.name, model: providers.mode === 'mock' ? 'mock (' + t.model + ')' : t.model, provider: providers.mode === 'mock' ? 'mock' : t.provider, role: roleLabel(a.role, { dept: deptOf[a.key] ? deptOf[a.key].name : null, name: a.name }), modelSource: 'config/agents/' + a.key + '.json + config/engine.json tiers',
       color: a.color || null, gear: a.tools, tier, effort, enabled, version, tierModel: t.model || null, warnings: [], dept: deptOf[a.key] ? deptOf[a.key].key : null, deptName: deptOf[a.key] ? deptOf[a.key].name : null, desk, status, statusText,
       since: live ? live.started_at : last ? (last.ended_at || last.started_at) : null, services: live ? [providers.mode === 'mock' ? 'mock' : t.provider] : [], synthetic: false, syntheticWhat: null,
@@ -311,11 +313,22 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     company: C ? companyView(engine, C, { agents, jobs }) : null,
     // R2c: the Engineering panel's entry (the Floors menu, the building view): its products and how many jobs wait for the owner; the panel
     // itself reads GET /api/eng/view with the owner's session
-    engineering: engine.engineering && cfg.lines.engineering ? { products: (cfg.lines.engineering.products || []).map((id) => (C && C.product(id)) || { id, name: id }).map((p) => ({ id: p.id, name: p.name })), waitingForYou: store.listJobs({ states: ['approval'] }).filter((j) => j.kind === 'engineering').length } : null,
+    engineering: engine.engineering && cfg.lines.engineering ? { products: (cfg.lines.engineering.products || []).map((id) => (C && C.product(id)) || { id, name: id }).map((p) => ({ id: p.id, name: p.name })), waitingForYou: store.listJobs({ states: ['approval'] }).filter((j) => j.kind === 'engineering').length, ...engCheckScreen(store) } : null,
     jobLimit: { maxRunning: engine.maxRunningJobs || null, perLine: Object.fromEntries(Object.values(cfg.lines).map((l) => [l.id, l.maxConcurrentJobs || 1])), running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }
   };
 }
 
+
+// R7a: the Engineering floor's checks screen: the newest engineering job (its step while it runs) and the last checks the sandbox ran
+// (job.data.checks, written by engineering.mjs after each pass); null when there is none
+function engCheckScreen(store) {
+  const eng = store.listJobs().filter((j) => j.kind === 'engineering').sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+  const cur = eng.find((j) => j.state === 'running') || eng[0] || null, ck = eng.find((j) => j.data && Array.isArray(j.data.checks) && j.data.checks.length) || null;
+  return {
+    current: cur ? { jobId: cur.id, title: cur.title || cur.id, state: cur.state, step: cur.step || null } : null,
+    lastChecks: ck ? { jobId: ck.id, pass: ck.data.checksPass || null, at: ck.updated_at || null, results: ck.data.checks.map((c) => ({ check: c.check, passed: !!c.passed })) } : null
+  };
+}
 
 // R1: the company view: floors top to bottom, each agent with its status; products; the Owner's office (requests, decisions, policy)
 function companyView(engine, C, { agents, jobs }) {

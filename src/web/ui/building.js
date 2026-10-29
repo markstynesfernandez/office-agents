@@ -5,8 +5,12 @@
 // decides, with their words, on this page; every decision is logged), Finance per product (a ledger calculation; MRR "not connected"
 // until R6), the seven-floor company top to bottom with each agent's status, the autonomy policy (read only: the owner edits
 // config/autonomy.json) and any paused line (the owner resumes it here).
+// R7a: with the seven-floor stack, the floors are a lift: a section of the building, the penthouse at the top and the lobby at the
+// bottom, each floor with who works there (hired, not hired yet; the lobby's archived agents) and its jobs; the lift car marks the floor
+// the page shows; a click goes to that floor. Spend per product is in Finance below (the floors have no budget of their own).
 import { esc, money } from './format.js';
-import { buildingTotals } from './floors.js';
+import { buildingTotals, floorWord } from './floors.js';
+import { FLOOR_PALETTES } from '../scene/towerplan.js';
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString('en-IE', { timeZone: 'Europe/Dublin', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -15,21 +19,41 @@ const when = (ms) => (ms ? new Date(ms).toLocaleString('en-IE', { timeZone: 'Eur
 export function createBuildingView({ root, onFloor = () => {}, onDecide = () => {}, onResume = () => {}, onEng = () => {} }) {
   const body = root.querySelector('#building-body');
   let reqs = [];
-  function render(snap) {
-    const rows = buildingTotals(snap).slice().sort((a, b) => b.floor - a.floor);   // top floor first, like a building
+  function render(snap, cur = null) {
+    const rows = buildingTotals(snap).slice().sort((a, b) => (b.level ?? b.floor) - (a.level ?? a.floor));   // top floor first, like a building
+    if (rows.some((r) => r.design)) return bind(snap, '<div class="bldg">' + lift(rows, cur) + '<div class="bldg-total muted">Whole building: today ' + money(snap.spend && snap.spend.today ? snap.spend.today.usd : 0) + ' of the station\'s daily cap ' + money(snap.spend && snap.spend.caps ? snap.spend.caps.perDay : 0) + ' · spend per product: Finance, below · station caps stay the outer limit</div>' + company(snap) + '</div>');
     const total = rows.reduce((s, r) => s + (r.todayUsd || 0), 0), month = rows.reduce((s, r) => s + (r.monthUsd || 0), 0);
-    body.innerHTML = '<div class="bldg">' + rows.map((r) => '<button class="bldg-floor" data-floor="' + r.floor + '">'
+    bind(snap, '<div class="bldg">' + rows.map((r) => '<button class="bldg-floor" data-floor="' + r.floor + '">'
       + '<span class="fl-num">' + r.floor + '</span><span><span class="fl-name">' + esc(r.name) + '</span>'
       + (r.shared ? ' <span class="tag">shared services' + (r.lounge ? ' · lounge' : '') + '</span>' : '') + (r.empty ? ' <span class="tag tag-warn">empty floor: no lines yet</span>' : '')
       + '<div class="muted" style="font-size:11px">' + esc(r.departments.join(' · ') || 'no departments') + ' · ' + r.agents + ' agent' + (r.agents === 1 ? '' : 's') + (r.lines.length ? ' · lines ' + esc(r.lines.join(', ')) : '') + '</div>'
       + '<div class="fl-stats"><span><span class="m">running</span> ' + r.jobs.running + '</span><span><span class="m">waiting</span> ' + r.jobs.waiting + '</span><span><span class="m">blocked</span> ' + r.jobs.blocked + '</span><span><span class="m">done</span> ' + r.jobs.done + '</span><span><span class="m">routines on</span> ' + r.routinesOn + '</span>'
       + '<span><span class="m">today</span> ' + money(r.todayUsd) + '</span><span><span class="m">this month</span> ' + money(r.monthUsd) + (r.budgetUsd ? ' of ' + money(r.budgetUsd) + ' budget' : '') + '</span></div></span></button>').join('')
       + '<div class="bldg-total muted">Whole building: today ' + money(total) + ' of the station\'s daily cap ' + money(snap.spend && snap.spend.caps ? snap.spend.caps.perDay : 0) + ' · this month ' + money(month) + ' · station caps stay the outer limit</div>'
-      + company(snap) + '</div>';
-    body.querySelectorAll('[data-floor]').forEach((el) => el.addEventListener('click', () => onFloor(Number(el.dataset.floor))));
+      + company(snap) + '</div>');
+  }
+  function bind(snap, html) {
+    body.innerHTML = html;
+    body.querySelectorAll('[data-floor]').forEach((el) => el.addEventListener('click', () => onFloor(el.dataset.floor)));
     body.querySelectorAll('[data-req]').forEach((el) => el.addEventListener('click', () => { const r = reqs.find((x) => x.id === el.dataset.req); if (r) onDecide(r, el.dataset.decision); }));
     body.querySelectorAll('[data-resume]').forEach((el) => el.addEventListener('click', () => onResume(el.dataset.resume)));
     body.querySelectorAll('[data-eng-open]').forEach((el) => el.addEventListener('click', () => onEng(el.dataset.engOpen || null)));
+  }
+
+  // R7a: the lift: one slab per floor in the floor's own colours, the car at the floor shown
+  function lift(rows, cur) {
+    const n = (v, one, many) => v + ' ' + (v === 1 ? one : many);
+    return '<div class="lift" role="list" aria-label="the floors, top to bottom">' + rows.map((r) => {
+      const pal = (FLOOR_PALETTES[r.palette] || FLOOR_PALETTES.generic).light, here = cur != null && String(cur) === String(r.floor);
+      const who = [r.agents ? n(r.agents, 'hired', 'hired') : null, r.notHired ? r.notHired + ' not hired yet' : null, r.trophy ? n(r.trophy, 'archived agent', 'archived agents') + ' in the trophy cabinet' : null, ...(r.retired || []).map((x) => x + ' retired')].filter(Boolean).join(' · ') || 'reception and lounge';
+      const jobs = r.jobs.running + r.jobs.waiting + r.jobs.blocked + r.jobs.done;
+      return '<button class="lift-floor' + (here ? ' lift-cur' : '') + '" role="listitem" data-floor="' + esc(r.floor) + '" style="--fl-wall:' + pal.wall + ';--fl-floor:' + pal.floor + ';--fl-acc:' + pal.accent + '" title="' + esc(floorWord(r.floor) + ': ' + r.name + ' (click to go there)') + '">'
+        + '<span class="lift-car">' + (here ? '▶' : '') + '</span><span class="lift-n">' + esc(r.floor) + '</span>'
+        + '<span class="lift-body"><span><span class="fl-name">' + esc(r.name) + '</span>' + (r.archived ? ' <span class="tag tag-warn">archive</span>' : '') + (here ? ' <span class="muted">· you are here</span>' : '') + '</span>'
+        + '<span class="lift-meta">' + esc(r.departments.join(' · ')) + ' · ' + esc(who) + '</span>'
+        + '<span class="fl-stats"><span><span class="m">running</span> ' + r.jobs.running + '</span><span><span class="m">waiting</span> ' + r.jobs.waiting + '</span><span><span class="m">blocked</span> ' + r.jobs.blocked + '</span><span><span class="m">done</span> ' + r.jobs.done + '</span><span><span class="m">routines on</span> ' + r.routinesOn + '</span>' + (jobs ? '' : '<span class="muted">no jobs yet</span>') + '</span></span>'
+        + '<span class="lift-slab"></span></button>';
+    }).join('') + '</div>';
   }
 
   // R1: the penthouse and the company

@@ -10,14 +10,14 @@ export function createFloorMenu({ button, root, onFloor = () => {}, onDept = () 
   function render() {
     root.innerHTML = '<div class="fm-head">Floors <span class="muted">click a department to go there · F or Esc to close</span></div>'
       + (eng && onEng ? '<div class="fm-floor fm-eng"><button class="fm-go" data-eng-open><span class="fm-n">⚙</span><span class="fm-name">Engineering · ' + esc(eng.products.map((p) => p.name).join(', ')) + '</span>' + (eng.waitingForYou ? '<span class="tag tag-warn">' + eng.waitingForYou + ' waiting for you</span>' : '') + '</button></div>' : '')
-      + rows.map((r) => '<div class="fm-floor' + (r.floor === cur ? ' fm-cur' : '') + '">'
-      + (r.floor == null ? '<div class="fm-name">' + esc(r.name) + '</div>' : '<button class="fm-go" data-floor="' + r.floor + '"><span class="fm-n">' + r.floor + '</span><span class="fm-name">' + esc(r.name) + '</span>' + (r.floor === cur ? '<span class="muted">you are here</span>' : '') + '</button>')
+      + rows.map((r) => '<div class="fm-floor' + (r.floor != null && String(r.floor) === String(cur) ? ' fm-cur' : '') + '">'
+      + (r.floor == null ? '<div class="fm-name">' + esc(r.name) + '</div>' : '<button class="fm-go" data-floor="' + r.floor + '"><span class="fm-n">' + r.floor + '</span><span class="fm-name">' + esc(r.name) + '</span>' + (r.floor != null && String(r.floor) === String(cur) ? '<span class="muted">you are here</span>' : '') + '</button>')
       + '<div class="fm-depts">' + (r.departments.length ? r.departments.map((d) => '<button class="chip" data-floor="' + (r.floor == null ? '' : r.floor) + '" data-dept="' + esc(d.key) + '">' + esc(d.name) + '</button>').join('') : '<span class="muted">' + (r.empty ? 'empty floor: no lines yet' : 'no departments') + '</span>') + '</div></div>').join('');
     root.querySelectorAll('[data-eng-open]').forEach((el) => el.addEventListener('click', () => { hide(); onEng(); }));
     root.querySelectorAll('[data-floor]').forEach((el) => el.addEventListener('click', () => {
-      const n = el.dataset.floor === '' ? null : Number(el.dataset.floor), dept = el.dataset.dept || null;
+      const n = el.dataset.floor === '' ? null : el.dataset.floor, dept = el.dataset.dept || null;   // R7a: 'G' and '1'..'6' (B0: '0', '1')
       hide();
-      if (n != null && n !== cur) onFloor(n);
+      if (n != null && n !== String(cur)) onFloor(n);
       if (dept) onDept(dept);
     }));
   }

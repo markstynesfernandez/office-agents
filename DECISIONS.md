@@ -3260,3 +3260,57 @@ script, not the Station); its waiting request was rejected through the page with
 (git-ignored). The dry-run branches stay in the dev mirror.
 
 Measured on main with these changes: `npm test` 595 of 595 (112 s, the temp check clean); `npm run test:docker` 10 of 10 (37 s).
+
+## R7a (29/10/2026): the seven floors of the 3D office
+
+Dev only, mock provider, $0, no model call, no network (no downloaded model, texture or font); the live worktree and every `.env`
+untouched; no new dependency (Playwright was already a dev dependency). Not deployed.
+
+1. **R7 moves ahead of R3** (owner decision, 29/10/2026). RESTRUCTURE.md §8 allowed R7 "any time after R1"; the owner asked for it
+   now, before R3 (the CEO and COO). R7a draws the floors; nothing in R3–R6 changes.
+2. **The floors come from the company model.** The page builds its stack from `snapshot.company.floors` (`scene/towerplan.js`
+   `towerFloors`): one floor per `floor` value in `config/departments/*.json`, top floor first. A floor is display order only, a
+   string (`G`, `1`..`6`); no record carries a floor. Each floor's design (palette, walls, props, screens, desk slots) is keyed on its
+   **department id** (`hq`, `security-data`, `engineering`, `product-design`, `sales-marketing`, `customer-success`), so moving a
+   department to another floor moves its design, its desks and its jobs with it (tested). The ground floor (`G`) is always the lobby.
+   An unknown department gets a plain floor and its desks in rows. B0's two floors (and the baked areas) remain for a snapshot without
+   the company model: the legacy and fixtures views.
+3. **Who sits where.** A hired agent (`active`) sits at its desk on its department's floor and shows its live status (the snapshot's
+   agents: working, idle, error, waiting), at a standing desk on Engineering. A not-hired agent gets an empty desk (screen off, chair
+   pushed in, a tent card) and a tag with its phase ("CEO · not hired yet (R3)"). An archived agent is shown **only in the lobby**: the
+   eight Etsy agents as figurines in the trophy cabinet with their name plates under "TheStationShopFinds" (the archived product's
+   name), and OVERSEER, archived and retired into the COO, as a portrait on the lobby wall ("retired into COO"). This follows the R7a
+   brief rather than RESTRUCTURE.md §7's "dimmed archived desks".
+4. **Every floor is procedural, from one kit** (`scene/kit.js`): desk, standing desk, executive desk, chair, monitor, wall screen,
+   whiteboard, glass partition, plant, couch, armchair, server rack, shelf, reception desk, display cabinet, tables, phone booth,
+   lockers, planter, test bench, lift, and a few more, each floor in its own palette (light and dark). **The lobby does not reuse the
+   floor-1 bake** (RESTRUCTURE.md §7 planned it as the trophy room): the brief asks for a kit-built lobby with reception, the lounge
+   and a trophy cabinet, and the bake's three rooms and atrium do not fit that plan. The bake stays in the repo for B0's floors; no
+   bake is needed for fps (point 8).
+5. **The snapshot** (`engine-model.mjs`): (a) the agents list now holds every active agent of a company department, with its
+   `departmentId`, though it has no room on B0's plan; such an agent has no B0 floor (`floor: null`), so B0's building view is
+   unchanged; (b) the `engineering` summary gains `current` (the newest engineering job, its state and step) and `lastChecks` (the last
+   checks the sandbox ran: pass number and each check passed or failed), read from the store, for the Engineering floor's checks screen.
+6. **Screens show only what the snapshot has.** Penthouse: the requests waiting (count and the first three), spend this month against
+   each product's budget (the ledger). Security & Data: services, the engine (state, provider, calls in flight, spend today against the
+   cap, ledger rows), the autonomy policy counts. Engineering: the board (engineering jobs by state) and the checks screen (the current
+   job's step, the last sandbox result). Lobby: the station's name, the directory (the floor stack), the trophy plate. Where the data
+   does not exist yet the screen says so: "no leads yet" (leaderboard), "no pipeline yet", "no tickets yet" (support queue), "no
+   customers yet" (onboarding), "no roadmap yet", "no metrics yet", "no jobs yet", "no checks run yet", "nothing waiting", with the
+   owning agent's "not hired yet (Rn)" where it applies. Amounts go through `money()`, so the presenter view hides them on the screens.
+   Sticky notes and mood boards are colour only, no writing.
+7. **Navigation.** The floor menu (F) lists the seven floors top first, each with its department; the switcher shows G and 1–6 with
+   the current floor's name; `[` and `]` step a floor down or up by level; the whole-building view (G) is a lift: a section of the
+   building, a slab per floor in its own colours, who works there and its jobs, the car at the floor shown; a click goes there. Clicks
+   in the scene: a hired desk opens the agent; the Finance screen holds the ledger card; the checks screen and the board open the
+   Engineering panel; the requests screen opens the Owner's office (the building view); the trophy cabinet opens the read-only own-shop
+   Etsy panel (E7a), whose top-bar button is unchanged.
+8. **Performance.** Only the floor shown is built; the lift is HTML (the 3D scene is paused under it, as B0's building view). A floor
+   is 6–25 draw calls and 8–21k triangles (the shell and props merged into five meshes, the people instanced). Measured in headless
+   Chromium on this laptop's Intel UHD iGPU, default tier, 1600x1000: about 6.1 ms a frame on every floor in light and dark (the
+   display's refresh cap, about 164 fps), CPU 0.5–0.9 ms a frame; target 16.7 ms. `npm run screenshots-r7` writes the captures and
+   the numbers (`screenshots/r7/fps-r7.json`, git-ignored); `tests/r7a-floors.test.mjs` measures every floor again in `npm test`.
+9. **Not in R7a** (RESTRUCTURE.md §7 items left for later): product colour tags on desk monitors and cards, a CI wall per product (the
+   checks screen shows the newest job only), the CEO's memo board, a roadmap per product and the metrics aggregates (their screens
+   show the empty state), walking agents in the lobby lounge (no agent works on G). UX-DESIGNER's config name is "DESIGNER"; the
+   page shows the config name.

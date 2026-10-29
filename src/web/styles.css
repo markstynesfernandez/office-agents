@@ -416,6 +416,22 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
 .bldg-floor .fl-stats { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 12px; }
 .bldg-floor .fl-stats .m { color: var(--muted); }
 .bldg-total { font-size: 12px; margin-top: 4px; }
+/* R7a: the lift (the whole-building view of the seven-floor stack): a section of the building, a slab per floor in its own colours */
+.lift { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel-2); }
+.lift-floor { position: relative; display: grid; grid-template-columns: 22px 44px 1fr; gap: 8px; align-items: center; padding: 10px 14px 14px 8px; border: 0; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, var(--fl-wall) 0 64px, var(--panel) 64px); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.lift-floor:last-child { border-bottom: 0; }
+.lift-floor:hover { filter: brightness(1.04); }
+.lift-floor .lift-slab { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: linear-gradient(90deg, var(--fl-floor), var(--fl-acc)); }
+.lift-car { color: var(--fl-acc); font-size: 13px; text-align: center; }
+.lift-n { font-size: 24px; font-weight: 700; line-height: 1; color: #2b2a28; text-align: center; }
+.lift-body { display: grid; gap: 3px; }
+.lift-meta { font-size: 11.5px; color: var(--muted); }
+.lift-floor .fl-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+.lift-floor .fl-stats .m { color: var(--muted); }
+.lift-cur { box-shadow: inset 4px 0 0 var(--fl-acc); }
+.lift-cur .lift-n { text-decoration: underline; text-underline-offset: 4px; }
+/* R7a: an empty desk's tag (not hired yet) */
+.lbl-vacant .lbl-name { background: var(--panel-2); border-style: dashed; color: var(--muted); font-weight: 600; }
 /* R2c: the Engineering panel (overlay): the line, issues, jobs, one job's steps, checks, verdicts, the read-only diff and the decision */
 #eng .eng-h { margin: 16px 0 6px; font-size: 14px; display: flex; align-items: center; gap: 10px; }
 #eng .eng-acts { display: inline-flex; gap: 6px; font-weight: 400; }

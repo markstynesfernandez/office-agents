@@ -15,6 +15,9 @@
 // bloom on lamps, LEDs and screens, all fused into the output pass), the high-tier lightmaps (loaded lazily), pixel
 // ratio up to 2. Chosen automatically from the GPU (default when unsure), or by hand (the page's Quality control,
 // ?quality=). Tone mapping: AgX with the warm look's exposure (config/warm-office.js).
+// R7a: the seven-floor stack. A floor view with a plan (ui/floors.js towerSnapshot) is drawn from the shared kit (kit.js) instead of
+// B0's floor plan: one floor at a time, its screens from boards.js; the people, monitors, status lights, camera and quality tiers are
+// the same. B0's floors (and the baked areas) remain for a snapshot without the company model (the legacy and fixtures views).
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -35,6 +38,9 @@ import { TIER, resolveTier } from './quality.js';                  // R4a: quali
 import { BAKE_UNITS, WARM_UNITS } from './bakedlook.js';
 const WARM_ROOMS = WARM_UNITS.flatMap((u) => BAKE_UNITS[u]);           // R4a: the areas with the warm look (lamps lit by day)
 import { TONE } from '../config/warm-office.js';                  // R4a: AgX and its exposure per theme
+import { FLOOR_PALETTES, SLAB, T_WALL_H, T_WALL_T } from './towerplan.js';   // R7a: the seven floors
+import { createBuckets, shell as kitShell, skyline as kitSkyline, addProp, seat as kitSeat, rack as kitRack, figurine as kitFigurine, screenFrame as kitScreenFrame, monitorFace, screenFace } from './kit.js';
+import { makeBoard } from './boards.js';
 
 const DEG = Math.PI / 180;
 const PITCH = 35 * DEG, YAW = 45 * DEG;
@@ -191,12 +197,14 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400);
   scene.add(camera);
-  const HOME = new THREE.Vector3(-1.6, 0, -0.6);
+  const B0_HOME = new THREE.Vector3(-1.6, 0, -0.6), TOWER_HOME = new THREE.Vector3(-0.2, 0, -0.5), HOME = B0_HOME.clone();   // R7a: the stack's floor is smaller,
+  let homeZoom = 1;                                                                                                            // and seen a little closer
   const view = { target: HOME.clone(), zoom: 1, wantTarget: HOME.clone(), wantZoom: 1, frustumH: 25.5, ease: 0.0005 };   // ease: fraction left after 1 s (the presenter tour uses a gentler one)
-  const bounds = { minX: -22, maxX: 20, minZ: -16, maxZ: 18, minZoom: 0.55, maxZoom: 4.2 };
+  const B0_BOUNDS = { minX: -22, maxX: 20, minZ: -16, maxZ: 18, minZoom: 0.55, maxZoom: 4.2 }, TOWER_BOUNDS = { minX: -15, maxX: 14, minZ: -10, maxZ: 10, minZoom: 0.55, maxZoom: 4.2 }, TOWER_ZOOM = 1.18;
+  const bounds = { ...B0_BOUNDS };
 
   // ---- backdrop: a soft vertical gradient behind the transparent canvas (CSS)
-  function paintBackdrop() { canvas.style.background = 'linear-gradient(' + P().background[0] + ', ' + P().background[1] + ')'; }
+  function paintBackdrop() { const bg = (T && towerPal().background) || P().background; canvas.style.background = 'linear-gradient(' + bg[0] + ', ' + bg[1] + ')'; }
 
   // ---- lights: hemisphere + one sun from the right-hand side (soft daylight, baked shadows)
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1); scene.add(hemi);
@@ -235,7 +243,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     terminal: std('#eee', { roughness: 0.5, metalness: 0.15 }), termScreen: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     crystal: new THREE.MeshStandardMaterial({ color: new THREE.Color('#bcd9fa'), emissive: new THREE.Color('#5f9fe6'), emissiveIntensity: 0.6, roughness: 0.2, metalness: 0.05, flatShading: true }),
     coreRing: new THREE.MeshBasicMaterial({ color: new THREE.Color('#8fc0f2'), toneMapped: false }),
-    select: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false })
+    select: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false }),
+    glass: new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.24, roughness: 0.08, metalness: 0.1, depthWrite: false })   // R7a: glass walls and partitions
   };
   // R3a: one oak floor across the office. The procedural rooms and the lounge use the baked rooms' floor texture at
   // the same scale (bakedlook.js FLOOR_OAK); the canvas planks only show until it has loaded (or if it cannot load)
@@ -297,7 +306,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
 
   const world = new THREE.Group(); scene.add(world);
   const pickRoot = new THREE.Group();           // pick boxes: never rendered, raycast only
-  const anchors = { depts: {}, deptCorners: {}, agents: {}, desks: {}, hub: new THREE.Vector3(0, CORE_Y + 1.15, 0), services: {}, rack: new THREE.Vector3(), lounge: new THREE.Vector3() };
+  const anchors = { depts: {}, deptCorners: {}, agents: {}, desks: {}, vacant: {}, hub: new THREE.Vector3(0, CORE_Y + 1.15, 0), services: {}, rack: new THREE.Vector3(), lounge: new THREE.Vector3() };
   let L = null, data = null, structureKey = null, selectedId = null;
   let statics = [], inst = {}, screens = [], workers = [], lines = [], terminals = [], pickables = [];
   const dummy = new THREE.Object3D();
@@ -306,13 +315,18 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // is drawn procedurally.
   const baked = { want: options.scene !== 'procedural', office: null, active: new Set(), failed: null, warned: new Set() };
   // when it arrives after the first snapshot, the normal data path rebuilds the office with it (statuses, screens, lines)
-  if (baked.want) loadBakedOffice({ decalMap: TX.atlas, concreteMap: TX.tile }).then((o) => { baked.office = o; o.setTier(quality.tier, { onLoaded: () => invalidate(2) }); if (data) { structureKey = null; setData(data); } invalidate(2); })
-    .catch((e) => { baked.failed = String(e && e.message || e); console.warn('office: the baked rooms did not load; drawing the procedural rooms:', baked.failed); invalidate(1); });
+  // R7a: loaded with the first snapshot that draws B0's floors (the seven-floor stack has no baked area)
+  function startBaked() {
+    if (baked.started) return; baked.started = true;
+    if (baked.want) loadBakedOffice({ decalMap: TX.atlas, concreteMap: TX.tile }).then((o) => { baked.office = o; o.setTier(quality.tier, { onLoaded: () => invalidate(2) }); if (data && !T) { structureKey = null; setData(data); } invalidate(2); })
+      .catch((e) => { baked.failed = String(e && e.message || e); console.warn('office: the baked rooms did not load; drawing the procedural rooms:', baked.failed); invalidate(1); });
+  }
   // R3a: each baked area is used only while its spec matches the live layout (layout.js bakedRoomSpec); a stale area
   // falls back to the procedural one, with a console warning, and the others stay baked. R3b: with every area baked
   // nothing real-time receives the sun's shadow, so the shadow map is turned off (people keep their blob shadows)
   function updateBaked() {
     baked.active = new Set();
+    if (T) { if (baked.office) for (const br of Object.values(baked.office.rooms)) if (br.group.parent) world.remove(br.group); sun.castShadow = true; return; }   // R7a: nothing baked
     if (baked.office && L) for (const [key, br] of Object.entries(baked.office.rooms)) {
       const o = bakedOrigin(L, key), ok = !!o && JSON.stringify(br.spec) === JSON.stringify(bakedRoomSpec(L, key));
       if (!ok && !baked.warned.has(key)) { baked.warned.add(key); console.warn('office: the baked ' + key + ' area does not match the live layout; drawing it procedurally'); }
@@ -359,6 +373,27 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   }
   function setInst(m, i, x, y, z, ry = 0, rx = 0, s = 1, rz = 0) { dummy.position.set(x, y, z); dummy.rotation.set(rx, ry, rz, 'YXZ'); dummy.scale.setScalar(s); dummy.updateMatrix(); m.setMatrixAt(i, dummy.matrix); }
 
+  // people: one mesh per part (two per person for arms and legs); hair: one mesh per style (B0's floors and R7a's)
+  const styleOf = (id) => hash(id + ':hair') % G.hair.length;
+  function makePeople(ids) {
+    const n = ids.length, person = (name, geo, mat, per = 1) => makeInst(name, geo, mat, n * per, { shadow: false });
+    const parts = { pelvis: person('pelvis', G.pelvis, M.trousers), torso: person('torso', G.torso, M.shirt), head: person('head', G.head, M.skin), upperArm: person('upperArm', G.upperArm, M.shirt, 2), forearm: person('forearm', G.forearm, M.skin, 2), hand: person('hand', G.hand, M.skin, 2), thigh: person('thigh', G.thigh, M.trousers, 2), shin: person('shin', G.shin, M.trousers, 2), shoe: person('shoe', G.shoe, M.shoe, 2) };
+    const styleCount = G.hair.map((_, s) => ids.filter((id) => styleOf(id) === s).length);
+    parts.hair = G.hair.map((g, s) => makeInst('hair' + s, g, M.hair, styleCount[s], { shadow: false }));
+    const blobs = makeInst('blobs', G.blob, blobMat, n, { shadow: false }); blobs.renderOrder = 1;
+    return { parts, styleIx: G.hair.map(() => 0) };
+  }
+  // looks: the shirt takes the agent's colour unless it is skin-like or too close to another shirt (looks.js); skin, hair, hair style
+  // and trousers are picked from the agent id
+  function colourPerson({ parts, styleIx }, i, agentId, shirtHex) {
+    const shirt = new THREE.Color(shirtHex || '#4f7cc4').lerp(new THREE.Color('#ffffff'), 0.12), skin = new THREE.Color(SKIN[hash(agentId + ':skin') % SKIN.length]);
+    const hairC = new THREE.Color(HAIR[hash(agentId + ':hc') % HAIR.length]), legs = new THREE.Color(TROUSERS[hash(agentId + ':tr') % TROUSERS.length]);
+    const style = styleOf(agentId), hairI = styleIx[style]++;
+    parts.torso.setColorAt(i, shirt); parts.head.setColorAt(i, skin); parts.pelvis.setColorAt(i, legs); parts.hair[style].setColorAt(hairI, hairC);
+    for (const j of [0, 1]) { parts.upperArm.setColorAt(i * 2 + j, shirt); parts.forearm.setColorAt(i * 2 + j, skin); parts.hand.setColorAt(i * 2 + j, skin); parts.thigh.setColorAt(i * 2 + j, legs); parts.shin.setColorAt(i * 2 + j, legs); }
+    return { style, hairI };
+  }
+
   function buildFurniture(snap) {
     pickables = []; while (pickRoot.children.length > 1) pickRoot.remove(pickRoot.children[pickRoot.children.length - 1]);
     pickables.push({ object: hubPick, kind: 'hub', id: 'hub' });
@@ -375,13 +410,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     const ret = makeInst('deskReturn', G.deskReturn, M.deskTop, lsh.length, { receive: true }), retFrame = makeInst('returnFrame', G.returnFrame, M.deskMetal, lsh.length);
     const mon = makeInst('monitor', G.monitor, M.monitorFrame, n), kb = makeInst('keyboard', G.keyboard, M.keyboard, n), lamp = makeInst('lamp', G.lamp, M.deskMetal, n), bulb = makeInst('bulb', G.bulb, M.light, n, { shadow: false });
     const chair = makeInst('chair', G.chair, M.chair, n), light = makeInst('light', G.light, M.light, n, { shadow: false }), lightBase = makeInst('lightBase', G.lightBase, M.lightBase, n, { shadow: false });
-    // people: one mesh per part (two per person for arms and legs); hair: one mesh per style
-    const person = (name, geo, mat, per = 1) => makeInst(name, geo, mat, n * per, { shadow: false });
-    const parts = { pelvis: person('pelvis', G.pelvis, M.trousers), torso: person('torso', G.torso, M.shirt), head: person('head', G.head, M.skin), upperArm: person('upperArm', G.upperArm, M.shirt, 2), forearm: person('forearm', G.forearm, M.skin, 2), hand: person('hand', G.hand, M.skin, 2), thigh: person('thigh', G.thigh, M.trousers, 2), shin: person('shin', G.shin, M.trousers, 2), shoe: person('shoe', G.shoe, M.shoe, 2) };
-    const styleOf = (id) => hash(id + ':hair') % G.hair.length, styleCount = G.hair.map((_, s) => desks.filter((d) => styleOf(d.agentId) === s).length);
-    parts.hair = G.hair.map((g, s) => makeInst('hair' + s, g, M.hair, styleCount[s], { shadow: false }));
-    const styleIx = G.hair.map(() => 0);
-    const blobs = makeInst('blobs', G.blob, blobMat, n, { shadow: false }); blobs.renderOrder = 1;
+    const P0 = makePeople(desks.map((d) => d.agentId));
     const screenPool = makeInst('screenPool', poolGeo, M.glowInst, n, { shadow: false }), lampPool = makeInst('lampPool', poolGeo, M.glowInst, n, { shadow: false });
     screenPool.renderOrder = lampPool.renderOrder = 2;
     for (const s of screens) { world.remove(s.mesh); s.texMat.dispose(); s.glowMat.dispose(); s.tex.texture.dispose(); }
@@ -400,13 +429,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       setInst(lamp, i, x - 0.82, onTop, z - 0.12, -0.5, 0, s); setInst(bulb, i, x - 0.82 + 0.17 * Math.sin(-0.5) * -1, onTop + 0.46, z - 0.12 - 0.17 * Math.cos(-0.5), 0, 0, s);
       setInst(lampPool, i, x - 0.72, onTop + 0.004, z - 0.02, 0, 0, 1.0 * s); setInst(screenPool, i, x + 0.12, onTop + 0.006, z + 0.12, MON_YAW, 0, 1.2);
       setInst(chair, i, ch.x, PT, ch.z, 0, 0, s);
-      // looks: the shirt takes the agent's colour unless it is skin-like or too close to another shirt (looks.js); skin,
-      // hair, hair style and trousers are picked from the agent id
-      const shirt = new THREE.Color(shirts[agentId] || '#4f7cc4').lerp(new THREE.Color('#ffffff'), 0.12), skin = new THREE.Color(SKIN[hash(agentId + ':skin') % SKIN.length]);
-      const hairC = new THREE.Color(HAIR[hash(agentId + ':hc') % HAIR.length]), legs = new THREE.Color(TROUSERS[hash(agentId + ':tr') % TROUSERS.length]);
-      const style = styleOf(agentId), hairI = styleIx[style]++;
-      parts.torso.setColorAt(i, shirt); parts.head.setColorAt(i, skin); parts.pelvis.setColorAt(i, legs); parts.hair[style].setColorAt(hairI, hairC);
-      for (const j of [0, 1]) { parts.upperArm.setColorAt(i * 2 + j, shirt); parts.forearm.setColorAt(i * 2 + j, skin); parts.hand.setColorAt(i * 2 + j, skin); parts.thigh.setColorAt(i * 2 + j, legs); parts.shin.setColorAt(i * 2 + j, legs); }
+      const { style, hairI } = colourPerson(P0, i, agentId, shirts[agentId]);
       setInst(light, i, x + 0.9, onTop + 0.05, z + 0.34); setInst(lightBase, i, x + 0.9, onTop, z + 0.34);
       const path = L.paths[agentId] || { seat: null, toLounge: null };
       workers.push({ agentId, i, x, z, chair: ch, seat: path.seat != null ? L.lounge.seats[path.seat] : null, path: path.toLounge, len: path.toLounge ? pathLength(path.toLounge) : 0, phase: (i * 1.7) % (Math.PI * 2), status: a.status, onStep: a.onStep, place: 'desk', walk: null, yaw: 0, pick: null, style, hairI });
@@ -496,10 +519,11 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       let x, z, yaw, mode;
       if (w.walk) { const p = pointAt(w.path, w.walk.s); x = p.x; z = p.z; const want = w.walk.dir > 0 ? p.yaw : p.yaw + Math.PI; w.yaw = angLerp(w.yaw, want, 0.35); yaw = w.yaw; mode = 'walk'; }
       else if (w.place === 'lounge') { x = w.seat.x; z = w.seat.z; yaw = w.yaw = w.seat.yaw; mode = 'sofa'; }
+      else if (w.desk) { x = w.desk.x; z = w.desk.z; yaw = w.yaw = w.desk.yaw; mode = w.desk.stand ? 'stand' : 'desk'; }   // R7a: a desk turned any way; a standing desk
       else { x = w.x; z = w.chair.z - 0.15; yaw = w.yaw = 0; mode = 'desk'; }
       const c = Math.cos(yaw), s = Math.sin(yaw);
       const wx = (p) => [x + p[0] * c + p[2] * s, p[1], z - p[0] * s + p[2] * c];   // person-local -> world
-      const k = w.i, typing = animate && w.status === 'working' && mode === 'desk';
+      const k = w.i, typing = animate && w.status === 'working' && (mode === 'desk' || mode === 'stand');
       const breathe = animate && mode !== 'walk' ? Math.sin(t * 1.6 + w.phase) * 0.006 : 0;
       let hipY, lean, legs, arms, turn = 0, nod = 0;
       if (mode === 'walk') {
@@ -508,6 +532,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
         hipY = PT + SEG.ankle + Math.max(...legs.map(([a1, a2]) => SEG.thigh * Math.cos(a1) + SEG.shin * Math.cos(a2)));
         lean = 0.05;
         arms = [0, 1].map((j) => { const a1 = -Math.sin(ph + j * Math.PI) * 0.38; return [a1, 0, a1 + 0.35, 0]; });
+      } else if (mode === 'stand') {                            // R7a: at a standing desk, hands on the keyboard; fingers tap while working
+        legs = [[0.02, 0], [0.02, 0]];
+        hipY = PT + SEG.ankle + SEG.thigh * Math.cos(0.02) + SEG.shin; lean = 0.1;
+        arms = [0, 1].map((j) => { const sd = j ? 1 : -1, tap = typing ? Math.sin(t * 9 + w.phase + j * 2.3) * 0.06 : 0; return [0.55, sd * 0.08, 1.35 + tap, sd * 0.3]; });
+        nod = 0.08 + (typing ? Math.sin(t * 4 + w.phase) * 0.015 : 0);
+        if (animate && !typing) turn = Math.sin(t * 0.5 + w.phase) * 0.15;
       } else {
         hipY = (mode === 'desk' ? CHAIR_TOP : w.seat.cushion.top) + 0.075;
         const a1 = Math.PI / 2 - (mode === 'desk' ? 0.06 : 0.1);
@@ -577,11 +607,129 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     if (sp && sp.instanceColor) sp.instanceColor.needsUpdate = true;
   }
 
+  // ---- R7a: the seven-floor stack (towerplan.js, kit.js, boards.js). A floor of the stack replaces the B0 floor plan: its shell
+  // and props are kit geometry merged into a few meshes (rebuilt on a floor or theme change); the hired agents sit (or stand) at
+  // their desks with their monitor face, status light and person drawn as on B0's floors; the screens are canvas textures redrawn
+  // when their content changes. Only the floor shown is built.
+  let T = null, towerKey = null, towerStatics = [], towerBoards = [];
+  const towerPal = () => (FLOOR_PALETTES[T.palette] || FLOOR_PALETTES.generic)[theme];
+  function clearTower() {
+    for (const m of towerStatics) { world.remove(m); m.geometry.dispose(); } towerStatics = [];
+    for (const b of towerBoards) { world.remove(b.mesh); b.mesh.material.dispose(); b.board.texture.dispose(); } towerBoards = [];
+  }
+  function clearFloor() {
+    for (const s of statics) { world.remove(s); s.geometry.dispose(); } statics = []; glowMesh = null;
+    for (const m of Object.values(inst)) { world.remove(m); m.dispose(); } inst = {};
+    for (const s of screens) { world.remove(s.mesh); s.texMat.dispose(); s.glowMat.dispose(); s.tex.texture.dispose(); } screens = []; workers = []; terminals = [];
+    for (const l of lines) { world.remove(l); l.geometry.dispose(); l.material.dispose(); } lines = [];
+    clearTower();
+  }
+  function buildTowerStatic() {
+    for (const m of towerStatics) { world.remove(m); m.geometry.dispose(); } towerStatics = [];
+    if (gtao) gtao.aoDirty = true;
+    const c = towerPal(), B = createBuckets();
+    kitShell(B, T, c);
+    if (T.skyline) kitSkyline(B, c);
+    for (const p of T.props) addProp(B, p, c);
+    for (const s of T.seats) kitSeat(B, s, c);
+    T.racks.forEach((r, i) => kitRack(B, r, c, i));
+    for (const f of T.figurines) kitFigurine(B, { x: f.x, z: f.z, yaw: f.yaw }, c, f.color || '#9aa3ad', f.y);
+    for (const sc of T.screens) kitScreenFrame(B, sc, c);
+    const g = B.merge(), add = (geo, mat, name, { cast = true, receive = true, order = 0 } = {}) => { if (!geo) return; const m = new THREE.Mesh(geo, mat); m.name = name; m.castShadow = cast; m.receiveShadow = receive; m.renderOrder = order; world.add(m); towerStatics.push(m); };
+    add(g.solid, M.static, 'tower:solid'); add(g.wood, M.wood, 'tower:wood', { cast: false }); add(g.tile, M.tile, 'tower:tile', { cast: false });
+    add(g.em, M.emissive, 'tower:emissive', { cast: false, receive: false }); add(g.glass, M.glass, 'tower:glass', { cast: false, receive: false, order: 1 });
+    M.wood.color.set(c.floor); M.tile.color.set(c.floor);
+    renderer.shadowMap.needsUpdate = true;
+  }
+  function buildTower(snap) {
+    clearFloor(); hub.visible = false; updateBaked();
+    pickables = []; while (pickRoot.children.length > 1) pickRoot.remove(pickRoot.children[pickRoot.children.length - 1]);
+    anchors.depts = {}; anchors.deptCorners = {}; anchors.agents = {}; anchors.desks = {}; anchors.vacant = {}; anchors.services = {};
+    buildTowerStatic();
+    // the floor: one pick box for its department; the card on the back corner (the lobby's above the trophy cabinet)
+    const { x0, x1, z0, z1 } = SLAB, cab = T.trophy ? T.props.find((p) => p.kind === 'cabinet') : null;
+    for (const d of T.departments) {
+      anchors.depts[d.key] = new THREE.Vector3((x0 + x1) / 2, PT, (z0 + z1) / 2);
+      anchors.deptCorners[d.key] = new THREE.Vector3(x0 + T_WALL_T + 0.55, FLOOR + T_WALL_H + 0.05, z0 + T_WALL_T + 0.55);
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.6, z1 - z0)); pick.position.set((x0 + x1) / 2, FLOOR, (z0 + z1) / 2); pickRoot.add(pick); pickables.push({ object: pick, kind: 'dept', id: d.key });
+    }
+    // people and their desks: the hired agents (the snapshot's agents) only; an empty desk has its tag (labels.js) and no person
+    const hired = T.seats.filter((s) => s.state === 'hired' && snap.agents.some((a) => a.id === s.agentId)), n = hired.length;
+    const light = makeInst('light', G.light, M.light, n, { shadow: false }), lightBase = makeInst('lightBase', G.lightBase, M.lightBase, n, { shadow: false });
+    const P0 = makePeople(hired.map((s) => s.agentId)), shirts = shirtColours(hired.map((s) => ({ id: s.agentId, color: (snap.agents.find((a) => a.id === s.agentId) || {}).color })));
+    hired.forEach((s, i) => {
+      const a = snap.agents.find((x) => x.id === s.agentId), f = s.frame, on = PT + f.topY + 0.03;
+      const look = colourPerson(P0, i, s.agentId, shirts[s.agentId]);
+      setInst(light, i, f.light.x, on + 0.05, f.light.z); setInst(lightBase, i, f.light.x, on, f.light.z);
+      workers.push({ agentId: s.agentId, i, x: f.person.x, z: f.person.z, chair: f.chair || f.person, desk: { x: f.person.x, z: f.person.z, yaw: s.yaw || 0, stand: f.stand }, seat: null, path: null, len: 0, phase: (i * 1.7) % (Math.PI * 2), status: a.status, onStep: a.onStep, place: 'desk', walk: null, yaw: s.yaw || 0, pick: null, style: look.style, hairI: look.hairI });
+      const tex = makeMonitorTexture(), glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), texMat = new THREE.MeshBasicMaterial({ map: tex.texture, toneMapped: false });
+      const face = monitorFace(s), mesh = new THREE.Mesh(G.screen, glowMat); mesh.position.set(face.x, face.y, face.z); mesh.rotation.y = face.yaw; world.add(mesh);
+      screens.push({ agentId: s.agentId, mesh, tex, glowMat, texMat, textured: false });
+      const top = PT + (f.stand ? 2.55 : 2.25);
+      anchors.agents[s.agentId] = new THREE.Vector3(s.x, top, s.z - 0.2);
+      anchors.desks[s.agentId] = { x: s.x, z: s.z, min: new THREE.Vector3(s.x - 1.15, PT, s.z - 0.65), max: new THREE.Vector3(s.x + 1.15, top - 0.1, s.z + 1.4) };
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.3, 2.7)); pick.position.set(s.x, PT + 1.1, s.z + 0.35); pickRoot.add(pick); pickables.push({ object: pick, kind: 'agent', id: s.agentId });
+    });
+    for (const s of T.seats.filter((x) => x.state === 'not-hired')) {
+      anchors.vacant[s.agentId] = new THREE.Vector3(s.x, PT + 1.95, s.z - 0.2);
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.0, 2.4)); pick.position.set(s.x, PT + 1.0, s.z + 0.3); pickRoot.add(pick); pickables.push({ object: pick, kind: 'vacancy', id: s.agentId });
+    }
+    // the services on the racks (Security & Data): a small screen and a status light on the first racks, the rack label above the row
+    const sv = T.services ? snap.services : [], front = T.racks.filter((r) => Math.abs(r.x - T.racks[0].x) < 0.01);
+    const scr = makeInst('termScreen', G.termScreen, M.termScreen, Math.min(sv.length, front.length), { shadow: false }), lt = makeInst('termLight', G.termLight, M.light, Math.min(sv.length, front.length), { shadow: false });
+    sv.slice(0, front.length).forEach((x, i) => {
+      const r = front[i]; setInst(scr, i, r.x + 0.455, PT + 1.72, r.z, Math.PI / 2); setInst(lt, i, r.x + 0.46, PT + 1.95, r.z + 0.22);
+      terminals.push({ id: x.id, i, x: r.x, z: r.z, status: x.status });
+      anchors.services[x.id] = new THREE.Vector3(r.x + 0.3, FLOOR + 2.2, r.z);
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.1, 0.8)); pick.position.set(r.x, FLOOR + 1.05, r.z); pickRoot.add(pick); pickables.push({ object: pick, kind: 'service', id: x.id });
+    });
+    if (front.length) anchors.rack.set(front[0].x + 0.4, FLOOR + 2.55, (front[0].z + front[front.length - 1].z) / 2);
+    for (const m of [scr, lt]) m.instanceMatrix.needsUpdate = true;
+    // the screens and plates; the Finance screen holds the ledger card (the hub), a click on the checks or the board opens Engineering
+    for (const sc of T.screens) {
+      const board = makeBoard(sc), lit = sc.style === 'screen' || sc.style === 'lift' || sc.style === 'glass-sign';
+      const mat = lit ? new THREE.MeshBasicMaterial({ map: board.texture, toneMapped: false, transparent: board.transparent, depthWrite: !board.transparent }) : new THREE.MeshStandardMaterial({ map: board.texture, roughness: 0.75, metalness: 0 });
+      const face = screenFace(sc), mesh = new THREE.Mesh(new THREE.PlaneGeometry(sc.w, sc.h), mat); mesh.position.set(face.x, face.y, face.z); mesh.rotation.y = face.ry; mesh.renderOrder = board.transparent ? 2 : 0; world.add(mesh);
+      towerBoards.push({ sc, board, mesh });
+      const kind = sc.kind === 'checks' || sc.kind === 'kanban' ? 'eng' : sc.kind === 'requests' ? 'requests' : sc.id === T.hub ? 'hub' : sc.kind === 'trophy' || sc.kind === 'names' ? 'trophy' : null;
+      if (kind) { const pick = new THREE.Mesh(new THREE.BoxGeometry(sc.w, sc.h, 0.3)); pick.position.set(face.x, face.y, face.z); pick.rotation.y = face.ry; pickRoot.add(pick); pickables.push({ object: pick, kind, id: sc.id }); }
+      if (sc.id === T.hub) anchors.hub.set(face.x, face.y + sc.h / 2 + 0.25, face.z);
+    }
+    if (cab) { const pick = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2.3, cab.w)); pick.position.set(cab.x, PT + 1.15, cab.z); pickRoot.add(pick); pickables.push({ object: pick, kind: 'trophy', id: 'cabinet' }); }
+    for (const m of Object.values(inst)) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+    syncPlaces(true); poseWorkers(0);
+    pickRoot.updateMatrixWorld(true);
+    drop.scale.set((x1 - x0) * 1.15, 1, (z1 - z0) * 1.15); drop.position.set(-0.6, 0.004, 0.2);
+    renderer.shadowMap.needsUpdate = true;
+  }
+  function drawBoards() { const c = towerPal(); let any = false; for (const b of towerBoards) any = b.board.draw(b.sc.content, theme, c) || any; if (any) invalidate(1); }
+  function setTowerData(snap) {
+    const plan = snap.plan, first = !T;
+    T = plan;
+    const key = JSON.stringify([plan.floor, plan.design, plan.seats.map((s) => [s.agentId, s.state, s.x, s.z, snap.agents.some((a) => a.id === s.agentId)]), plan.figurines.map((f) => [f.agentId, f.color]), plan.screens.map((s) => s.id), plan.services ? snap.services.map((s) => s.id) : []]);
+    if (key !== towerKey || first) {
+      towerKey = key; structureKey = null; buildTower(snap);
+      if (first) { Object.assign(bounds, TOWER_BOUNDS); HOME.copy(TOWER_HOME); homeZoom = TOWER_ZOOM; view.wantTarget.copy(HOME); view.target.copy(HOME); view.wantZoom = view.zoom = homeZoom; cameraDirty = true; }
+    } else for (const b of towerBoards) { const sc = plan.screens.find((x) => x.id === b.sc.id); if (sc) b.sc = sc; }
+    for (const w of workers) { const a = snap.agents.find((x) => x.id === w.agentId); if (a) { w.status = a.status; w.onStep = a.onStep; inst.light.setColorAt(w.i, new THREE.Color(PALETTE.status[a.status] || PALETTE.status.idle)); } }
+    if (inst.light && inst.light.instanceColor) inst.light.instanceColor.needsUpdate = true;
+    syncPlaces(false); poseWorkers(performance.now() / 1000);
+    for (const t of terminals) { const s = snap.services.find((x) => x.id === t.id); if (s) t.status = s.status; }
+    colourServices(); buildLines(snap.agents); updateScreens(); drawBoards();
+    applyTheme(false);
+    invalidate(2);
+  }
+  // back to B0's floors (a snapshot without the company model): drop the stack, restore the camera's home
+  function leaveTower() { clearFloor(); T = null; towerKey = null; hub.visible = true; Object.assign(bounds, B0_BOUNDS); HOME.copy(B0_HOME); homeZoom = 1; view.wantTarget.copy(HOME); view.wantZoom = 1; structureKey = null; }
+
   // ---- public: data in. Rebuild only when the structure (departments, desks, services) changes; otherwise update
   // statuses, screens and lines in place.
   let lastLedgerRows = null;
   function setData(snap) {
     data = snap;
+    if (snap.plan) return setTowerData(snap);   // R7a: a floor of the seven-floor stack
+    if (T) leaveTower();
+    startBaked();
     // B0: the floor drawn (snap.floorView, main.js): a business floor has no lounge (it is on floor 0, the shared floor)
     const fv = snap.floorView || null, withLounge = fv ? !!fv.lounge : true;
     const key = JSON.stringify([fv ? fv.floor : null, withLounge, snap.departments.map((d) => [d.key, d.agents]), snap.services.map((s) => s.id)]);
@@ -609,8 +757,9 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
 
   function applyTheme(rebuild = true) {
     const p = P();
-    if (rebuild && L) buildStatic();
+    if (rebuild && T) { buildTowerStatic(); drawBoards(); } else if (rebuild && L) buildStatic();
     M.wood.color.set(p.wood); M.tile.color.set(p.tile);
+    if (T) { M.wood.color.set(towerPal().floor); M.tile.color.set(towerPal().floor); }   // R7a: each floor tints the oak or the concrete
     M.deskTop.color.set(p.deskTop); M.deskMetal.color.set(p.deskMetal); M.chair.color.set(p.chair); M.monitorFrame.color.set(p.monitorFrame); M.keyboard.color.set(p.keyboard);
     M.potTall.color.set(p.plantPotTall); M.potSmall.color.set(p.plantPot); M.leafTall.color.set(p.plantLeafTall); M.leafSmall.color.set(p.plantLeaf);
     M.terminal.color.set(p.terminal);
@@ -709,7 +858,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const unitsPerPx = (zoom = view.wantZoom) => view.frustumH / (size.y || 1) / zoom;
   function pan(dxPx, dyPx) { const u = unitsPerPx(); view.wantTarget.addScaledVector(right, -dxPx * u).addScaledVector(up, dyPx * u / Math.sin(PITCH)); clampTarget(); invalidate(1); }
   function zoomBy(f, anchorPx) { const before = anchorPx ? screenToGround(anchorPx.x, anchorPx.y) : null; view.wantZoom *= f; clampTarget(); if (before) { view.zoom = view.wantZoom; cameraDirty = true; updateCamera(0); const after = screenToGround(anchorPx.x, anchorPx.y); if (after) { view.wantTarget.add(before.sub(after)); view.target.copy(view.wantTarget); clampTarget(); cameraDirty = true; } } invalidate(1); }
-  function resetView() { view.wantTarget.copy(HOME); view.wantZoom = 1; invalidate(1); }
+  function resetView() { view.wantTarget.copy(HOME); view.wantZoom = homeZoom; invalidate(1); }
   // Put a ground point at a given screen position (px from the canvas's top-left) at the given zoom.
   function focus(worldPos, zoom = 1.6, screenPx = null) {
     view.wantZoom = THREE.MathUtils.clamp(zoom, bounds.minZoom, bounds.maxZoom);
@@ -719,7 +868,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   }
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ray = new THREE.Raycaster();
   function screenToGround(px, py) { const ndc = new THREE.Vector2((px / size.x) * 2 - 1, -(py / size.y) * 2 + 1); ray.setFromCamera(ndc, camera); const out = new THREE.Vector3(); return ray.ray.intersectPlane(groundPlane, out) ? out : null; }
-  function pick(px, py) { const ndc = new THREE.Vector2((px / size.x) * 2 - 1, -(py / size.y) * 2 + 1); ray.setFromCamera(ndc, camera); const hits = ray.intersectObjects(pickables.map((p) => p.object), false); if (!hits.length) return null; const order = { agent: 0, service: 1, hub: 2, dept: 3 }; hits.sort((a, b) => order[pickables.find((p) => p.object === a.object).kind] - order[pickables.find((p) => p.object === b.object).kind] || a.distance - b.distance); const p = pickables.find((q) => q.object === hits[0].object); return p ? { kind: p.kind, id: p.id } : null; }
+  function pick(px, py) { const ndc = new THREE.Vector2((px / size.x) * 2 - 1, -(py / size.y) * 2 + 1); ray.setFromCamera(ndc, camera); const hits = ray.intersectObjects(pickables.map((p) => p.object), false); if (!hits.length) return null; const order = { agent: 0, vacancy: 1, service: 1, hub: 2, eng: 2, requests: 2, trophy: 2, dept: 3 }; hits.sort((a, b) => order[pickables.find((p) => p.object === a.object).kind] - order[pickables.find((p) => p.object === b.object).kind] || a.distance - b.distance); const p = pickables.find((q) => q.object === hits[0].object); return p ? { kind: p.kind, id: p.id } : null; }
   const _v = new THREE.Vector3();
   function project(v) { _v.copy(v).project(camera); return { x: (_v.x + 1) / 2 * size.x, y: (1 - _v.y) / 2 * size.y, visible: _v.z < 1 && _v.z > -1 }; }
   // screen-space rectangles of every desk cluster, the core, the closet and the lounge (obstacles for the label layout)
@@ -731,6 +880,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   }
   function obstacles() {
     const out = Object.entries(anchors.desks).map(([id, d]) => ({ kind: 'desk', id, ...boxRect(d.min, d.max) }));
+    if (T) return out;   // R7a: the floor's desks (the cards sit above the back corner)
     out.push({ kind: 'hub', ...boxRect(new THREE.Vector3(-0.8, FLOOR + 0.4, -0.8), new THREE.Vector3(0.8, CORE_Y + 1.05, 0.8)) });
     if (L && terminals.length) { const c = L.closet; out.push({ kind: 'rack', ...boxRect(new THREE.Vector3(c.x0 + 0.25, FLOOR, c.z0 + 0.4), new THREE.Vector3(c.x0 + 1.1, FLOOR + 2.1, c.z1 - 0.2)) }); }
     if (L && L.lounge.furniture) { const r = L.lounge.furniture.rug; out.push({ kind: 'lounge', ...boxRect(new THREE.Vector3(r.x0 + 0.3, FLOOR, r.z0 + 0.3), new THREE.Vector3(r.x1 - 0.3, FLOOR + 1.4, r.z1 - 0.3)) }); }
@@ -804,8 +954,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     applyTheme(false);
     return quality;
   }
-  function bakedState() { return { want: baked.want, loaded: !!baked.office, active: baked.active.size > 0, rooms: [...baked.active], failed: baked.failed, glow: !!(glowPass && glowPass.enabled) }; }
-  function getStats() { return { baked: baked.want ? (baked.active.size ? [...baked.active].join('+') : baked.failed ? 'failed' : baked.office ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, post: !composer ? 'none (default tier)' : (gtao && gtao.fusedInto) || (glowPass && glowPass.fusedInto) ? 'fused' : (gtao || glowPass) ? 'fallback (separate blends)' : 'output only', tier: quality.tier, tierAuto: quality.auto, tierReason: quality.reason, gpu: gpu.renderer || null, highMaps: baked.office ? baked.office.highState() : 'none', toneMapping: TONE.mapping, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
+  function bakedState() { return { want: baked.want && !T, tower: !!T, loaded: !!baked.office, active: baked.active.size > 0, rooms: [...baked.active], failed: baked.failed, glow: !!(glowPass && glowPass.enabled) }; }
+  function getStats() { return { floor: T ? T.floor : null, baked: T ? 'none (R7a floors)' : baked.want ? (baked.active.size ? [...baked.active].join('+') : baked.failed ? 'failed' : baked.office ? 'mismatch' : 'loading') : 'off', glow: !!(glowPass && glowPass.enabled), fps: stats.renders.length, cpuMs: +avg(stats.cpu.slice(-30)).toFixed(2), frameMs: +avg(stats.intervals.slice(-30)).toFixed(2), calls: stats.calls, tris: stats.tris, mode: stats.mode, dpr: renderer.getPixelRatio(), ao: gtao ? (gtao.enabled ? 'half-res, cached' : 'skipped while moving') : 'off', aoRuns: gtao ? gtao.aoRuns : 0, post: !composer ? 'none (default tier)' : (gtao && gtao.fusedInto) || (glowPass && glowPass.fusedInto) ? 'fused' : (gtao || glowPass) ? 'fallback (separate blends)' : 'output only', tier: quality.tier, tierAuto: quality.auto, tierReason: quality.reason, gpu: gpu.renderer || null, highMaps: baked.office ? baked.office.highState() : 'none', toneMapping: TONE.mapping, textual: view.zoom >= TEXT_ZOOM, walking: workers.filter((w) => w.walk).length }; }
   // continuous rendering for `ms` (as if the camera were moving every frame): average fps and frame times
   // (the page's own loop keeps calling tick(); while benchUntil is in the future every tick renders)
   // move: true orbits the target a little every frame (the real camera-motion path: AO off while moving)
@@ -831,6 +981,9 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   // people: where each one is now (read-only; for the screenshot script and tests)
   function people() { return workers.map((w) => ({ agentId: w.agentId, status: w.status, place: w.walk ? 'walking' : w.place, seat: w.seat ? L.lounge.seats.indexOf(w.seat) : null })); }
 
+  // R7a: what the floor shows (read-only; the tests and the screenshot script)
+  function towerState() { return T ? { floor: T.floor, design: T.design, seats: T.seats.map((s) => ({ agentId: s.agentId, state: s.state, person: workers.some((w) => w.agentId === s.agentId) })), cabinet: T.figurines.map((f) => f.agentId), retired: T.retired.map((r) => r.agentId), screens: towerBoards.map((b) => ({ id: b.sc.id, kind: b.sc.kind, empty: b.sc.content.empty || null, title: b.sc.content.title })), meshes: towerStatics.length } : null; }
+
   resize(); updateCamera(0); paintBackdrop();
-  return { renderer, scene, camera, setData, setTheme, setQuality, get quality() { return quality; }, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, isPaused: () => paused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
+  return { towerState, renderer, scene, camera, setData, setTheme, setQuality, get quality() { return quality; }, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, isPaused: () => paused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };
 }

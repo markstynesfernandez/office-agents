@@ -27,6 +27,7 @@
     "build-office": "node scripts/build-office.mjs",
     "screenshots-r3a": "node scripts/screenshots-r3a.mjs",
     "screenshots-r3b": "node scripts/screenshots-r3b.mjs",
+    "screenshots-r7": "node scripts/screenshots-r7.mjs",
     "owner": "node scripts/owner.mjs",
     "parity": "node scripts/parity-pngtuber.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",

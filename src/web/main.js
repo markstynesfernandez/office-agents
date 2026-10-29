@@ -17,7 +17,8 @@ import { PALETTE } from './config/palette.js';
 import { createControls } from './ui/controls.js';
 import { createEtsyPanel } from './ui/etsy.js';
 import { QUALITY_KEY } from './scene/quality.js';
-import { floorsOf, pickFloor, floorSnapshot } from './ui/floors.js';
+import { floorsOf, pickFloor, floorSnapshot, floorWord } from './ui/floors.js';
+import { levelOf } from './scene/towerplan.js';
 import { createBuildingView } from './ui/building.js';
 import { createEngPanel } from './ui/engpanel.js';
 import { createFloorMenu } from './ui/floormenu.js';
@@ -74,6 +75,11 @@ function handlePick(hit) {
   if (hit.kind === 'agent') openAgent(hit.id);
   else if (hit.kind === 'hub') openLedger();
   else if (hit.kind === 'dept') focusDept(hit.id);
+  // R7a: the Engineering floor's checks screen and board open the Engineering panel; the requests screen the Owner's office (the
+  // building view); the lobby's trophy cabinet the read-only own-shop panel (E7a)
+  else if (hit.kind === 'eng') openEng();
+  else if (hit.kind === 'requests') openBuilding();
+  else if (hit.kind === 'trophy') etsyPanel.open().catch(() => {});
 }
 // open a desk: select it, open the panel, and pan so the desk sits in the visible area left of the panel
 function openAgent(id, zoom) {
@@ -93,7 +99,7 @@ function openEng(jobId = null) { closeOverlays(); engPanel.open(jobId); syncPaus
 function openLedger() { closeOverlays(); ledger.render(snap); ledger.show(); syncPause(); }
 function openBoard() { closeOverlays(); board.render(view || snap); board.show(); syncPause(); }
 function openCalendar() { closeOverlays(); calendar.render(view || snap); calendar.show(); syncPause(); }
-function openBuilding() { closeOverlays(); building.render(snap); building.show(); syncPause(); renderFloors(snap); }
+function openBuilding() { closeOverlays(); building.render(snap, curFloor); building.show(); syncPause(); renderFloors(snap); }
 // B0: switch floor: the page shows that floor's office, task list, routines and spend (the snapshot is not fetched again)
 function setFloor(n) {
   floorChoice = String(n); if (!q.has('floor')) store.set('office-floor', floorChoice);
@@ -104,22 +110,24 @@ function applyView() {
   curFloor = pickFloor(snap, floorChoice);
   view = curFloor == null ? snap : floorSnapshot(snap, curFloor);
   office.setData(view); labels.build(view); taskpanel.setSnapshot(view); renderTopbar(snap); renderFloors(snap);
-  if (board.isOpen()) board.render(view); if (calendar.isOpen()) calendar.render(view); if (building.isOpen()) building.render(snap); if (engPanel.isOpen()) engPanel.refresh();
+  if (board.isOpen()) board.render(view); if (calendar.isOpen()) calendar.render(view); if (building.isOpen()) building.render(snap, curFloor); if (engPanel.isOpen()) engPanel.refresh();
   labelsDirty = true;
 }
-// the floor switcher (top bar): Building, then each floor from 0 up; the stage caption names the floor shown
+// the floor switcher (top bar): Building, then each floor from the bottom up; the stage caption names the floor shown. R7a: the
+// seven-floor stack shows G and 1-6, the floor's name on the current tab only (the others in their tooltips)
 function renderFloors(s) {
   const fl = floorsOf(s), el = $('#floors'), cap = $('#floor-caption');
   floorMenu.setData(s, curFloor);
   el.classList.toggle('hidden', !fl.length); cap.classList.toggle('hidden', !fl.length || building.isOpen());
   if (!fl.length) return;
   const btn = (k, label, sel, title) => '<button role="tab" data-fl="' + k + '" aria-selected="' + (sel ? 'true' : 'false') + '" title="' + esc(title) + '">' + label + '</button>';
-  el.innerHTML = btn('all', 'Building', building.isOpen(), 'the whole building: every floor\'s totals (G)') + fl.map((f) => btn(f.floor, '<span class="fl-n">' + f.floor + '</span>' + esc(f.shared ? 'Shared' : f.name), !building.isOpen() && f.floor === curFloor, 'floor ' + f.floor + ': ' + f.name + (f.shared ? ' (Finance, Compliance, OVERSEER and the lounge)' : '') + (f.empty ? ' · no lines yet' : '') + ' ([ and ] change floor)')).join('');
-  el.querySelectorAll('[data-fl]').forEach((b) => b.addEventListener('click', () => (b.dataset.fl === 'all' ? openBuilding() : setFloor(Number(b.dataset.fl)))));
+  const stack = fl.some((f) => f.design), up = fl.slice().sort((a, b) => levelOf(a.floor) - levelOf(b.floor));
+  el.innerHTML = btn('all', 'Building', building.isOpen(), 'the whole building: every floor\'s totals (G)') + up.map((f) => btn(f.floor, '<span class="fl-n">' + f.floor + '</span>' + (stack && f.floor !== curFloor ? '' : esc(f.shared ? 'Shared' : f.name)), !building.isOpen() && f.floor === curFloor, floorWord(f.floor) + ': ' + f.name + (f.shared ? ' (Finance, Compliance, OVERSEER and the lounge)' : '') + (f.empty ? ' · no lines yet' : '') + ' ([ and ] change floor)')).join('');
+  el.querySelectorAll('[data-fl]').forEach((b) => b.addEventListener('click', () => (b.dataset.fl === 'all' ? openBuilding() : setFloor(b.dataset.fl))));
   const cur = fl.find((f) => f.floor === curFloor);
-  if (cur) cap.innerHTML = '<b>Floor ' + cur.floor + '</b> · ' + esc(cur.name) + (cur.shared ? '<span class="muted">shared services · lounge</span>' : '') + (cur.empty ? '<span class="muted">empty floor: no lines yet</span>' : '');
+  if (cur) cap.innerHTML = '<b>' + floorWord(cur.floor) + '</b> · ' + esc(cur.name) + (cur.shared ? '<span class="muted">shared services · lounge</span>' : '') + (cur.empty ? '<span class="muted">empty floor: no lines yet</span>' : '');
 }
-function stepFloor(d) { const fl = floorsOf(snap).map((f) => f.floor).sort((a, b) => a - b), i = fl.indexOf(curFloor); if (i >= 0 && fl[i + d] != null) setFloor(fl[i + d]); }
+function stepFloor(d) { const fl = floorsOf(snap).map((f) => f.floor).sort((a, b) => levelOf(a) - levelOf(b)), i = fl.indexOf(curFloor); if (i >= 0 && fl[i + d] != null) setFloor(fl[i + d]); }   // like a lift: [ down, ] up
 function setTheme(t) { theme = t; document.body.dataset.theme = t; store.set('office-theme', t); office.setTheme(t); labelsDirty = true; }
 
 // services in the top bar (R2): a small glyph and a short name, then the status dot. The glyphs are plain generic

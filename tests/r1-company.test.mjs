@@ -92,7 +92,7 @@ test('2: a not-hired agent cannot run or spend (nothing recorded, USD 0), and th
   assert.equal(engine.store.runsOf({ limit: 100 }).length, 0); assert.equal(engine.ledger.totals.rows, 0); assert.equal(engine.guard.reservations().length, 0);
   // the snapshot does not draw a not-hired agent (no desk until its phase); it lists it in the company view
   const s = buildEngineSnapshot(engine);
-  assert.ok(!s.agents.some((a) => a.id === 'ceo')); assert.equal(s.agents.length, 9, 'the 8 archived Etsy agents and OVERSEER are still drawn (dimmed in R7)');
+  assert.ok(!s.agents.some((a) => a.id === 'ceo')); assert.equal(s.agents.length, 15, 'R7a: the 8 archived Etsy agents and OVERSEER (the lobby) and the six hired in R2 (at their desks)');
   const hq = s.company.floors.find((f) => f.id === 'hq');
   assert.deepEqual(hq.agents.map((a) => [a.id, a.label]), [['ceo', 'not hired yet (R3)'], ['cto', 'active'], ['coo', 'not hired yet (R3)'], ['compliance', 'not hired yet (R5)'], ['overseer', 'retired into COO']]);
 });

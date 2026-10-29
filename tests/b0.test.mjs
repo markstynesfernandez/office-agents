@@ -260,13 +260,13 @@ test('4: an agent of one business cannot read or write another business\'s dataD
 
 // ---- 6. the floors
 
-test('6: the building\'s floors in the snapshot (B0\'s page until R7): floor 0 (Finance, Compliance, OVERSEER, the lounge), floor 1 (etsy-shop, its jobs, no lounge); the totals', async (t) => {
+test('6: the building\'s floors in the snapshot (B0\'s page until R7; R7a: drawn only for a snapshot without the company model): floor 0 (Finance, Compliance, OVERSEER, the lounge), floor 1 (etsy-shop, its jobs, no lounge); the totals', async (t) => {
   const r = tempRoot('b0floors'); t.after(() => r.cleanup());
   const station = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS, overrides: OVERRIDES }).station;
   const engine = createEngine({ archiveSandbox: true, J: r.J, log: r.log, script: createDryRunScript({ cfg: station }), overrides: OVERRIDES, startScheduler: false });
   t.after(() => engine.close());
   const c = engine.orchestrator.createJob({ briefText: brief(JOB_A), by: 'test' }); assert.ok(c.ok); await engine.orchestrator.startJob(JOB_A);
-  const s = buildEngineSnapshot(engine);
+  const s = { ...buildEngineSnapshot(engine), company: null };   // R7a: with the company model the page draws the seven floors (r7a-floors.test.mjs)
   assert.deepEqual(s.building.floors.map((f) => [f.floor, f.id, f.name, f.lounge, f.empty]), [[0, SHARED, 'Shared services', true, false], [1, 'etsy-shop', 'TheStationShopFinds', false, false]]);
   assert.equal(pickFloor(s, null), 1, 'the first business floor by default'); assert.equal(pickFloor(s, '0'), 0); assert.equal(pickFloor(s, '7'), 1);
   const f0 = floorSnapshot(s, 0), f1 = floorSnapshot(s, 1);
