@@ -3,7 +3,7 @@
 //   node scripts/screenshots-r7.mjs                        headless (the GPU build of Chromium; SwiftShader if there is no GPU)
 //   node scripts/screenshots-r7.mjs --headed --channel chromium --expect-gpu intel     the laptop's iGPU, the budget figure
 //        -> screenshots/r7/: every floor (6 Penthouse HQ .. G Lobby) in light and dark, the whole-building view (the lift), the
-//           floor menu (F); fps-r7.json with each floor's frame time (moving and at full quality)
+//           floor menu (F); fps-r7.json with each floor's frame time (moving and at full quality) and the building view's
 //   --bench-ms N (default 3000), --only floors,building,menu, --no-bench
 // Starts its own Station server on a random port: the mock provider, a throwaway data root in the OS temp folder, the repo's config/
 // (read only). Opens only that page. Every file goes through shotJail(): screenshots/r7/ (git-ignored) only. No model call, $0.
@@ -79,14 +79,17 @@ try {
   if (want('floors')) for (const th of ['light', 'dark']) for (const f of FLOORS) await floorView(f, th);
   if (want('building')) for (const th of ['light', 'dark']) {
     const page = await openPage(base + '/?anim=0&quality=default&theme=' + th + '&floor=4', 'building ' + th);
-    try { await settle(page); await page.evaluate(() => window.__office.openBuilding()); await page.waitForSelector('#building:not(.hidden) .lift', { timeout: 15000 }); await page.waitForTimeout(300); await shot(page, 'building-' + th + '.png'); } finally { await page.close(); }
+    try { await settle(page); await page.evaluate(() => window.__office.openBuilding()); await page.waitForSelector('#building:not(.hidden) .lift', { timeout: 15000 }); await page.waitForTimeout(300); await shot(page, 'building-' + th + '.png');
+      // R7a.1: the whole-building view is an overlay (the 3D scene is paused), so bench reports the page's own frame rate
+      if (!noBench) { const full = await bench(page, false); fpsRows.push({ view: 'building ' + th, floor: 'building', theme: th, moving: null, full }); console.log('  frame', ('building ' + th).padEnd(14), '| full', String(full.avgFrameMs).padStart(6) + ' ms (p95 ' + full.p95FrameMs + ') |', full.fps + ' fps' + (full.paused ? ' (scene paused, DOM only)' : '')); }
+    } finally { await page.close(); }
   }
   if (want('menu')) for (const th of ['light', 'dark']) {
     const page = await openPage(base + '/?anim=0&quality=default&theme=' + th + '&floor=6', 'menu ' + th);
     try { await settle(page); await page.keyboard.press('f'); await page.waitForSelector('#floor-menu:not(.hidden) .fm-floor', { timeout: 15000 }); await page.waitForTimeout(200); await shot(page, 'floormenu-' + th + '.png'); } finally { await page.close(); }
   }
-  for (const r of fpsRows) if (r.full.throttled || r.moving.throttled) problems.push('frame ' + r.view + ': throttled after four tries: no reading');
-  for (const r of fpsRows) if (r.full.avgFrameMs > 16.7 || r.moving.avgFrameMs > 16.7) problems.push('frame ' + r.view + ': ' + r.moving.avgFrameMs + ' ms moving / ' + r.full.avgFrameMs + ' ms full > 16.7 ms (60 fps)');
+  for (const r of fpsRows) if (r.full.throttled || (r.moving && r.moving.throttled)) problems.push('frame ' + r.view + ': throttled after four tries: no reading');
+  for (const r of fpsRows) if (r.full.avgFrameMs > 16.7 || (r.moving && r.moving.avgFrameMs > 16.7)) problems.push('frame ' + r.view + ': ' + (r.moving ? r.moving.avgFrameMs : '-') + ' ms moving / ' + r.full.avgFrameMs + ' ms full > 16.7 ms (60 fps)');
   const summary = { at: new Date().toISOString(), browser: browserLabel, gl, viewport: W + 'x' + H, benchMs, mode: 'engine view (mock provider, empty temp data root)', views: fpsRows, files, problems };
   fs.writeFileSync(shotJail('fps-r7.json'), JSON.stringify(summary, null, 2) + '\n');
   console.log('problems:', problems.length ? problems : 'none');

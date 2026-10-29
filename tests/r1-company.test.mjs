@@ -55,7 +55,7 @@ test('1: all 19 active-company agents are in their departments, each with its ph
   assert.deepEqual(Object.fromEntries(all.map((k) => [k, REAL.agents[k].phase])), { ceo: 'R3', cto: 'R2', coo: 'R3', compliance: 'R5', security: 'R2', analyst: 'R6', 'tech-lead': 'R2', developer: 'R2', reviewer: 'R2', tester: 'R2', 'product-manager': 'R4', 'ux-designer': 'R4', 'lead-researcher': 'R5', 'lead-checker': 'R5', 'outreach-writer': 'R5', 'content-writer': 'R5', 'onboarding-guide': 'R6', 'support-drafter': 'R6', 'retention-analyst': 'R6' });
   for (const k of ETSY_AGENTS) { assert.equal(REAL.agents[k].status, 'archived', k); assert.equal(C.deptOfAgent(k), 'etsy', k); }
   assert.deepEqual([REAL.agents.overseer.status, REAL.agents.overseer.retired, REAL.agents.overseer.retiredInto, C.deptOfAgent('overseer')], ['archived', true, 'coo', 'hq']);
-  assert.equal(REAL.agents['ux-designer'].name, 'DESIGNER'); assert.equal(REAL.agents.designer.status, 'archived', 'the Etsy DESIGNER keeps its id');
+  assert.equal(REAL.agents['ux-designer'].name, 'UX-DESIGNER'); assert.equal(REAL.agents.designer.status, 'archived', 'the Etsy DESIGNER keeps its id');
   for (const k of ['ceo', 'cto', 'coo', 'compliance']) assert.equal(REAL.agents[k].reportsTo, 'owner', k);
   // models and thinking (owner, R0.2 and R0.3): Sonnet for the execs, DEVELOPER, REVIEWER, SECURITY, COMPLIANCE, TECH-LEAD, PRODUCT-MANAGER and both writers
   const strong = ['ceo', 'cto', 'coo', 'compliance', 'security', 'developer', 'reviewer', 'tech-lead', 'product-manager', 'outreach-writer', 'content-writer'];
