@@ -1,9 +1,9 @@
 {
-  "$comment": "R1 (RESTRUCTURE.md §2.2, §2.3): in config from R1, \"not hired yet\" until R4. The engine refuses to run a not-hired agent and it costs nothing; its prompt, maxOutputTokens and write paths are set when it is hired. Model, effort and thinking are the owner's (R0.2, R0.3); every limit here is a proposal (§2.2 \"Limits (proposed)\").",
+  "$comment": "R4 (owner's go, 02/11/2026; RESTRUCTURE.md §2.2, §2.3, §8 R4): hired for design specs (src/engine/product.mjs, line design-spec): one issue and a read-only snapshot of the product's UI files at main -> design.md (flow, states, copy, acceptance notes), checked on write, for TECH-LEAD. No path to a live site: its tools are fs_read, fs_list and fs_write in the design job's folder only (site.change stays the owner's; no tool performs it). Model, effort and thinking are the owner's (R0.3: Haiku, medium, off); every limit here is a proposal (runCapUsd and maxOutputTokens set at hiring, R4).",
   "key": "ux-designer",
   "name": "UX-DESIGNER",
   "department": "product-design",
-  "status": "not-hired",
+  "status": "active",
   "phase": "R4",
   "tier": "cheap",
   "effort": "medium",
@@ -14,11 +14,14 @@
     "fs_write"
   ],
   "limits": {
-    "maxTurns": 30
+    "maxTurns": 30,
+    "runCapUsd": 0.1,
+    "maxOutputTokens": 6000
   },
   "proposals": [
     "limits"
   ],
-  "enabled": false,
-  "role": "UX flows, copy and UI specs as drafts for Engineering; no live site changes. Id ux-designer: the archived Etsy DESIGNER keeps designer (owner, R0.3)."
+  "enabled": true,
+  "role": "UX flows, copy and UI specs as drafts for Engineering; no live site changes. Id ux-designer: the archived Etsy DESIGNER keeps designer (owner, R0.3).",
+  "hired": "R4"
 }

@@ -133,11 +133,11 @@ test('3: on a mock breach the COO pauses one of its lines (with its id) and noth
   const caps = JSON.stringify(S.engine.cfg.engine.caps), budgets = JSON.stringify(S.engine.cfg.company.products.map((p) => [p.id, p.monthlyBudgetUsd]));
   const j = await S.run('coo');
   assert.equal(j.state, 'done', j.reason); assert.match(j.reason, /1 breach\(es\), 1 line\(s\) paused/);
-  assert.deepEqual(j.data.breaches.map((b) => [b.id, b.kind, b.lines]), [['B1', 'product-month', ['eng-triage', 'engineering']]]);
+  assert.deepEqual(j.data.breaches.map((b) => [b.id, b.kind, b.lines]), [['B1', 'product-month', ['design-spec', 'eng-triage', 'engineering', 'pm-issues', 'pm-roadmap']]]);
   assert.deepEqual(j.data.pauses.map((p) => [p.line, p.breach]), [['engineering', 'B1']]);
   const err = (id) => S.env.seen.find((x) => x.id === 'tu_' + id) || {};
   assert.ok(err('p1').error && /"B9" is not a breach/.test(err('p1').text));
-  assert.ok(err('p2').error && /covers the lines eng-triage, engineering, not research/.test(err('p2').text));
+  assert.ok(err('p2').error && /covers the lines design-spec, eng-triage, engineering, pm-issues, pm-roadmap, not research/.test(err('p2').text));
   assert.ok(!err('p3').error && /paused the engineering line \(breach B1\)/.test(err('p3').text));
   assert.match(S.engine.lineHold('engineering'), /^paused by coo: ReplyDesk is over its monthly budget \(breach B1: ReplyDesk has spent its monthly budget/);
   assert.equal(S.engine.lineHold('eng-triage'), null, 'only the line the COO named');

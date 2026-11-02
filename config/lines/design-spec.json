@@ -1,0 +1,28 @@
+{
+  "$comment": "R4 (RESTRUCTURE.md §2.2, §8 R4): DESIGNER writes design.md for one issue (src/engine/product.mjs). The engine fetches the mirror (repo.fetch, auto) and copies the product's uiPaths at main into the job folder (ui/, read only), then DESIGNER writes the spec (checked on write); TECH-LEAD gets the latest spec of its issue. DESIGNER changes no code and no site. Only products the engineering line serves (ReplyDesk).",
+  "id": "design-spec",
+  "label": "Design spec",
+  "kind": "design-spec",
+  "products": [
+    "replydesk"
+  ],
+  "maxConcurrentJobs": 1,
+  "estimateUsd": {
+    "note": "the plan's estimate, not a measurement (RESTRUCTURE.md §8 R4: DESIGNER, Haiku, about USD 0.01 a spec)",
+    "job": 0.01
+  },
+  "start": "ui",
+  "steps": {
+    "ui": {
+      "kind": "mechanical",
+      "fn": "ui",
+      "next": "designer"
+    },
+    "designer": {
+      "kind": "agent",
+      "agent": "ux-designer",
+      "column": "design",
+      "next": null
+    }
+  }
+}

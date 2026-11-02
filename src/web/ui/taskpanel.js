@@ -47,6 +47,9 @@ export function floorWork(snap, deptKey = null) {
   // R3: the penthouse: the COO's daily report and the CEO's weekly memo, each a one-agent line (each run asks for the spend confirmation)
   if (all.some((d) => lineIds(d).includes('coo-report'))) return { kind: 'exec', text: "the COO's daily operations report and the CEO's weekly memo: one run each, behind the spend confirmation; read them in the Owner's office (G)" };
   if (all.some((d) => lineIds(d).includes('engineering'))) return { kind: 'eng', text: 'an issue for the engineering line: saving it costs nothing; you approve it next' };
+  // R4: Product & Design: PRODUCT-MANAGER's roadmap draft (you approve it in the Owner's office) and issues from the approved roadmap, each
+  // behind the spend confirmation; an idea for PRODUCT-MANAGER is free; DESIGNER's spec is started per issue in the Engineering panel
+  if (all.some((d) => lineIds(d).includes('pm-roadmap'))) return { kind: 'product', text: 'PRODUCT-MANAGER drafts a roadmap (you approve it in the Owner\'s office, G) and writes issues from it; DESIGNER writes a spec per issue (Engineering panel). Each run asks for the spend confirmation; an idea is free' };
   const phases = all.flatMap((d) => (d.agents || []).filter((a) => a.status === 'not-hired').map((a) => a.phase)).filter(Boolean).sort((a, b) => phaseNo(a) - phaseNo(b));
   return { kind: 'none', phase: phases[0] || null, text: 'No work line on this floor yet' + (phases[0] ? ' (opens in ' + phases[0] + ')' : '') };
 }
@@ -54,7 +57,7 @@ export function floorWork(snap, deptKey = null) {
 // agent · department · stage, leaving out what is unknown (lane jobs show their stage as the pill instead)
 const meta = (j) => [j.agentName, j.dept, j.lane ? null : j.stageLabel].filter(Boolean).join(' · ') || j.id;
 
-export function createTaskPanel({ root, onOpenJob, ctl = null, onNewIssue = null }) {
+export function createTaskPanel({ root, onOpenJob, ctl = null, onNewIssue = null, onProduct = null }) {
   const sel = root.querySelector('#task-dept');
   const filtersEl = root.querySelector('#task-filters'), list = root.querySelector('#task-list');
   const research = root.querySelector('#task-research'), briefSel = root.querySelector('#task-brief'), rerunSel = root.querySelector('#task-rerun'), productSel = root.querySelector('#task-product');
@@ -123,6 +126,9 @@ export function createTaskPanel({ root, onOpenJob, ctl = null, onNewIssue = null
   // R3: the executives' runs (the server's spend gate and the owner's session hold them as on every spending action)
   const execBtns = [...root.querySelectorAll('[data-exec-now]')];
   for (const b of execBtns) b.addEventListener('click', (e) => { e.preventDefault(); if (!ctl || !live()) return; const a = b.dataset.execNow; ctl.spendAct(a, a === 'coo-report' ? '/api/exec/coo-report' : '/api/exec/ceo-memo', {}, { ok: a === 'coo-report' ? 'The COO report has started' : 'The CEO memo has started' }); });
+  // R4: floor 3's runs (main.js productAct: which product, then the spend confirmation; an idea is free)
+  const pdBtns = [...root.querySelectorAll('[data-pd-now]')];
+  for (const b of pdBtns) b.addEventListener('click', (e) => { e.preventDefault(); if (onProduct && live()) onProduct(b.dataset.pdNow); });
   research.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go('research'); } });
 
   function renderBox() {
@@ -171,7 +177,8 @@ export function createTaskPanel({ root, onOpenJob, ctl = null, onNewIssue = null
     root.querySelector('#task-floor-text').textContent = w.text;
     newIssueBtn.classList.toggle('hidden', w.kind !== 'eng'); newIssueBtn.disabled = !live();
     for (const b of execBtns) { b.classList.toggle('hidden', w.kind !== 'exec'); b.disabled = !live(); }
-    m.textContent = w.kind === 'eng' ? 'Engineering' : w.kind === 'exec' ? 'Penthouse' : 'floor ' + s.floorView.floor; m.title = w.text;
+    for (const b of pdBtns) { b.classList.toggle('hidden', w.kind !== 'product'); b.disabled = !live(); }
+    m.textContent = w.kind === 'eng' ? 'Engineering' : w.kind === 'exec' ? 'Penthouse' : w.kind === 'product' ? 'Product & Design' : 'floor ' + s.floorView.floor; m.title = w.text;
   }
 
   // ---- the list

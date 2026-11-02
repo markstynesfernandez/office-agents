@@ -77,6 +77,14 @@ export async function showAtMain({ J, productId, file, signal = null, runner, ti
   return r.code === 0 ? r.stdout : null;
 }
 
+// R4: a folder at main in the mirror -> its entries (a sub-folder ends with "/"), or null when main has no such folder. `git show main:<dir>`
+// lists a tree, so no new git subcommand is needed (GIT_ALLOWED is unchanged)
+export async function listAtMain({ J, productId, dir, signal = null, runner, timeoutMs }) {
+  const r = await git(['show', MAIN + ':' + String(dir).replace(/\/+$/, '')], { gitDir: mirrorDir(J.dataRoot, productId), signal, hooks: noHooks(J.dataRoot, productId), runner, timeoutMs });
+  if (r.code !== 0 || !/^tree /.test(r.stdout)) return null;
+  return r.stdout.split('\n').slice(1).map((l) => l.trim()).filter(Boolean);
+}
+
 // the job's worktree on dev/<job-id>, from main (or the existing branch when the job resumes) -> { dir, branch, baseSha, created }
 export async function addWorktree({ J, productId, jobId, dir, signal = null, runner, timeoutMs }) {
   const branch = refGuard(branchOf(jobId), jobId), mirror = mirrorDir(J.dataRoot, productId), hooks = noHooks(J.dataRoot, productId), t = { runner, timeoutMs };

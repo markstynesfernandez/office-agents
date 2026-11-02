@@ -86,7 +86,7 @@ test('1: a research job and a design job run at the same time; a second design j
   for (const k of ['lister', 'qa-design', 'evidence-checker', 'trend-scout']) assert.deepEqual([ag(k).onStep, ag(k).place], [false, 'lounge'], k);
   assert.deepEqual(ag('designer').stepJobs, [JOB_A]); assert.deepEqual(ag('demand-researcher').currentJobs, [R.id]);
   assert.deepEqual(snap.jobLimit.running.sort(), [JOB_A, R.id].sort()); assert.deepEqual(snap.jobLimit.next.sort(), [JOB_B, S.id].sort());
-  assert.deepEqual(snap.jobLimit.perLine, { 'ceo-memo': 1, 'coo-report': 1, 'eng-triage': 1, engineering: 1, 'genre-scout': 1, research: 1, 'room1-digital': 1 });
+  assert.deepEqual(snap.jobLimit.perLine, { 'ceo-memo': 1, 'coo-report': 1, 'design-spec': 1, 'eng-triage': 1, engineering: 1, 'genre-scout': 1, 'pm-issues': 1, 'pm-roadmap': 1, research: 1, 'room1-digital': 1 });
   // the research job ends: the genre-scout job takes the free place (JOB_B still waits for its own line)
   release('demand-researcher'); await R.run;
   await until(() => job(S.id).state !== 'queued');

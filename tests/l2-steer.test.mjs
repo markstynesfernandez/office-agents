@@ -250,7 +250,7 @@ test('at most one job runs at a time on an instance; a second start waits as "ne
   const bid = b.json.result.jobId;
   assert.equal(job(bid).state, 'queued'); assert.match(job(bid).reason, /^next: waiting for 2026-10-16--dry-run-mushroom-stickers \(at most 1 job running at a time\)/);
   const s = await snap(), sj = s.jobs.find((x) => x.id === bid);
-  assert.equal(sj.next, true); assert.deepEqual(s.jobLimit, { maxRunning: 1, perLine: { 'ceo-memo': 1, 'coo-report': 1, 'eng-triage': 1, engineering: 1, 'genre-scout': 1, research: 1, 'room1-digital': 1 }, running: [JOB_A], next: [bid] });
+  assert.equal(sj.next, true); assert.deepEqual(s.jobLimit, { maxRunning: 1, perLine: { 'ceo-memo': 1, 'coo-report': 1, 'design-spec': 1, 'eng-triage': 1, engineering: 1, 'genre-scout': 1, 'pm-issues': 1, 'pm-roadmap': 1, research: 1, 'room1-digital': 1 }, running: [JOB_A], next: [bid] });
   // the live status of the running job: stage, agent at work, spend against the cap, its last 5 events
   const live = s.jobs.find((x) => x.id === JOB_A).liveStatus;
   assert.equal(live.running, true); assert.equal(live.capUsd, REAL.engine.caps.perJobUsd); assert.ok(live.events.length > 0 && live.events.length <= 5);

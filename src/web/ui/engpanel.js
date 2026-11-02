@@ -65,6 +65,8 @@ export function createEngPanel({ root, ctl }) {
     else if (d.engTriage) ctl.spendAct('eng-triage', '/api/eng/triage', { productId: d.engTriage }, { ok: 'CTO triage started' });
     else if (d.engIssue) issueDecision(d.product, d.engIssue, d.decision);
     else if (d.engStart) ctl.spendAct('eng-start', '/api/eng/start', { productId: d.product, issueId: d.engStart }, { ok: (r) => 'Started: ' + (r && r.jobId) });
+    // R4: DESIGNER's spec for an issue (the spend confirmation first)
+    else if (d.engDesign) ctl.spendAct('design-spec', '/api/product/design', { productId: d.product, issueId: d.engDesign }, { ok: (r) => 'Design spec started: ' + (r && r.jobId) });
     else if (d.engJob) open(d.engJob);
     else if (b.hasAttribute('data-eng-back')) open(null);
     else if (d.engStop) stop(d.engStop, v);

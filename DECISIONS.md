@@ -3362,3 +3362,69 @@ chose R3 as the next phase on 30/10/2026 (after the R7a.2 deploy); its scope is 
    side of the boardroom table (the latest memo's proposals and the owner's marks, and the date of the COO's latest report).
 9. **Not in R3:** COMPLIANCE (R5), the roadmaps the CEO will read (R4), the pipeline counts (R5), ANALYST's aggregates and MRR (R6). No
    live model call was made: the first live report and memo measure the real cost.
+
+## R4 (02/11/2026): Product & Design
+
+Dev only, mock provider, $0, no model call; the live worktree and every `.env` untouched; no new dependency. Not deployed, not committed.
+The owner chose to continue development on 02/11/2026 after the R3 deploy; R4 is next in RESTRUCTURE.md §8's order (R5 waits for legal
+advice, R6 for paying customers). Its scope is §8 R4.
+
+1. **The owner's two answers (02/11/2026), asked before the build.** (a) The issue gate: an issue PRODUCT-MANAGER writes for an item of
+   the approved roadmap goes into the backlog **without a second approval** (RESTRUCTURE.md §3.1: `roadmap.approve` owner,
+   `backlog.write` auto); the owner still starts the triage and every job behind the spend confirmation, and may reject or withdraw any
+   such issue. (b) **The owner's own issues stay off-roadmap**: written and approved by the owner as in R2, they need no roadmap item.
+2. **PRODUCT-MANAGER and DESIGNER are hired** (`config/agents/product-manager.json`, `ux-designer.json`: status active, hired R4,
+   enabled). Model, effort and thinking as the owner set them in R0.3 (PRODUCT-MANAGER Sonnet, medium; DESIGNER Haiku, medium; thinking
+   off). Set at hiring, **proposals** like every limit there: PRODUCT-MANAGER run cap USD 0.40 and maxOutputTokens 8,000; DESIGNER run
+   cap USD 0.10 and maxOutputTokens 6,000. Both keep the tools fs_read, fs_list and fs_write only. New prompts
+   (`prompts/agents/product-manager.md`, `ux-designer.md`); TECH-LEAD's prompt now reads `design.md` when there is one.
+3. **Three one-agent lines on floor 3** (`config/lines/pm-roadmap.json`, `pm-issues.json`, `design-spec.json`; `src/engine/product.mjs`),
+   on the engineering module's side-line runner like the R3 executives (start, stop, resume, archive and the running-jobs limit are the
+   CTO triage's). Each is an engine step then the agent's run. Started by the owner on the page only, behind the spend confirmation; **no
+   routine in R4**. The job cap is the product's Product & Design cap (ReplyDesk and emty-inbox USD 0.50 each, R1 proposals); the spend
+   quote reads it per product, since the roadmap line serves two. The plan's estimates (USD 0.15 a roadmap draft, USD 0.30 a run of up
+   to 5 issues, USD 0.01 a design spec) are in the line files, shown in the spend dialog, not measured. Products: the roadmap for
+   ReplyDesk and emty-inbox (the two with a Product & Design cap; the Station has none, so no Station roadmap in R4); issues and design
+   specs for ReplyDesk only (the one product the engineering line serves).
+4. **The roadmap** (`lib/product-records.mjs`). The engine writes `products/<id>/product/inputs-<stamp>.json`: the approved roadmap, a
+   pending draft's request id, the backlog (titles, states, who wrote them), engineering job counts, the owner's ideas, the CEO's
+   priorities block for the product from the latest memo, and the Customer Success / ANALYST slots ("none yet" until R6). **Never a
+   request's text or payload, a ticket, a customer record or a named contact** (tested with a request whose summary names a person and an
+   address). PRODUCT-MANAGER writes `roadmap-draft.md` (checked on write: `# Roadmap <product>`, `## Now`, `## Next`, `## Later`, items
+   `### RM1: …` numbered in order, each with Why, Outcome and Size; at most 15 items, a **proposal**). The engine files it as a
+   **`roadmap.approve` request** (the draft text is the payload) and the job waits in "approval"; a newer draft voids an older pending
+   one (its job archived as superseded). The Owner's office shows the draft's whole text with Approve and Reject (the request flow, the
+   owner's words logged). **On approval the engine writes the approved payload as `roadmap.md`** and appends the decision with its
+   sha256 to `roadmap-decisions.jsonl`; a roadmap is approved only while `roadmap.md` is that text (a hand edit is no longer approved).
+   A rejection keeps the approved roadmap.
+5. **Issues** (`pm-issues`). Only with an approved roadmap. PRODUCT-MANAGER writes `issues-draft.json` (1 to 5 issues, a **proposal**;
+   each on an item of the approved roadmap, none a copy of an open issue; checked on write). The engine writes each into the backlog
+   (`backlog.write`, auto) with `by: product-manager` and `roadmap: RM<n> · <title>`, and a **"filed"** record (its sha256) in
+   `issue-decisions.jsonl`. Such an issue is **approved while it reads as filed and its item (same id and title) is on the approved
+   roadmap** (`lib/eng-records.mjs issueState`); if a new approved roadmap drops or renames the item, the issue is "off-roadmap" and the
+   CTO cannot assign it (the dev queue check), nor can it start; an edited one is "stale". The owner may approve an off-roadmap or stale
+   one as their own, or reject or withdraw any.
+6. **The design spec** (`design-spec`). For one issue (not rejected or withdrawn). The engine fetches the mirror (`repo.fetch`, auto) and
+   copies the product's **`uiPaths`** at main into the job folder's `ui/`: html, css, js, jinja and svg files only, at most 40 files,
+   60,000 characters a file and 200,000 in all (**proposals**), a file that looks like a secret or another company's data left out; a
+   manifest lists what was copied and skipped. ReplyDesk's uiPaths are `templates` and `static`, read from the mirror's main at
+   `d03a9ab` on 02/11/2026 (`templates/index.html`, `static/app.js`, `static/style.css`). Listing a folder uses `git show main:<dir>`
+   (`lib/repo.mjs listAtMain`): **no new git subcommand** (GIT_ALLOWED unchanged). DESIGNER writes `design.md` only (checked on write:
+   `# Design: <issue title>`, ## Flow, ## States, ## Copy, ## Acceptance notes). **When the issue starts, the latest spec goes into the
+   engineering job folder as `design.md` and into TECH-LEAD's input** (marked when written for an earlier version of the issue).
+   **DESIGNER has no path to a live site**: `site.change` stays at owner, no tool performs it (tested over `TOOL_ACTIONS`), and its
+   writes are jailed to the design job's folder.
+7. **The owner's ideas**: free, from the Owner's office or floor 3 (`POST /api/product/idea`, the owner's page session): 10 to 2,000
+   characters, refused when it names another company or holds what looks like a secret; appended to `ideas.jsonl` and read in the next
+   roadmap draft.
+8. **The CTO's triage** now lists the approved roadmap and each approved issue's roadmap item (or "the owner's"), and puts Now before Next
+   and Later. **The CEO's inputs** carry each active product's approved roadmap items (R3 left the slot "none yet"). A ReplyDesk budget
+   breach in the COO's metrics now covers its three Product & Design lines too (they spend ReplyDesk's budget).
+9. **The page.** The Owner's office: a Product & Design section per product (the approved roadmap, the draft waiting with its text and
+   Approve / Reject, the backlog counts, the ideas, the run buttons). The Engineering panel: who wrote each issue, its roadmap item, "on
+   the approved roadmap", its design spec, and a "Design spec…" button (spend confirmation). Floor 3: the task box offers Draft a
+   roadmap, Issues from the roadmap and Add an idea; the roadmap board shows the approved items (or a draft waiting); a new backlog board
+   on the left wall shows counts. The page listens for the three new events (`roadmap.decided`, `design.written`, `idea.added`).
+10. **Not in R4:** Customer Success signals into the backlog (R6), a Station roadmap (no Product & Design cap for the Station), routines
+    for PRODUCT-MANAGER or DESIGNER, a locked rule for DESIGNER (site.change is held by the policy and the absence of any tool; a locked
+    rule would be the owner's call). No live model call was made: the first live runs measure the real cost.

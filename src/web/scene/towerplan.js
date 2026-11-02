@@ -176,7 +176,7 @@ const LAYOUTS = {
       rug(3.0, 3.4, 9.8, 7.0), { kind: 'couch', x: 6.4, z: 6.3, yaw: 0, len: 2.6 }, { kind: 'beanbag', x: 4.0, z: 4.8 }, { kind: 'beanbag', x: 8.8, z: 4.8 }, { kind: 'coffeeTable', x: 6.4, z: 4.6, w: 1.4, d: 0.8 },
       ...plants([[-11.2, 1.6, 1], [11.2, -6.9, 1], [11.2, 6.9], [0.8, 6.9], [-0.6, -6.9]]), LIFT
     ],
-    screens: [onZ('roadmap', 'roadmap', 5.2, 1.45, 4.2, 1.9, 'board')]
+    screens: [onZ('roadmap', 'roadmap', 5.2, 1.45, 4.2, 1.9, 'board'), onX('backlog', 'backlog', 3.8, 1.55, 3.2, 1.6, 'board')]
   }),
   // 2: the bullpen (four desks), the leaderboard, the pipeline board, two phone booths, a standing bar table, a lounge
   sales: () => ({
@@ -323,7 +323,20 @@ export function screenContent(kind, snap, { floor = null, people = null } = {}) 
     case 'pipeline': { const a = agentLabel(s, 'outreach-writer'); return { title: 'Pipeline', rows: [], empty: 'no pipeline yet', foot: a && a.status !== 'active' ? 'OUTREACH-WRITER: ' + a.label : null }; }
     case 'onboarding': { const a = agentLabel(s, 'onboarding-guide'); return { title: 'Onboarding', rows: [], empty: 'no customers yet', foot: a && a.status !== 'active' ? 'ONBOARDING-GUIDE: ' + a.label : null }; }
     case 'directory': return { title: 'Directory', rows: towerFloors(s).map((f) => ({ label: f.floor, value: f.name, tone: floor && f.floor === floor.floor ? 'ok' : null })) };
-    case 'roadmap': { const a = agentLabel(s, 'product-manager'); return { title: 'Roadmap', rows: [], empty: 'no roadmap yet', foot: a && a.status !== 'active' ? 'PRODUCT-MANAGER: ' + a.label : null }; }
+    // R4: each product's approved roadmap (its first items, Now first), or that a draft waits for the owner
+    case 'roadmap': {
+      const a = agentLabel(s, 'product-manager'), pd = oo.productDesign, order = { Now: 0, Next: 1, Later: 2 };
+      if (!pd || (a && a.status !== 'active') || !pd.products.some((p) => p.roadmap || p.pending)) return { title: 'Roadmap', rows: [], empty: 'no roadmap yet', foot: a && a.status !== 'active' ? 'PRODUCT-MANAGER: ' + a.label : pd && pd.products.length ? 'PRODUCT-MANAGER drafts it; you approve it' : null };
+      const rows = pd.products.flatMap((p) => (p.roadmap ? p.roadmap.items.slice().sort((x, y) => order[x.horizon] - order[y.horizon]).slice(0, 3).map((i) => ({ label: p.name + ' ' + i.id + ' ' + i.title, value: i.horizon, tone: i.horizon === 'Now' ? 'ok' : 'muted' })) : [{ label: p.name, value: p.pending ? 'draft waiting for you' : 'no roadmap yet', tone: p.pending ? 'warn' : 'muted' }])).slice(0, 6);
+      const waiting = pd.products.filter((p) => p.pending).length;
+      return { title: 'Roadmap', rows, empty: rows.length ? null : 'no roadmap yet', foot: waiting ? waiting + ' draft' + (waiting === 1 ? '' : 's') + ' waiting in the Owner\'s office' : 'approved by the owner' };
+    }
+    // R4: the backlog of each product the engineering line serves, by state (counts only; the issues are in the Engineering panel)
+    case 'backlog': {
+      const a = agentLabel(s, 'product-manager'), pd = oo.productDesign, ps = pd ? pd.products.filter((p) => p.backlog) : [];
+      const rows = ps.flatMap((p) => { const b = p.backlog.byState; return [{ label: p.name + ' approved', value: String(b.approved || 0), tone: 'ok' }, { label: p.name + ' waiting for you', value: String((b.draft || 0) + (b.stale || 0) + (b['off-roadmap'] || 0)), tone: (b.draft || b.stale || b['off-roadmap']) ? 'warn' : 'muted' }, { label: p.name + ' from PRODUCT-MANAGER', value: String(p.backlog.fromPm), tone: 'muted' }]; });
+      return { title: 'Backlog', rows, empty: rows.length ? null : 'no backlog yet', foot: a && a.status !== 'active' ? 'PRODUCT-MANAGER: ' + a.label : 'issues in the Engineering panel' };
+    }
     case 'sign': return { title: ((s.station || {}).name || 'Station').toUpperCase(), sub: 'Lobby' };
     case 'compliance-sign': { const a = agentLabel(s, 'compliance'); return { title: 'COMPLIANCE', sub: a && a.reportsTo === 'owner' ? 'independent · reports to the owner' : 'independent' }; }
     case 'trophy': {

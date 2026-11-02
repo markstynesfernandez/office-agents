@@ -22,6 +22,9 @@
 //               all, then the job blocks; a REVIEWER or SECURITY refuse ends it rejected and no merge request is filed
 // R3: the same start, stop, resume, archive and running-jobs limit run the executives' jobs (the COO's report, the CEO's memo); execs.mjs
 // registers their runner (addRunner) and gets this module's kit (setJob, block, stopFrom, agentWait, mockOnLive).
+// R4: and Product & Design's (PRODUCT-MANAGER's roadmap draft and backlog issues, DESIGNER's spec: product.mjs). An issue is approved by the
+// owner, or (owner, 02/11/2026) written by PRODUCT-MANAGER for an item of the approved roadmap (lib/eng-records.mjs issueState); the CTO
+// orders only approved issues. TECH-LEAD gets the latest design spec of its issue (design.md in the job folder, and in its input).
 // The spend guard, the e-stop, the policy and the locked rules sit in front of every model call and tool call as on every line (runtime.mjs);
 // the job cap is the product's engineering cap (USD 3.00 for ReplyDesk, owner R0.3). The engine never pushes (lib/repo.mjs).
 // R2c: the owner's controls (the Engineering panel, POST /api/eng/*). Writing and deciding an issue, the triage, a start and the decision
@@ -37,15 +40,18 @@ import { createChecks } from './lib/checks.mjs';
 import { fetchMirror, addWorktree, stagedDiff, commitWorktree, removeWorktree, showAtMain, branchHead, pullCommand, branchOf, JOB_ID_RE } from './lib/repo.mjs';
 import { imageTag } from './lib/checks.mjs';
 import { gateDiff } from './lib/eng-gates.mjs';
-import { composeIssue, readIssue, readDecisions, issueState, listIssues, devQueueProblems, readQueue, checkSpec, issueFile, decisionsFile, queueFile, ISSUE_ID_RE } from './lib/eng-records.mjs';
+import { composeIssue, readIssue, stateOf, listIssues, devQueueProblems, readQueue, checkSpec, issueFile, decisionsFile, queueFile, ISSUE_ID_RE } from './lib/eng-records.mjs';
+import { PD_KINDS, approvedRoadmap } from './lib/product-records.mjs';
 import { secretContentHits } from './lib/secrets.mjs';
 import { foreignDataHits } from './business.mjs';
 import { dublinDay } from './time.mjs';
 import { EXEC_KINDS } from './lib/exec-inputs.mjs';
 
 export const ENG_KINDS = ['engineering', 'eng-triage'];
-// R3: the side lines this module runs: its own two, and the executives' (execs.mjs registers their runner with addRunner)
-export const SIDE_KINDS = [...ENG_KINDS, ...EXEC_KINDS];
+// R3: the side lines this module runs: its own two, and the executives' (execs.mjs registers their runner with addRunner); R4: and Product &
+// Design's (product.mjs)
+export const RUNNER_KINDS = [...EXEC_KINDS, ...PD_KINDS];
+export const SIDE_KINDS = [...ENG_KINDS, ...RUNNER_KINDS];
 export const ENG_LINE = 'engineering', TRIAGE_LINE = 'eng-triage';
 const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
@@ -82,7 +88,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     return p;
   }
   const owner = (actor) => engine.requests && engine.requests.isOwner(actor);
-  const needOwner = (actor, what) => { if (!owner(actor)) throw Object.assign(new Error(what + ' is the owner\'s, on the page (until R4 the owner writes and approves issues directly)'), { code: 'LOCKED' }); };
+  const needOwner = (actor, what) => { if (!owner(actor)) throw Object.assign(new Error(what + ' is the owner\'s, on the page'), { code: 'LOCKED' }); };
   const opusRefusal = () => 'per-issue Opus is refused: Opus has no verified price from Anthropic\'s official pricing page in config/engine.json and no tier (owner, R0.3); write the issue with model "default"';
   const opusPriced = () => Object.values(cfg.engine.tiers || {}).some((t) => /opus/i.test(t.model || '') && ((cfg.engine.pricing.anthropic || {}).models || {})[t.model] && cfg.engine.pricing.anthropic.models[t.model].verified);
 
@@ -114,7 +120,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     await engine.actions.perform({ action: decision === 'approve' ? 'roadmap.approve' : 'backlog.write', actor, productId: p.id, departmentId: 'engineering', summary: decision + ' issue ' + issueId, payload: iss.text, execute: () => J.add(decisionsFile(dataRoot, p.id), JSON.stringify(rec) + '\n', { fsync: true }) });
     log.info('issue decided', { productId: p.id, issueId, decision });
     bus.emit('issue.decided', { data: { productId: p.id, issueId, decision } });
-    return { productId: p.id, issueId, state: issueState(iss, readDecisions(dataRoot, p.id)).state };
+    return { productId: p.id, issueId, state: stateOf(dataRoot, p.id, iss).state };
   }
 
   // ---- why an issue cannot start now (null: it can), and the job it would be
@@ -122,8 +128,8 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     const out = [];
     let p; try { p = engProduct(productId); } catch (e) { return { problems: [e.message] }; }
     const iss = readIssue(dataRoot, p.id, issueId); if (!iss) return { problems: ['no such issue: ' + issueId] };
-    const st = issueState(iss, readDecisions(dataRoot, p.id)).state;
-    if (st !== 'approved') out.push('the issue is ' + st + ': only an issue the owner approved (as it reads now) can start');
+    const st = stateOf(dataRoot, p.id, iss).state;
+    if (st !== 'approved') out.push('the issue is ' + st + ': only an approved issue (as it reads now) can start: the owner\'s approval, or PRODUCT-MANAGER\'s issue on the approved roadmap');
     if (iss.model === 'opus' && !opusPriced()) out.push(opusRefusal());
     const q = readQueue(dataRoot, p.id), inQ = q && Array.isArray(q.queue) ? q.queue.find((x) => x.issue === issueId) : null;
     if (!inQ) out.push('the CTO has not assigned it yet: run the CTO triage first (backlog/dev-queue.json)');
@@ -144,7 +150,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     const hold = engine.lineHold ? engine.lineHold(TRIAGE_LINE) : null; if (hold) throw refuse(hold, 'PAUSED');
     if (engine.scriptRun && !engine.scriptRun.startsJobs) throw refuse('no job starts from this script (' + engine.scriptRun.purpose + ')', 'SCRIPT');
     const approved = listIssues(dataRoot, p.id).filter((i) => i.state === 'approved');
-    if (!approved.length) throw refuse('no issue of ' + p.name + ' is approved: approve one first (the CTO orders only owner-approved issues)', 'BAD_REQUEST');
+    if (!approved.length) throw refuse('no issue of ' + p.name + ' is approved: approve one first (the CTO orders only approved issues)', 'BAD_REQUEST');
     const id = 'eng-triage-' + p.id + '-' + stamp();
     store.insertJob({ id, line: TRIAGE_LINE, kind: 'eng-triage', title: 'CTO triage · ' + p.name, state: 'queued', step: lineOf(TRIAGE_LINE).start, product_id: p.id, department_id: C.deptOfAgent('tech-lead') || 'engineering', data: { productId: p.id, createdBy: by, issues: approved.map((i) => i.id) } });
     bus.emit('job.created', { jobId: id, data: { line: TRIAGE_LINE, title: 'CTO triage', by } });
@@ -162,8 +168,11 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     if (s.problems.length) throw refuse('the issue cannot start: ' + s.problems.join('; '), 'BAD_REQUEST');
     const { product: p, issue: iss, jobId: id } = s;
     if (!JOB_ID_RE.test(id)) throw refuse('the job id ' + id + ' is not a valid branch name');
-    store.insertJob({ id, line: ENG_LINE, kind: 'engineering', title: iss.title, state: 'queued', step: lineOf(ENG_LINE).start, product_id: p.id, department_id: C.deptOfAgent('developer') || 'engineering', data: { productId: p.id, issueId, issueSha256: iss.sha256, createdBy: by, branch: branchOf(id) } });
+    // R4: the latest design spec of the issue (DESIGNER's, product.mjs) goes with it, for TECH-LEAD
+    const design = engine.product ? engine.product.designFor(p.id, issueId) : null;
+    store.insertJob({ id, line: ENG_LINE, kind: 'engineering', title: iss.title, state: 'queued', step: lineOf(ENG_LINE).start, product_id: p.id, department_id: C.deptOfAgent('developer') || 'engineering', data: { productId: p.id, issueId, issueSha256: iss.sha256, createdBy: by, branch: branchOf(id), ...(design ? { designJob: design.jobId, designStale: design.stale } : {}) } });
     J.put(path.join(jobDir(store.getJob(id)), 'issue.md'), iss.text);
+    if (design) J.put(path.join(jobDir(store.getJob(id)), 'design.md'), design.text);
     bus.emit('job.created', { jobId: id, data: { line: ENG_LINE, title: iss.title, issueId, by } });
     log.info('engineering job created', { id, productId: p.id, issueId, by });
     if (engine.scriptRun) engine.scriptRun.own.add(id);
@@ -185,7 +194,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     if (max && active.size + others >= max) { store.updateJob(id, { reason: 'next: at most ' + max + ' job' + (max === 1 ? '' : 's') + ' running at a time', data: { autoStart: true, next: true, nextFor: 'total', queuedAt: qd } }); return null; }
     if (job.data && job.data.next) store.updateJob(id, { data: { next: false, nextFor: null } });
     const ctl = new AbortController(); stops.set(id, ctl);
-    const promise = (runners[job.kind] ? runners[job.kind](id, ctl.signal, kit) : EXEC_KINDS.includes(job.kind) ? Promise.resolve(block(job, 'no runner for ' + job.kind + ' in this engine')) : job.kind === 'eng-triage' ? runTriage(id, ctl.signal) : runSteps(id, ctl.signal))
+    const promise = (runners[job.kind] ? runners[job.kind](id, ctl.signal, kit) : RUNNER_KINDS.includes(job.kind) ? Promise.resolve(block(job, 'no runner for ' + job.kind + ' in this engine')) : job.kind === 'eng-triage' ? runTriage(id, ctl.signal) : runSteps(id, ctl.signal))
       .catch((e) => { log.error('engineering job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } })
       .finally(() => { stops.delete(id); active.delete(id); startNext(id); });
     active.set(id, { line: job.line, promise });
@@ -215,13 +224,14 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     const wait = agentWait(job, def.agent); if (wait) return wait;
     if (mockOnLive(id)) return block(job, 'the job has live spend and this engine runs the mock provider');
     const before = fs.existsSync(qf) ? fs.statSync(qf).mtimeMs : 0;
-    const approved = listIssues(dataRoot, p.id).filter((i) => i.state === 'approved'), q = readQueue(dataRoot, p.id);
+    const approved = listIssues(dataRoot, p.id).filter((i) => i.state === 'approved'), q = readQueue(dataRoot, p.id), rm = approvedRoadmap(dataRoot, p.id);
     const openJobs = store.listJobs().filter((j) => j.kind === 'engineering' && j.product_id === p.id && !['archived', 'approved', 'rejected', 'rejected_by_owner'].includes(j.state));
-    const input = ['CTO triage for ' + p.name + ' (' + (p.repo || p.id) + '). Order the owner-approved issues into dev-queue.json.', '',
-      'OWNER-APPROVED ISSUES (read each in issues/<id>.md):', ...approved.map((i) => '- ' + i.id + ': ' + i.title + (i.model !== 'default' ? ' (model ' + i.model + ')' : '')), '',
+    const input = ['CTO triage for ' + p.name + ' (' + (p.repo || p.id) + '). Order the approved issues into dev-queue.json.', '',
+      'THE APPROVED ROADMAP: ' + (rm ? rm.items.map((i) => i.id + ' (' + i.horizon + ') ' + i.title).join('; ') : 'none approved yet'), '',
+      'APPROVED ISSUES (read each in issues/<id>.md; the owner\'s, or PRODUCT-MANAGER\'s for a roadmap item):', ...approved.map((i) => '- ' + i.id + ': ' + i.title + (i.roadmapItem ? ' [roadmap ' + i.roadmapItem.id + ']' : i.by === 'owner' ? ' [the owner\'s]' : '') + (i.model !== 'default' ? ' (model ' + i.model + ')' : '')), '',
       'OPEN ENGINEERING JOBS: ' + (openJobs.length ? openJobs.map((j) => j.data.issueId + ' (' + j.state + ')').join(', ') : 'none'), '',
       'THE CURRENT QUEUE: ' + (q ? JSON.stringify(q.queue || []) : 'none yet'), '',
-      'Write dev-queue.json: { "product": "' + p.id + '", "queue": [ { "issue": "<id>", "order": 1, "size": "small" | "large", "note": "why this order, in one line" } ], "notes": "…" }. Only the issues listed above; leave out one that has an open job.'].join('\n');
+      'Write dev-queue.json: { "product": "' + p.id + '", "queue": [ { "issue": "<id>", "order": 1, "size": "small" | "large", "note": "why this order, in one line" } ], "notes": "…" }. Only the issues listed above; leave out one that has an open job. Within them, put the roadmap\'s Now items before Next and Later.'].join('\n');
     const step = job.step, sid = store.tx(() => store.openStage(id, step, 1));
     bus.emit('job.stage', { jobId: id, agentKey: def.agent, data: { step, pass: 1, kind: 'agent' } });
     const contract = { tool: 'fs_write', partialOk: false, hint: 'Write dev-queue.json with fs_write.', check() { const now = fs.existsSync(qf) ? fs.statSync(qf).mtimeMs : 0; return now > before ? { want: 1, have: 1, missing: [] } : { want: 1, have: 0, missing: ['dev-queue.json'] }; } };
@@ -303,8 +313,10 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     const loopNote = pass > 1 ? '[LOOP — pass ' + pass + ']' : '';
     if (step === 'tech-lead') {
       const cto = job.loops.spec ? latestVerdict(job, 'cto-review') : null;
-      input = [loopNote, 'Write the spec for the owner-approved issue in issue.md (' + p.name + ', ' + (p.repo || p.id) + '). The code is in repo/ (read only for you).', '',
+      const design = job.data.designJob ? readText(path.join(folder, 'design.md')) : null;
+      input = [loopNote, 'Write the spec for the approved issue in issue.md (' + p.name + ', ' + (p.repo || p.id) + '). The code is in repo/ (read only for you).', '',
         readText(path.join(folder, 'issue.md')) || '', '',
+        design ? 'DESIGNER\'S SPEC for this issue (design.md, from job ' + job.data.designJob + (job.data.designStale ? '; written for an earlier version of the issue: where they differ, the issue wins' : '') + '). Use its flow, states and copy; turn its acceptance notes into acceptance criteria:\n' + (design.length > 20000 ? design.slice(0, 20000) + '\n… [the rest in design.md]' : design) + '\n' : '',
         cto ? 'THE CTO ASKED FOR A REVISE of your spec (architecture review, pass ' + cto.pass + '). Fix every point:\n' + findingsText(cto) : '',
         'Write spec.md with the sections ## Problem, ## Scope, ## Out of scope, ## Acceptance criteria (one testable statement per line, "AC1: …"), ## Test plan, ## Files likely touched, ## Risk notes, and a line "size: small" or "size: large".'].filter((x) => x !== '').join('\n');
       const before = fs.existsSync(path.join(folder, 'spec.md')) ? fs.statSync(path.join(folder, 'spec.md')).mtimeMs : 0;
@@ -349,7 +361,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
         return { ...r, logRel: rel(job, lf) };
       }
     };
-    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: 'the engineering job folder of ' + job.id + ' (issue.md, spec.md, notes.md, diff.patch, checks/, verdicts/, and repo/: the code)', input, line: job.line, runCapUsd: null, stopSignal: signal, contract, verdictKind: def.verdict || null, eng, writes: def.writes || [], wrapperNotes: notes, hooks: { onRunStart: hooks.onRunStart } });
+    const run = await runAgent(engine, { agentKey: def.agent, job, step, pass, folder, folderLabel: 'the engineering job folder of ' + job.id + ' (issue.md, ' + (job.data.designJob ? 'design.md, ' : '') + 'spec.md, notes.md, diff.patch, checks/, verdicts/, and repo/: the code)', input, line: job.line, runCapUsd: null, stopSignal: signal, contract, verdictKind: def.verdict || null, eng, writes: def.writes || [], wrapperNotes: notes, hooks: { onRunStart: hooks.onRunStart } });
     const v = run.verdict || seen;
     if (v) J.put(verdictFile(job, step, pass), JSON.stringify({ ...v, step, pass, agent: def.agent, runId: run.runId, at: new Date().toISOString() }, null, 2) + '\n');
     if (run.reportedBlocked && run.status === 'incomplete') return { incomplete: agentName(def.agent) + ' reported blocked: ' + run.reportedBlocked };
@@ -589,7 +601,8 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   // ---- the page: issues, the queue, the jobs, each job's card; the CI wall per product (R7 draws it)
   function view() {
     const products = (lineOf(ENG_LINE).products || []).map((pid) => C.product(pid)).filter(Boolean).map((p) => {
-      const issues = listIssues(dataRoot, p.id).map((i) => ({ id: i.id, title: i.title, model: i.model, state: i.state, decidedAt: i.decision ? i.decision.at : null, words: i.decision ? i.decision.words : null }));
+      // R4: who wrote each issue, its roadmap item, and its latest design spec (DESIGNER's) and whether a spec run can start
+      const P = engine.product, issues = listIssues(dataRoot, p.id).map((i) => { const d = P ? P.designFor(p.id, i.id) : null; return { id: i.id, title: i.title, model: i.model, state: i.state, by: i.by, roadmapItem: i.roadmapItem, via: i.via || null, decidedAt: i.decision ? i.decision.at : null, words: i.decision && i.decision.decision !== 'filed' ? i.decision.words : null, design: d ? { jobId: d.jobId, at: d.at, stale: d.stale } : null, canDesign: P ? P.startProblems('design', { productId: p.id, issueId: i.id }) : ['no Product & Design in this engine'] }; });
       const q = readQueue(dataRoot, p.id), qp = q ? devQueueProblems(JSON.stringify(q), { dataRoot, productId: p.id }) : [];
       const jobs = store.listJobs().filter((j) => ENG_KINDS.includes(j.kind) && j.product_id === p.id).slice(0, 30).map(jobView);
       const wall = jobs.filter((j) => j.kind === 'engineering' && j.checks && j.checks.length).slice(0, 10).map((j) => ({ jobId: j.id, title: j.title, at: j.updatedAt, checks: j.checks }));
@@ -649,5 +662,5 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     return checker.buildImage({ J, product: p, requirementsText: req, signal });
   }
 
-  return { addRunner: (kind, fn) => { if (!EXEC_KINDS.includes(kind)) throw new Error('not a side-line kind: ' + kind); runners[kind] = fn; }, handles: (kind) => SIDE_KINDS.includes(kind), writeIssue, decideIssue, startTriage, startIssue, startProblems, start, stop, resume, archive, ownerDecide, approvalState: (id) => approvalState(store.getJob(id)), wakeWaiting, isActive, active: () => [...active.keys()], activeCount: () => active.size, view, jobView, jobDetail, card, buildCheckImage, checks: checker, close: () => unsub() };
+  return { addRunner: (kind, fn) => { if (!RUNNER_KINDS.includes(kind)) throw new Error('not a side-line kind: ' + kind); runners[kind] = fn; }, handles: (kind) => SIDE_KINDS.includes(kind), writeIssue, decideIssue, startTriage, startIssue, startProblems, start, stop, resume, archive, ownerDecide, approvalState: (id) => approvalState(store.getJob(id)), wakeWaiting, isActive, active: () => [...active.keys()], activeCount: () => active.size, view, jobView, jobDetail, card, buildCheckImage, checks: checker, close: () => unsub() };
 }

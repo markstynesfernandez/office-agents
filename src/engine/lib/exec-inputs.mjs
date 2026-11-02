@@ -6,7 +6,7 @@
 //               the last 24 hours, the paused lines, and the breaches: the only grounds on which the COO may pause a line (line_pause names
 //               one; tools/index.mjs checks it)
 //   ceoInputs   products/station/memos/inputs-<YYYY-Www>.json: Finance per product, the COO's reports of the week, Engineering in counts
-//               and issue titles, the roadmap / pipeline / ANALYST slots (empty until R4, R5, R6), request counts, the owner's marks on
+//               and issue titles, the approved roadmaps (R4), the pipeline / ANALYST slots (empty until R5, R6), request counts, the owner's marks on
 //               earlier proposals and the last memo. Never a request's text or payload, a support ticket, a customer record or an outreach
 //               draft (the CEO gets counts and summaries from those departments, so no personal data reaches the memo)
 // Proposals in both: the stuck-job threshold (stuckAfterHours 6) and the error breach (3 jobs blocked on a line in 24 hours).
@@ -16,6 +16,7 @@ import { dublinDay } from '../time.mjs';
 import { policyLog } from '../policy.mjs';
 import { listIssues } from './eng-records.mjs';
 import { isoWeek, latestMarks } from './exec-records.mjs';
+import { approvedRoadmap } from './product-records.mjs';
 
 export const STUCK_AFTER_HOURS = 6, ERROR_BREACH_JOBS = 3;
 export const EXEC_KINDS = ['exec-report', 'exec-memo'];
@@ -110,7 +111,8 @@ export function ceoInputs(engine, { now = Date.now() } = {}) {
     week, day, generatedAt: new Date(now).toISOString(),
     finance: { products: finance, stationTodayUsd: r6(ledger.spent.day(day)), dayCapUsd: cfg.engine.caps.perDayUsd },
     cooReports: reports, engineering,
-    roadmaps: status('product-manager', 'R4', 'roadmap drafts'), pipeline: status('lead-researcher', 'R5', 'pipeline counts'), analyst: status('analyst', 'R6', 'aggregates'), customerSuccess: status('support-drafter', 'R6', 'ticket and onboarding counts'),
+    // R4: each product's approved roadmap (its items), once PRODUCT-MANAGER is hired
+    roadmaps: (cfg.agents['product-manager'] || {}).status === 'active' ? { status: 'active', products: C.list.filter((p) => p.status === 'active').map((p) => { const rm = approvedRoadmap(dataRoot, p.id); return { productId: p.id, name: p.name, approved: rm ? { approvedAt: rm.approvedAt, items: rm.items.map((i) => ({ id: i.id, horizon: i.horizon, title: i.title, size: i.size })) } : null }; }) } : status('product-manager', 'R4', 'roadmap drafts'), pipeline: status('lead-researcher', 'R5', 'pipeline counts'), analyst: status('analyst', 'R6', 'aggregates'), customerSuccess: status('support-drafter', 'R6', 'ticket and onboarding counts'),
     requests: { byActionAndStatus: byKey, pending: reqs.filter((r) => r.status === 'pending').length },
     proposalMarks: marks.slice(-30), lastMemo: last,
     activeProducts: C.list.filter((p) => p.status === 'active').map((p) => p.name),

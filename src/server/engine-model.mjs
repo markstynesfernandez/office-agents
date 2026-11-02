@@ -347,6 +347,8 @@ function companyView(engine, C, { agents, jobs }) {
       policy: pol ? { sha256: pol.sha256, counts: { auto: count('auto'), owner: count('owner'), forbidden: count('forbidden') }, levels, log: policyLog(engine.J.dataRoot, 100), source: 'config/autonomy.json (the owner edits the file; the page cannot)' } : null,
       // R3: the COO's latest report and the CEO's latest memo with its proposals (and the owner's marks), the exec jobs, their routines
       execs: engine.execs ? engine.execs.view() : null,
+      // R4: Product & Design: each product's approved roadmap, the draft waiting for the owner (its text), the ideas, the backlog counts, the jobs
+      productDesign: engine.product ? engine.product.view() : null,
       pausedLines: Object.keys(cfg.lines).map((l) => ({ line: l, paused: engine.actions ? engine.actions.paused(l) : null })).filter((x) => x.paused)
     }
   };

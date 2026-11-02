@@ -31,9 +31,9 @@ import { dublinDay } from '../src/engine/time.mjs';
 const REAL = loadConfig({ configDir: CONFIG, promptsDir: PROMPTS });
 const C = company(REAL);
 const NEW_AGENTS = { hq: ['ceo', 'cto', 'coo', 'compliance'], 'security-data': ['security', 'analyst'], engineering: ['tech-lead', 'developer', 'reviewer', 'tester'], 'product-design': ['product-manager', 'ux-designer'], 'sales-marketing': ['lead-researcher', 'lead-checker', 'outreach-writer', 'content-writer'], 'customer-success': ['onboarding-guide', 'support-drafter', 'retention-analyst'] };
-// R2 (owner's go, 25/10/2026): the engineering line's six are hired; R3 (30/10/2026): the CEO and the COO; the other 11 stay not hired
-// until their phase
-const R2_HIRED = ['cto', 'security', 'tech-lead', 'developer', 'reviewer', 'tester'], R3_HIRED = ['ceo', 'coo'], HIRED = [...R2_HIRED, ...R3_HIRED];
+// R2 (owner's go, 25/10/2026): the engineering line's six are hired; R3 (30/10/2026): the CEO and the COO; R4 (02/11/2026): PRODUCT-MANAGER
+// and DESIGNER; the other 9 stay not hired until their phase
+const R2_HIRED = ['cto', 'security', 'tech-lead', 'developer', 'reviewer', 'tester'], R3_HIRED = ['ceo', 'coo'], R4_HIRED = ['product-manager', 'ux-designer'], HIRED = [...R2_HIRED, ...R3_HIRED, ...R4_HIRED];
 const NOT_HIRED = Object.values(NEW_AGENTS).flat().filter((k) => !HIRED.includes(k));
 const ETSY_AGENTS = ['demand-researcher', 'evidence-checker', 'trend-scout', 'designer', 'qa-design', 'lister', 'qa-listing', 'rejects-desk'];
 
@@ -48,11 +48,11 @@ test('1: seven floors top to bottom (6 Penthouse HQ … 1 Customer Success, G th
   assert.ok(fs.existsSync(path.join(CONFIG, 'products', '_template.json'))); assert.ok(!C.list.some((p) => /template/.test(p.id)));
 });
 
-test('1: all 19 active-company agents are in their departments, each with its phase (R2: the engineering six hired; R3: the CEO and the COO; the rest not hired yet); the Etsy agents are archived and OVERSEER is retired into the COO', () => {
+test('1: all 19 active-company agents are in their departments, each with its phase (R2: the engineering six hired; R3: the CEO and the COO; R4: PRODUCT-MANAGER and DESIGNER; the rest not hired yet); the Etsy agents are archived and OVERSEER is retired into the COO', () => {
   const all = Object.values(NEW_AGENTS).flat();
   assert.equal(all.length, 19);
   for (const [d, keys] of Object.entries(NEW_AGENTS)) { assert.deepEqual(C.department(d).agents.filter((k) => keys.includes(k)), keys, d); for (const k of keys) assert.equal(C.deptOfAgent(k), d, k); }
-  for (const k of all) { const a = REAL.agents[k], hired = HIRED.includes(k); assert.equal(a.status, hired ? 'active' : 'not-hired', k); assert.match(a.phase, /^R[2-6]$/, k); assert.equal(a.enabled, hired, k); if (hired) assert.equal(a.phase, R2_HIRED.includes(k) ? 'R2' : 'R3', k); }
+  for (const k of all) { const a = REAL.agents[k], hired = HIRED.includes(k); assert.equal(a.status, hired ? 'active' : 'not-hired', k); assert.match(a.phase, /^R[2-6]$/, k); assert.equal(a.enabled, hired, k); if (hired) assert.equal(a.phase, R2_HIRED.includes(k) ? 'R2' : R3_HIRED.includes(k) ? 'R3' : 'R4', k); }
   assert.deepEqual(Object.fromEntries(all.map((k) => [k, REAL.agents[k].phase])), { ceo: 'R3', cto: 'R2', coo: 'R3', compliance: 'R5', security: 'R2', analyst: 'R6', 'tech-lead': 'R2', developer: 'R2', reviewer: 'R2', tester: 'R2', 'product-manager': 'R4', 'ux-designer': 'R4', 'lead-researcher': 'R5', 'lead-checker': 'R5', 'outreach-writer': 'R5', 'content-writer': 'R5', 'onboarding-guide': 'R6', 'support-drafter': 'R6', 'retention-analyst': 'R6' });
   for (const k of ETSY_AGENTS) { assert.equal(REAL.agents[k].status, 'archived', k); assert.equal(C.deptOfAgent(k), 'etsy', k); }
   assert.deepEqual([REAL.agents.overseer.status, REAL.agents.overseer.retired, REAL.agents.overseer.retiredInto, C.deptOfAgent('overseer')], ['archived', true, 'coo', 'hq']);
@@ -94,7 +94,7 @@ test('2: a not-hired agent cannot run or spend (nothing recorded, USD 0), and th
   // the snapshot does not draw a not-hired agent (no desk until its phase); it lists it in the company view
   const s = buildEngineSnapshot(engine);
   assert.ok(!s.agents.some((a) => a.id === 'compliance')); assert.ok(s.agents.some((a) => a.id === 'ceo') && s.agents.some((a) => a.id === 'coo'), 'R3: the CEO and the COO at their desks');
-  assert.equal(s.agents.length, 17, 'R7a: the 8 archived Etsy agents and OVERSEER (the lobby), the six hired in R2 and the two in R3 (at their desks)');
+  assert.equal(s.agents.length, 19, 'R7a: the 8 archived Etsy agents and OVERSEER (the lobby), the six hired in R2, the two in R3 and the two in R4 (at their desks)');
   const hq = s.company.floors.find((f) => f.id === 'hq');
   assert.deepEqual(hq.agents.map((a) => [a.id, a.label]), [['ceo', 'active'], ['cto', 'active'], ['coo', 'active'], ['compliance', 'not hired yet (R5)'], ['overseer', 'retired into COO']]);
 });
@@ -255,8 +255,8 @@ test('7: the snapshot: the seven floors with their agents, the products (Finance
   const s = buildEngineSnapshot(engine);
   assert.deepEqual(s.company.floors.map((f) => f.floor), ['6', '5', '4', '3', '2', '1', 'G']);
   assert.deepEqual(s.company.floors.find((f) => f.id === 'etsy').lines.map((l) => [l.id, l.archived]).sort(), [['genre-scout', true], ['research', true], ['room1-digital', true]]);
-  assert.equal(s.company.floors.reduce((n, f) => n + f.agents.filter((a) => a.status === 'not-hired').length, 0), 11, 'R3: 19 less the six of R2 and the CEO and COO');
-  assert.equal(s.company.floors.reduce((n, f) => n + f.agents.filter((a) => a.status === 'active').length, 0), 8, 'R2: the engineering six; R3: the CEO and the COO');
+  assert.equal(s.company.floors.reduce((n, f) => n + f.agents.filter((a) => a.status === 'not-hired').length, 0), 9, 'R4: 19 less the six of R2, the CEO and COO (R3) and PRODUCT-MANAGER and DESIGNER (R4)');
+  assert.equal(s.company.floors.reduce((n, f) => n + f.agents.filter((a) => a.status === 'active').length, 0), 10, 'R2: the engineering six; R3: the CEO and the COO; R4: PRODUCT-MANAGER and DESIGNER');
   assert.deepEqual(s.spend.byProduct.map((p) => [p.id, p.budgetUsd, p.budgetProposal, p.mrr]).sort(), [['emty-inbox', 40, true, 'not connected'], ['etsy-shop', 200, false, 'not connected'], ['replydesk', 80, false, 'not connected'], ['station', 20, true, 'not connected']]);
   const oo = s.company.ownersOffice;
   assert.deepEqual([oo.pending, oo.requests[0].id, oo.requests[0].action, oo.requests[0].status, oo.requests[0].productId], [1, req.id, 'dependency.add', 'pending', 'replydesk']);
@@ -265,5 +265,5 @@ test('7: the snapshot: the seven floors with their agents, the products (Finance
   // the page renders the penthouse in the building view: the request with Approve and Reject, Finance, the floors, the policy
   const body = { innerHTML: '', querySelectorAll: () => [] }, root = { querySelector: () => body, classList: { add() {}, remove() {}, contains: () => true } };
   createBuildingView({ root }).render(s);
-  for (const x of ['Penthouse · the Owner\'s office', 'add ruff as a dev requirement', 'data-req="' + req.id + '" data-decision="approve"', 'data-decision="reject"', 'Finance (from the ledger)', 'ReplyDesk</span> this month', 'MRR not connected', 'Autonomy policy', 'not hired yet (R4)', 'COO · daily operations report', 'CEO · weekly memo and proposals', 'data-exec-run="coo-report"', 'Lobby: Etsy archive']) assert.ok(body.innerHTML.includes(x), x);
+  for (const x of ['Penthouse · the Owner\'s office', 'add ruff as a dev requirement', 'data-req="' + req.id + '" data-decision="approve"', 'data-decision="reject"', 'Finance (from the ledger)', 'ReplyDesk</span> this month', 'MRR not connected', 'Autonomy policy', 'not hired yet (R5)', 'COO · daily operations report', 'CEO · weekly memo and proposals', 'data-exec-run="coo-report"', 'Lobby: Etsy archive']) assert.ok(body.innerHTML.includes(x), x);
 });

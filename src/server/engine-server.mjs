@@ -99,6 +99,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
   // R2c: the engineering line (engine.engineering): every call carries the owner's page session, and the engine refuses any other actor
   const E = () => { if (!engine.engineering) throw Object.assign(new Error('this engine has no engineering line'), { code: 'BAD_REQUEST' }); return engine.engineering; };
   const X = () => { if (!engine.execs) throw Object.assign(new Error('this engine has no executives'), { code: 'BAD_REQUEST' }); return engine.execs; };
+  const P = () => { if (!engine.product) throw Object.assign(new Error('this engine has no Product & Design'), { code: 'BAD_REQUEST' }); return engine.product; };
   const noPromise = (r) => { if (!r || typeof r !== 'object') return r; const { promise, ...rest } = r; return rest; };
   // the owner's session is checked first, before the spend gate: a server without it (a script engine) refuses every engineering control
   const asOwner = (fn) => (body, key) => { if (!engine.requests || !engine.requests.isOwner(owner)) throw Object.assign(new Error('refused: only the owner, on the page, controls the engineering line and the executives (this server has no owner session)'), { code: 'LOCKED' }); return fn(body, key); };
@@ -163,6 +164,12 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/exec/coo-report': asOwner(spends('coo-report', () => noPromise(X().start('coo', { by: BY }, { actor: owner })))),
     'POST /api/exec/ceo-memo': asOwner(spends('ceo-memo', () => noPromise(X().start('ceo', { by: BY }, { actor: owner })))),
     'POST /api/exec/proposal-mark': asOwner((body) => X().markProposal({ week: str(body.week, 20), proposal: str(body.proposal, 8), mark: str(body.mark, 10), words: str(body.words, 500) }, { actor: owner })),
+    // R4: Product & Design (owner only, localhost): PRODUCT-MANAGER's roadmap draft or issues, DESIGNER's spec (each can spend: the spend gate
+    // first), and the owner's idea for PRODUCT-MANAGER (free). The roadmap draft is decided as a request (POST /api/requests/decide)
+    'POST /api/product/roadmap': asOwner(spends('pm-roadmap', (body) => noPromise(P().start('roadmap', { productId: str(body.productId, 60), by: BY }, { actor: owner })))),
+    'POST /api/product/issues': asOwner(spends('pm-issues', (body) => noPromise(P().start('issues', { productId: str(body.productId, 60), by: BY }, { actor: owner })))),
+    'POST /api/product/design': asOwner(spends('design-spec', (body) => noPromise(P().start('design', { productId: str(body.productId, 60), issueId: str(body.issueId, 120), by: BY }, { actor: owner })))),
+    'POST /api/product/idea': asOwner((body) => P().addIdea({ productId: str(body.productId, 60), text: str(body.text, 2000) }, { actor: owner })),
     // E7a: the own-shop Etsy connection (read scopes only; nothing is written to Etsy and nothing spends)
     'POST /api/etsy/connect/start': () => etsyClient().startConnect(),
     'POST /api/etsy/connect/finish': (body) => etsyClient().finishConnect(str(body.pasted, 4000)),
@@ -195,7 +202,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       if (req.method === 'POST') {
         const act = ACTIONS['POST ' + p];
         if (!act && p !== '/api/spend/quote') return sendJson(res, { error: 'unknown action' }, 404);
-        if ((p.startsWith('/api/eng/') || p.startsWith('/api/exec/')) && !loopback(req)) return refuse(res, p, 403, 'localhost only', { remote: (req.socket && req.socket.remoteAddress) || null });
+        if ((p.startsWith('/api/eng/') || p.startsWith('/api/exec/') || p.startsWith('/api/product/')) && !loopback(req)) return refuse(res, p, 403, 'localhost only', { remote: (req.socket && req.socket.remoteAddress) || null });
         if (!sameOrigin(req)) return refuse(res, p, 403, 'same-origin requests only', { origin: req.headers.origin || null });
         if (req.headers['x-station-action'] !== token) return refuse(res, p, 403, 'missing or stale action token: reload the page', { token: req.headers['x-station-action'] ? 'wrong' : 'missing' });
         if (!/^application\/json\b/.test(req.headers['content-type'] || '')) return refuse(res, p, 415, 'JSON only');

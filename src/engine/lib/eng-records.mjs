@@ -1,10 +1,14 @@
 // lib/eng-records.mjs — R2 (RESTRUCTURE.md §2.2, §8 R2): the engineering line's records, checked by the engine. No model, no network.
-//   issue        written by the owner (until R4: "the owner writes and approves issues directly"), on the page or with npm run owner -- issue;
-//                data/products/<id>/backlog/issues/<issue-id>.md. Its decisions (approve, reject, withdraw, with the owner's words and the
-//                issue's sha256) are appended to backlog/issue-decisions.jsonl; an issue is approved only while its latest decision is an
-//                approval of the text as it is now (an edited issue is no longer approved)
+//   issue        written by the owner, on the page or with npm run owner -- issue, or (R4) by PRODUCT-MANAGER for an item of the approved
+//                roadmap; data/products/<id>/backlog/issues/<issue-id>.md. Its decisions (approve, reject, withdraw, with the owner's words
+//                and the issue's sha256; R4: "filed", the engine's record of a PRODUCT-MANAGER issue as written) are appended to
+//                backlog/issue-decisions.jsonl. An owner's issue is approved only while its latest decision is an approval of the text as
+//                it is now (an edited issue is no longer approved). R4 (owner, 02/11/2026): a PRODUCT-MANAGER issue needs no second
+//                approval: it is approved while it reads as filed and its roadmap item (id and title) is on the approved roadmap
+//                (lib/product-records.mjs approvedRoadmap); the owner may still approve, reject or withdraw it. The owner's own issues
+//                need no roadmap item (owner, 02/11/2026: off-roadmap issues stay the owner's)
 //   dev queue    the CTO's order and assignments, backlog/dev-queue.json, checked when the CTO writes it: every issue in it must be
-//                approved by the owner (the CTO cannot assign an issue the owner has not approved), once, in order 1..n
+//                approved (the CTO cannot assign an issue that is not), once, in order 1..n
 //   spec         TECH-LEAD's spec.md, checked when it is written: the sections, testable acceptance criteria AC1..ACn, and size small|large
 //   verdicts     submit_verdict records for the engineering kinds: architecture (CTO), test (TESTER), review (REVIEWER), security (SECURITY)
 // Another company's data never enters the Station (config/building.json foreignDataMarkers), and no secret is written in any of them.
@@ -12,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { secretContentHits } from './secrets.mjs';
+import { approvedRoadmap, onRoadmap } from './product-records.mjs';
 
 export const ISSUE_ID_RE = /^\d{4}-\d{2}-\d{2}--[a-z0-9][a-z0-9-]{1,60}$/;
 export const MODELS = ['default', 'opus'];
@@ -25,8 +30,8 @@ export const queueFile = (dataRoot, productId) => path.join(backlog(dataRoot, pr
 const slug = (t) => String(t || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50).replace(/-+$/, '');
 
 // ---- issues
-// the owner's issue as a file -> { ok, id, text } | { ok: false, problems }
-export function composeIssue({ title, problem, acceptance = '', notes = '', model = 'default', productId, day }) {
+// the owner's issue as a file -> { ok, id, text } | { ok: false, problems }. R4: by product-manager, with the roadmap item it serves
+export function composeIssue({ title, problem, acceptance = '', notes = '', model = 'default', productId, day, by = 'owner', roadmapItem = null }) {
   const t = String(title || '').replace(/\s+/g, ' ').trim(), p = String(problem || '').replace(/\r\n/g, '\n').trim(), a = String(acceptance || '').replace(/\r\n/g, '\n').trim(), n = String(notes || '').replace(/\r\n/g, '\n').trim(), bad = [];
   if (t.length < 5 || t.length > 120) bad.push('a title of 5 to 120 characters');
   if (p.length < 20 || p.length > 6000) bad.push('the problem (what and why) in 20 to 6,000 characters');
@@ -36,7 +41,7 @@ export function composeIssue({ title, problem, acceptance = '', notes = '', mode
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) bad.push('the day');
   if (bad.length) return { ok: false, problems: bad };
   const id = day + '--' + s;
-  const text = ['---', 'id: ' + id, 'product: ' + productId, 'title: ' + t, 'model: ' + model, 'by: owner', '---', '', '# ' + t, '', '## Problem', '', p, '', '## Acceptance hints', '', a || '(none: TECH-LEAD writes the acceptance criteria)', '', '## Notes', '', n || '(none)', ''].join('\n');
+  const text = ['---', 'id: ' + id, 'product: ' + productId, 'title: ' + t, 'model: ' + model, 'by: ' + by, ...(roadmapItem ? ['roadmap: ' + roadmapItem.id + ' · ' + String(roadmapItem.title).replace(/\s+/g, ' ').trim()] : []), '---', '', '# ' + t, '', '## Problem', '', p, '', '## Acceptance hints', '', a || '(none: TECH-LEAD writes the acceptance criteria)', '', '## Notes', '', n || '(none)', ''].join('\n');
   return { ok: true, id, text };
 }
 // R2c: the page's issue form (what happens, what should happen, where, acceptance criteria) -> composeIssue's fields; the problem keeps
@@ -50,25 +55,31 @@ export function readIssue(dataRoot, productId, id) {
   if (!ISSUE_ID_RE.test(String(id || ''))) return null;
   const f = issueFile(dataRoot, productId, id); if (!fs.existsSync(f)) return null;
   const text = fs.readFileSync(f, 'utf8');
-  return { id, productId, text, sha256: sha256(text), title: issueField(text, 'title') || id, model: issueField(text, 'model') || 'default' };
+  const rm = /^(RM\d+) · (.+)$/.exec(issueField(text, 'roadmap') || '');
+  return { id, productId, text, sha256: sha256(text), title: issueField(text, 'title') || id, model: issueField(text, 'model') || 'default', by: issueField(text, 'by') || 'owner', roadmapItem: rm ? { id: rm[1], title: rm[2] } : null };
 }
 export function readDecisions(dataRoot, productId) {
   const f = decisionsFile(dataRoot, productId); if (!fs.existsSync(f)) return [];
   return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
 }
-// an issue's state from its latest decision: draft (none yet), approved (of this text), stale (approved, but the text changed), rejected, withdrawn
-export function issueState(issue, decisions) {
+// an issue's state from its latest decision: draft (none yet), approved (of this text), stale (approved, but the text changed), rejected,
+// withdrawn. R4: a PRODUCT-MANAGER issue as filed is approved while its roadmap item is on the approved roadmap (via "roadmap"), else
+// off-roadmap; roadmap: lib/product-records.mjs approvedRoadmap (null: none approved)
+export function issueState(issue, decisions, roadmap = null) {
   const d = decisions.filter((x) => x.issueId === issue.id).pop();
   if (!d) return { state: 'draft', decision: null };
   if (d.decision === 'approve') return d.sha256 === issue.sha256 ? { state: 'approved', decision: d } : { state: 'stale', decision: d };
+  if (d.decision === 'filed') { if (d.sha256 !== issue.sha256) return { state: 'stale', decision: d }; return onRoadmap(issue.roadmapItem, roadmap) ? { state: 'approved', decision: d, via: 'roadmap' } : { state: 'off-roadmap', decision: d }; }
   return { state: d.decision === 'reject' ? 'rejected' : 'withdrawn', decision: d };
 }
 export function listIssues(dataRoot, productId) {
   const dir = path.join(backlog(dataRoot, productId), 'issues'); if (!fs.existsSync(dir)) return [];
-  const ds = readDecisions(dataRoot, productId);
-  return fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort().map((f) => readIssue(dataRoot, productId, f.slice(0, -3))).filter(Boolean).map((i) => ({ ...i, ...issueState(i, ds) }));
+  const ds = readDecisions(dataRoot, productId), rm = approvedRoadmap(dataRoot, productId);
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort().map((f) => readIssue(dataRoot, productId, f.slice(0, -3))).filter(Boolean).map((i) => ({ ...i, ...issueState(i, ds, rm) }));
 }
-export const isApproved = (dataRoot, productId, id) => { const i = readIssue(dataRoot, productId, id); return !!i && issueState(i, readDecisions(dataRoot, productId)).state === 'approved'; };
+// R4: one issue's state against its product's decisions and approved roadmap
+export const stateOf = (dataRoot, productId, issue) => issueState(issue, readDecisions(dataRoot, productId), approvedRoadmap(dataRoot, productId));
+export const isApproved = (dataRoot, productId, id) => { const i = readIssue(dataRoot, productId, id); return !!i && stateOf(dataRoot, productId, i).state === 'approved'; };
 
 // ---- the CTO's dev queue: problems[] (empty: it may be written)
 export function devQueueProblems(text, { dataRoot, productId }) {
@@ -85,7 +96,7 @@ export function devQueueProblems(text, { dataRoot, productId }) {
     if (seen.has(x.issue)) bad.push(at + ': ' + x.issue + ' is in the queue twice'); seen.add(x.issue);
     const iss = readIssue(dataRoot, productId, x.issue);
     if (!iss) bad.push(at + ': there is no issue ' + x.issue);
-    else { const st = issueState(iss, readDecisions(dataRoot, productId)).state; if (st !== 'approved') bad.push(at + ': ' + x.issue + ' is ' + st + ', not approved by the owner: the CTO assigns only owner-approved issues'); }
+    else { const st = stateOf(dataRoot, productId, iss).state; if (st !== 'approved') bad.push(at + ': ' + x.issue + ' is ' + st + ', not approved: the CTO assigns only approved issues (the owner\'s, or PRODUCT-MANAGER\'s on the approved roadmap)'); }
     if (x.order !== i + 1) bad.push(at + '.order must be ' + (i + 1) + ' (the queue is in order)');
     if (!['small', 'large'].includes(x.size)) bad.push(at + '.size must be "small" or "large" (the CTO\'s estimate; TECH-LEAD\'s spec sets the size that counts)');
     if (x.note != null && (typeof x.note !== 'string' || x.note.length > 500)) bad.push(at + '.note must be text under 500 characters');

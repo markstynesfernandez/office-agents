@@ -1,0 +1,29 @@
+{
+  "$comment": "R4 (RESTRUCTURE.md §2.2, §8 R4): PRODUCT-MANAGER drafts a product's roadmap (src/engine/product.mjs). The engine writes the inputs (products/<id>/product/inputs-<stamp>.json), PRODUCT-MANAGER writes roadmap-draft.md (checked on write), and the engine files it as a roadmap.approve request; the owner decides it in the Owner's office, and on approval the engine writes it as roadmap.md. Started by the owner on the page, behind the spend confirmation. Products: those with a Product & Design job cap (ReplyDesk, emty-inbox; USD 0.50 each, proposals).",
+  "id": "pm-roadmap",
+  "label": "Roadmap draft",
+  "kind": "pm-roadmap",
+  "products": [
+    "replydesk",
+    "emty-inbox"
+  ],
+  "maxConcurrentJobs": 1,
+  "estimateUsd": {
+    "note": "the plan's estimate, not a measurement (RESTRUCTURE.md §8 R4: one roadmap update, about 50k tokens in and 5k out, Sonnet)",
+    "job": 0.15
+  },
+  "start": "inputs",
+  "steps": {
+    "inputs": {
+      "kind": "mechanical",
+      "fn": "inputs",
+      "next": "pm"
+    },
+    "pm": {
+      "kind": "agent",
+      "agent": "product-manager",
+      "column": "roadmap",
+      "next": null
+    }
+  }
+}

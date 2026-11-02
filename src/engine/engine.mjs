@@ -34,6 +34,7 @@ import { createRequests } from './requests.mjs';
 import { createActions } from './actions.mjs';
 import { createEngineering, SIDE_KINDS } from './engineering.mjs';
 import { createExecs } from './execs.mjs';
+import { createProductDesign } from './product.mjs';
 
 export class LockError extends Error { constructor(msg) { super(msg); this.code = 'LOCKED'; } }
 export class DemoConfigError extends Error { constructor(msg) { super(msg); this.code = 'DEMO_CONFIG'; } }
@@ -133,6 +134,9 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.engineering = createEngineering(engine, { hooks, ...engineering });
     // R3: the penthouse executives (the COO's daily report, the CEO's weekly memo), run by the engineering module's side-line runner
     engine.execs = createExecs(engine, { now: clock });
+    // R4: Product & Design (PRODUCT-MANAGER's roadmap draft and backlog issues, DESIGNER's spec), on the same side-line runner; the design
+    // run reads the product's UI from the mirror with the engineering line's env and git options
+    engine.product = createProductDesign(engine, { now: clock, env: (engineering && engineering.env) || process.env, git: (engineering && engineering.git) || {} });
     engine.spend = createSpendDesk(engine);   // L2: the spend confirmation in front of every page action that can spend
     // E6 b3: a scout job that restart recovery ended (blocked) still puts its notes' names on the scouting blocklist
     for (const j of rec.jobs.filter((x) => x.action === 'blocked')) engine.orchestrator.blocklistOnEnd(j.id);

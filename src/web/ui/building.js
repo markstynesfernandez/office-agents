@@ -18,7 +18,10 @@ const when = (ms) => (ms ? new Date(ms).toLocaleString('en-IE', { timeZone: 'Eur
 // panel; the panel itself is one click from the top of this view.
 // R3: the executives in the Owner's office: the COO's latest daily report and the CEO's latest memo, each with a button to run it now
 // (behind the spend confirmation) and its routine's state; the memo's proposals with the owner's three marks (a note: nothing is approved)
-export function createBuildingView({ root, onFloor = () => {}, onDecide = () => {}, onResume = () => {}, onEng = () => {}, onExec = () => {} }) {
+// R4: Product & Design: per product, the approved roadmap, the draft waiting for the owner (its whole text, with Approve and Reject: a
+// roadmap.approve request, decided like every request), the owner's ideas, and the runs (roadmap draft, issues: the spend confirmation; an
+// idea: free)
+export function createBuildingView({ root, onFloor = () => {}, onDecide = () => {}, onResume = () => {}, onEng = () => {}, onExec = () => {}, onProduct = () => {} }) {
   const body = root.querySelector('#building-body');
   let reqs = [];
   function render(snap, cur = null) {
@@ -42,6 +45,7 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
     body.querySelectorAll('[data-eng-open]').forEach((el) => el.addEventListener('click', () => onEng(el.dataset.engOpen || null)));
     body.querySelectorAll('[data-exec-run]').forEach((el) => el.addEventListener('click', () => onExec('run', { action: el.dataset.execRun })));
     body.querySelectorAll('[data-mark]').forEach((el) => el.addEventListener('click', () => onExec('mark', { week: el.dataset.week, proposal: el.dataset.proposal, mark: el.dataset.mark })));
+    body.querySelectorAll('[data-pd-run]').forEach((el) => el.addEventListener('click', () => onProduct(el.dataset.pdRun, el.dataset.product)));
   }
 
   // R7a: the lift: one slab per floor in the floor's own colours, the car at the floor shown
@@ -87,6 +91,7 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
       + (recent.length ? '<div class="muted" style="margin-top:8px;font-size:12px">Decided</div>' + recent.map((r) => reqRow(r, false)).join('') : '')
       + (paused.length ? '<div style="margin-top:8px">' + paused.map((p) => '<div class="bldg-total"><b>' + esc(p.line) + '</b> paused by ' + esc(p.paused.by) + ': ' + esc(p.paused.reason) + ' <button class="btn btn-mini" data-resume="' + esc(p.line) + '">Resume…</button></div>').join('') + '</div>' : '')
       + execs(oo.execs)
+      + productDesign(oo.productDesign)
       + '<h3 style="margin:18px 0 6px">Finance (from the ledger)</h3><div class="bldg-total">' + (fin || '<span class="muted">no products</span>') + '</div>'
       + (pol ? '<h3 style="margin:18px 0 6px">Autonomy policy</h3><div class="bldg-total muted">' + pol.counts.auto + ' auto · ' + pol.counts.owner + ' owner · ' + pol.counts.forbidden + ' forbidden · <span class="mono">' + esc(String(pol.sha256).slice(0, 12)) + '</span> · ' + esc(pol.source)
         + ((pol.log || []).filter((x) => !x.first).slice(-5).map((x) => '<div>' + esc(x.at.slice(0, 16).replace('T', ' ')) + ' ' + esc(x.action) + ': ' + esc(x.old) + ' → ' + esc(x.new) + '</div>').join('')) + '</div>' : '')
@@ -112,6 +117,27 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
       + '<div class="bldg-total">' + run(m, 'ceo-memo', 'Write the memo now…') + ' ' + rt(m.routine) + '</div>'
       + '<div class="muted" style="font-size:12px;margin:4px 0">The CEO recommends only. A proposal is a document: mark it taken, declined or later; that is a note for the next memo, and it approves, starts or changes nothing.</div>'
       + (memo ? (memo.proposals.length ? memo.proposals.map((p) => prop(memo.week, p)).join('') : '<div class="muted">No proposal this week.</div>') + '<details style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">The memo, ' + esc(memo.week) + '</summary>' + text(memo.text) + '</details>' : '<div class="muted">No memo yet.</div>');
+  }
+  // R4: Product & Design in the Owner's office
+  function productDesign(x) {
+    if (!x) return '';
+    const st = (a) => (a.status !== 'active' ? ' <span class="tag tag-warn">' + esc(a.status === 'not-hired' ? 'not hired yet' : a.status) + '</span>' : a.onDuty ? '' : ' <span class="tag tag-warn">off duty</span>');
+    const btn = (kind, p, label, probs, est) => '<button class="btn btn-mini' + (kind === 'roadmap' ? ' btn-primary' : '') + '" data-pd-run="' + kind + '" data-product="' + esc(p.id) + '"' + (probs && probs.length ? ' disabled title="' + esc(probs.join('; ')) + '"' : '') + '>' + label + '</button>' + (est != null ? ' <span class="muted" style="font-size:11px">plan estimate ' + money(est) + '</span>' : '');
+    const items = (its) => its.map((i) => '<div style="font-size:12px"><span class="mono">' + esc(i.id) + '</span> <b>' + esc(i.title) + '</b> <span class="tag">' + esc(i.horizon) + '</span> <span class="muted">' + esc(i.size || '') + '</span></div>').join('');
+    const prod = (p) => '<div class="bldg-floor" style="cursor:default"><span class="fl-num" style="font-size:12px">' + (p.roadmap ? p.roadmap.items.length : '–') + '</span><span>'
+      + '<span class="fl-name">' + esc(p.name) + '</span> ' + (p.roadmap ? '<span class="tag">roadmap approved ' + esc(String(p.roadmap.approvedAt || '').slice(0, 10)) + '</span>' : '<span class="tag tag-warn">no approved roadmap</span>') + (p.pending ? ' <span class="tag tag-warn">draft waiting for you</span>' : '')
+      + (p.backlog ? '<div class="muted" style="font-size:11px">backlog: ' + esc(Object.entries(p.backlog.byState).map(([k, v]) => v + ' ' + k).join(' · ') || 'empty') + ' · ' + p.backlog.fromPm + ' from PRODUCT-MANAGER (' + p.backlog.onRoadmap + ' on the roadmap)</div>' : '')
+      + '<div class="fl-stats">' + btn('roadmap', p, 'Draft a roadmap…', p.canDraft, p.estimateUsd.roadmap) + (p.canIssues ? btn('issues', p, 'Issues from the roadmap…', p.canIssues, p.estimateUsd.issues) : '') + btn('idea', p, 'Add an idea…', null, null) + '</div>'
+      + (p.pending ? '<div class="eng-decide" style="margin-top:6px"><b>Waiting for you: the roadmap draft</b> · request <span class="mono">' + esc(p.pending.requestId) + '</span> · ' + p.pending.items.length + ' items'
+        + '<div class="muted" style="font-size:12px">Approving makes this exact text the roadmap of ' + esc(p.name) + ': PRODUCT-MANAGER\'s issues for its items then need no second approval. Rejecting keeps the current roadmap.</div>'
+        + '<div class="fl-stats"><button class="btn btn-mini btn-ok" data-req="' + esc(p.pending.requestId) + '" data-decision="approve">Approve…</button><button class="btn btn-mini btn-danger" data-req="' + esc(p.pending.requestId) + '" data-decision="reject">Reject…</button></div>'
+        + '<div class="exec-text">' + esc(p.pending.text || '') + '</div></div>' : '')
+      + (p.roadmap ? '<details style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">The approved roadmap</summary>' + items(p.roadmap.items) + '</details>' : '')
+      + (p.ideas.length ? '<details style="margin-top:4px"><summary class="muted" style="font-size:12px;cursor:pointer">Your ideas (' + p.ideas.length + ')</summary>' + p.ideas.map((i) => '<div style="font-size:12px"><span class="mono">' + esc(i.id) + '</span> ' + esc(i.text) + ' <span class="muted">' + esc(String(i.at || '').slice(0, 10)) + '</span></div>').join('') + '</details>' : '')
+      + '</span></div>';
+    return '<h3 style="margin:18px 0 6px">Product &amp; Design · roadmaps and backlog <span class="muted" style="font-size:12px">PRODUCT-MANAGER' + st(x.pm) + ' · DESIGNER' + st(x.designer) + '</span></h3>'
+      + '<div class="muted" style="font-size:12px;margin-bottom:6px">PRODUCT-MANAGER drafts a roadmap; you approve it here. Its issues for items of the approved roadmap go into the backlog without a second approval (you can still reject or withdraw one in the Engineering panel). DESIGNER\'s specs are started per issue in the Engineering panel.</div>'
+      + x.products.map(prod).join('');
   }
   return { render, show: () => root.classList.remove('hidden'), hide: () => root.classList.add('hidden'), isOpen: () => !root.classList.contains('hidden') };
 }

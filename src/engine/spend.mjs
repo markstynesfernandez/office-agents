@@ -37,7 +37,11 @@ export const SPEND_ACTIONS = {
   'eng-rework': { label: 'Rework: back to DEVELOPER with your notes', params: ['jobId'] },
   // R3: the executives' standing reports, started now from the Owner's office (the routines fire them on their own once armed)
   'coo-report': { label: 'COO daily operations report now', params: [] },
-  'ceo-memo': { label: 'CEO weekly memo now', params: [] }
+  'ceo-memo': { label: 'CEO weekly memo now', params: [] },
+  // R4: Product & Design (product.mjs): PRODUCT-MANAGER's roadmap draft or backlog issues for a product, DESIGNER's spec for an issue
+  'pm-roadmap': { label: 'PRODUCT-MANAGER drafts the roadmap', params: ['productId'] },
+  'pm-issues': { label: 'PRODUCT-MANAGER writes backlog issues from the approved roadmap', params: ['productId'] },
+  'design-spec': { label: 'DESIGNER writes a design spec for the issue', params: ['productId', 'issueId'] }
 };
 const bind = (action, body) => JSON.stringify([action, ...SPEND_ACTIONS[action].params.map((k) => (body[k] == null ? null : String(body[k])))]);
 
@@ -88,6 +92,14 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       const X = engine.execs; if (!X) throw err('this engine has no executives', 'BAD_REQUEST');
       const k = action === 'coo-report' ? 'coo' : 'ceo', line = X.lineOf(k);
       return { line, jobId: null, headroomUsd: jobCapOf(line), what: k === 'coo' ? 'the COO writes today\'s operations report from the engine\'s metrics (one COO run; it may pause a line on a breach the metrics list)' : 'the CEO writes this week\'s priorities memo and proposals from the engine\'s inputs (one CEO run; proposals are documents, never requests)', refuse: X.startProblems(k), estimate: estimateOf(line, 'job') };
+    }
+    // R4: one Product & Design run on its line; the job cap is the product's Product & Design cap (the roadmap line serves more than one product,
+    // so the line alone does not name it)
+    if (action === 'pm-roadmap' || action === 'pm-issues' || action === 'design-spec') {
+      const P = engine.product; if (!P) throw err('this engine has no Product & Design', 'BAD_REQUEST');
+      const k = action === 'pm-roadmap' ? 'roadmap' : action === 'pm-issues' ? 'issues' : 'design', line = P.lineOf(k), pid = p('productId'), prod = engine.company ? engine.company.product(pid) : null, name = prod ? prod.name : pid;
+      const what = k === 'roadmap' ? 'PRODUCT-MANAGER drafts the roadmap of ' + name + ' (one run); you approve it in the Owner\'s office' : k === 'issues' ? 'PRODUCT-MANAGER writes up to 5 backlog issues of ' + name + ' for items of the approved roadmap (one run)' : 'DESIGNER writes design.md for issue ' + p('issueId') + ' of ' + name + ' from the issue and the UI files at main (one run)';
+      return { line, jobId: null, headroomUsd: P.jobCapOf(pid), what, refuse: P.startProblems(k, { productId: pid, issueId: p('issueId') || null }), estimate: estimateOf(line, 'job') };
     }
     // R2: the engineering line (engine.engineering): the job cap of the line's product and department; why it cannot start, if it cannot
     if (action === 'eng-triage') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); return { line: 'eng-triage', jobId: null, headroomUsd: jobCapOf('eng-triage'), what: 'the CTO orders the approved issues of ' + p('productId') + ' (one CTO run, writes backlog/dev-queue.json)', estimate: estimateOf('eng-triage', 'job') }; }

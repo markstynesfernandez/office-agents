@@ -1,0 +1,28 @@
+{
+  "$comment": "R4 (RESTRUCTURE.md §2.2, §3.1, §8 R4): PRODUCT-MANAGER writes up to 5 backlog issues for items of the approved roadmap (issues-draft.json, checked on write); the engine writes each into the backlog with backlog.write (auto). Owner, 02/11/2026: such an issue needs no second approval while its item stays on the approved roadmap. Only products the engineering line serves (ReplyDesk).",
+  "id": "pm-issues",
+  "label": "Backlog issues",
+  "kind": "pm-issues",
+  "products": [
+    "replydesk"
+  ],
+  "maxConcurrentJobs": 1,
+  "estimateUsd": {
+    "note": "the plan's estimate, not a measurement (RESTRUCTURE.md §8 R4: 5 issue drafts at about USD 0.06 each, Sonnet)",
+    "job": 0.3
+  },
+  "start": "inputs",
+  "steps": {
+    "inputs": {
+      "kind": "mechanical",
+      "fn": "inputs",
+      "next": "pm"
+    },
+    "pm": {
+      "kind": "agent",
+      "agent": "product-manager",
+      "column": "backlog",
+      "next": null
+    }
+  }
+}

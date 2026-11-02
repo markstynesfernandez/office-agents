@@ -69,7 +69,7 @@ test('2: hired agents at their desks (live status), not-hired agents at empty de
   // the live status: a working agent's seat says so
   const w = clone(s); w.agents.find((a) => a.id === 'developer').status = 'working';
   assert.equal(planFloor(w, '4').seats.find((x) => x.agentId === 'developer').work, 'working');
-  for (const [f, ids] of [['5', [['security', 'hired'], ['analyst', 'not-hired']]], ['3', [['product-manager', 'not-hired'], ['ux-designer', 'not-hired']]], ['2', [['lead-researcher', 'not-hired'], ['lead-checker', 'not-hired'], ['outreach-writer', 'not-hired'], ['content-writer', 'not-hired']]], ['1', [['onboarding-guide', 'not-hired'], ['support-drafter', 'not-hired'], ['retention-analyst', 'not-hired']]]]) assert.deepEqual(planFloor(s, f).seats.map((x) => [x.agentId, x.state]), ids, 'floor ' + f);
+  for (const [f, ids] of [['5', [['security', 'hired'], ['analyst', 'not-hired']]], ['3', [['product-manager', 'hired'], ['ux-designer', 'hired']]], ['2', [['lead-researcher', 'not-hired'], ['lead-checker', 'not-hired'], ['outreach-writer', 'not-hired'], ['content-writer', 'not-hired']]], ['1', [['onboarding-guide', 'not-hired'], ['support-drafter', 'not-hired'], ['retention-analyst', 'not-hired']]]]) assert.deepEqual(planFloor(s, f).seats.map((x) => [x.agentId, x.state]), ids, 'floor ' + f);
   // archived: no desk anywhere; the lobby's cabinet holds the eight Etsy agents, OVERSEER hangs on the retired wall
   for (const f of FLOORS) for (const x of planFloor(s, f).seats) assert.notEqual(x.state, 'archived', f);
   const g = planFloor(s, 'G');
@@ -84,7 +84,7 @@ test('3: the floor menu and the lift reach every floor, top floor first', (t) =>
   assert.deepEqual([pickFloor(s, null), pickFloor(s, 'g'), pickFloor(s, '4'), pickFloor(s, '0'), pickFloor(s, '9')], ['6', 'G', '4', '6', '6'], 'the remembered floor if it exists, else the top floor');
   for (const f of FLOORS) { const v = floorSnapshot(s, f); assert.deepEqual([v.floorView.floor, v.plan.floor, v.floorView.tower], [f, f, true]); }
   const tot = buildingTotals(s);
-  assert.deepEqual(tot.map((r) => [r.floor, r.agents, r.notHired, r.trophy, r.retired]), [['6', 3, 1, 0, []], ['5', 1, 1, 0, []], ['4', 4, 0, 0, []], ['3', 0, 2, 0, []], ['2', 0, 4, 0, []], ['1', 0, 3, 0, []], ['G', 0, 0, 8, ['STATION-OVERSEER']]]);
+  assert.deepEqual(tot.map((r) => [r.floor, r.agents, r.notHired, r.trophy, r.retired]), [['6', 3, 1, 0, []], ['5', 1, 1, 0, []], ['4', 4, 0, 0, []], ['3', 2, 0, 0, []], ['2', 0, 4, 0, []], ['1', 0, 3, 0, []], ['G', 0, 0, 8, ['STATION-OVERSEER']]]);
   // the whole-building view is the lift: one button per floor, top floor first, the car at the floor shown
   const body = { innerHTML: '', querySelectorAll: () => [] }, root = { querySelector: () => body, classList: { add() {}, remove() {}, contains: () => true } };
   createBuildingView({ root }).render(s, '4');
@@ -101,7 +101,7 @@ test('4: the screens show only what the snapshot has, and an honest empty state 
   const c = (k, snap = s) => screenContent(k, snap, { floor: towerFloors(snap).find((f) => f.floor === '4') });
   assert.deepEqual(['leaderboard', 'support', 'roadmap', 'metrics', 'pipeline', 'onboarding', 'kanban', 'checks'].map((k) => [k, c(k).empty]), [['leaderboard', 'no leads yet'], ['support', 'no tickets yet'], ['roadmap', 'no roadmap yet'], ['metrics', 'no metrics yet'], ['pipeline', 'no pipeline yet'], ['onboarding', 'no customers yet'], ['kanban', 'no jobs yet'], ['checks', 'no checks run yet']]);
   for (const k of ['leaderboard', 'support', 'roadmap', 'metrics', 'pipeline', 'onboarding']) assert.deepEqual(c(k).rows, [], k + ' has no numbers');
-  assert.deepEqual([c('leaderboard').foot, c('support').foot, c('roadmap').foot, c('metrics').foot], ['LEAD-RESEARCHER: not hired yet (R5)', 'SUPPORT-DRAFTER: not hired yet (R6)', 'PRODUCT-MANAGER: not hired yet (R4)', 'ANALYST: not hired yet (R6)']);
+  assert.deepEqual([c('leaderboard').foot, c('support').foot, c('roadmap').foot, c('metrics').foot], ['LEAD-RESEARCHER: not hired yet (R5)', 'SUPPORT-DRAFTER: not hired yet (R6)', 'PRODUCT-MANAGER drafts it; you approve it', 'ANALYST: not hired yet (R6)']);
   assert.deepEqual([c('requests').big, c('requests').empty], ['0', 'nothing waiting']);
   assert.deepEqual(c('finance').rows.map((r) => r.label).sort(), ['ReplyDesk', 'The Station', 'TheStationShopFinds (archived)', 'emty-inbox']);
   assert.deepEqual(c('directory').rows.map((r) => [r.label, r.tone]), [['6', null], ['5', null], ['4', 'ok'], ['3', null], ['2', null], ['1', null], ['G', null]]);
@@ -223,7 +223,7 @@ test('6: R7a.2: the tag dot, the trophy cabinet plaque and the floor-aware task 
   assert.ok(!html.includes('OVERSEER'));
   assert.deepEqual(g.retired.map((a) => [a.name, a.label]), [['STATION-OVERSEER', 'retired into COO']]);
   // the task box per floor: the Etsy controls only in the archive (refused), New issue on Engineering, the phase elsewhere
-  const work = Object.fromEntries(FLOORS.map((f) => { const w = floorWork(floorSnapshot(s, f)); return [f, w.kind === 'etsy' ? 'etsy' + (w.archived ? ' (archived)' : '') : w.kind === 'eng' ? 'eng' : w.kind === 'exec' ? 'exec' : w.text]; }));
-  assert.deepEqual(work, { 6: 'exec', 5: 'No work line on this floor yet (opens in R6)', 4: 'eng', 3: 'No work line on this floor yet (opens in R4)', 2: 'No work line on this floor yet (opens in R5)', 1: 'No work line on this floor yet (opens in R6)', G: 'etsy (archived)' });
+  const work = Object.fromEntries(FLOORS.map((f) => { const w = floorWork(floorSnapshot(s, f)); return [f, w.kind === 'etsy' ? 'etsy' + (w.archived ? ' (archived)' : '') : w.kind === 'eng' ? 'eng' : w.kind === 'exec' ? 'exec' : w.kind === 'product' ? 'product' : w.text]; }));
+  assert.deepEqual(work, { 6: 'exec', 5: 'No work line on this floor yet (opens in R6)', 4: 'eng', 3: 'product', 2: 'No work line on this floor yet (opens in R5)', 1: 'No work line on this floor yet (opens in R6)', G: 'etsy (archived)' });
   assert.equal(floorWork(s), null, 'off the stack the box is as it was');
 });

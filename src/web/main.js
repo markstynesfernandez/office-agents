@@ -36,7 +36,7 @@ const office = createOffice({ canvas: $('#scene'), theme, onPick: handlePick, op
 const ctl = createControls({ root: $('#dialogs'), toastRoot: $('#toasts'), onRefresh: (fresh) => { load(!!fresh).catch(() => {}); } });
 const labels = createLabels({ container: $('#labels'), office, onDept: focusDept, onHub: openLedger });
 const sidepanel = createSidePanel({ root: $('#sidepanel'), onOpenJob: openJob, onOpenAgent: openAgent, onClose: () => { office.setSelected(null); labelsDirty = true; }, getNow: () => (snap ? snap.generatedAt : Date.now()), getSnap: () => snap, ctl });
-const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob, ctl, onNewIssue: () => { closeOverlays(); engPanel.newIssue().catch(() => {}); syncPause(); } });
+const taskpanel = createTaskPanel({ root: $('#taskpanel'), onOpenJob: openJob, ctl, onNewIssue: () => { closeOverlays(); engPanel.newIssue().catch(() => {}); syncPause(); }, onProduct: (kind) => productAct(kind) });
 const board = createBoard({ root: $('#board'), onOpenJob: openJob, ctl });
 const calendar = createCalendar({ root: $('#calendar'), onOpenJob: openJob, ctl });
 const ledger = createLedgerView({ root: $('#ledger') });
@@ -58,10 +58,28 @@ const building = createBuildingView({ root: $('#building'), onFloor: (n) => setF
     const v = await ctl.dialog({ title: 'Mark ' + d.proposal + ' as ' + d.mark, intro: 'A note on the CEO\'s proposal for the next memo. It approves, starts or changes nothing.', fields: [{ name: 'words', label: 'Your words (optional)', type: 'textarea', rows: 2 }], confirm: 'Mark it ' + d.mark });
     if (v) await ctl.act('/api/exec/proposal-mark', { week: d.week, proposal: d.proposal, mark: d.mark, words: String(v.words || '').trim() }, { ok: d.proposal + ' marked ' + d.mark });
   },
+  // R4: Product & Design: a roadmap draft or issues for a product, an idea (free); the draft itself is decided as a request (onDecide)
+  onProduct: (kind, pid) => productAct(kind, pid),
   onResume: async (line) => {
     const v = await ctl.dialog({ title: 'Resume the ' + line + ' line', intro: 'The line starts jobs again from now on.', fields: [{ name: 'words', label: 'Your words (logged)', type: 'textarea', required: true, rows: 2 }], confirm: 'Resume' });
     if (v) await ctl.act('/api/lines/resume', { line, words: v.words.trim() }, { ok: 'Resumed: ' + line });
   } });
+// R4: Product & Design's actions: which product (when not given), then the spend confirmation (roadmap, issues) or the idea's text (free).
+// The server checks the owner's session and the spend gate again
+async function productAct(kind, pid = null) {
+  const pd = snap && snap.company && snap.company.ownersOffice ? snap.company.ownersOffice.productDesign : null;
+  const prods = pd ? pd.products.filter((p) => kind !== 'issues' || p.canIssues) : [];
+  if (!prods.length) { ctl.toast(kind === 'issues' ? 'No product has an issues line.' : 'No product for PRODUCT-MANAGER.', 'err'); return; }
+  let p = prods.find((x) => x.id === pid) || null, text = null;
+  if (!p || kind === 'idea') {
+    const fields = [...(p ? [] : [{ name: 'pid', label: 'Product', type: 'select', value: prods[0].id, options: prods.map((x) => ({ value: x.id, label: x.name + (kind === 'issues' && !x.roadmap ? ' (no approved roadmap yet)' : '') })) }]), ...(kind === 'idea' ? [{ name: 'text', label: 'Your idea (10 to 2,000 characters)', type: 'textarea', required: true, rows: 4, hint: 'PRODUCT-MANAGER reads it in the next roadmap draft; nothing runs now' }] : [])];
+    const v = await ctl.dialog({ title: kind === 'roadmap' ? 'Draft a roadmap' : kind === 'issues' ? 'Issues from the approved roadmap' : 'An idea for PRODUCT-MANAGER', intro: kind === 'idea' ? 'Free: the idea is saved for PRODUCT-MANAGER\'s next roadmap draft.' : 'Pick the product; the next step shows the spend.', fields, confirm: kind === 'idea' ? 'Save the idea' : 'Next: the spend' });
+    if (!v) return;
+    p = p || prods.find((x) => x.id === v.pid); text = v.text || null;
+  }
+  if (kind === 'idea') { await ctl.act('/api/product/idea', { productId: p.id, text: String(text || '').trim() }, { ok: (r) => 'Idea saved for ' + p.name + (r && r.id ? ' (' + r.id + ')' : '') }); return; }
+  await ctl.spendAct(kind === 'roadmap' ? 'pm-roadmap' : 'pm-issues', kind === 'roadmap' ? '/api/product/roadmap' : '/api/product/issues', { productId: p.id }, { ok: (r) => (kind === 'roadmap' ? 'Roadmap draft started for ' : 'Issues started for ') + p.name + (r && r.jobId ? ': ' + r.jobId : '') });
+}
 // the Floors button (F): every floor and its departments; a department goes to its floor and flies the camera there
 const floorMenu = createFloorMenu({ button: $('#floor-btn'), root: $('#floor-menu'), onFloor: (n) => setFloor(n), onDept: (key) => focusDept(key), onEng: () => openEng() });
 // R2c: the Engineering panel (owner only): from the building view (G), the Floors menu (F) and a merge request in the Owner's office
@@ -312,7 +330,7 @@ function connectLive() {
   live.onopen = () => { liveOk = true; };
   live.onerror = () => { liveOk = false; };
   const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; try { presenter.onEvent(JSON.parse(e.data)); } catch (_) { /* not JSON */ } if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
-  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused', 'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed', 'issue.written', 'issue.decided', 'eng.checks', 'exec.report', 'exec.memo', 'proposal.marked']) live.addEventListener(t, onEv);
+  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused', 'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed', 'issue.written', 'issue.decided', 'eng.checks', 'exec.report', 'exec.memo', 'proposal.marked', 'roadmap.decided', 'design.written', 'idea.added']) live.addEventListener(t, onEv);
 }
 // the e-stop (ENGINE-PLAN.md §5.5): one click and a confirmation stops everything; resuming is a second, explicit action
 // with the typed word, against the e-stop state the page loaded (a stale page is refused)

@@ -4,9 +4,11 @@
 import { esc, money, dateTime } from './format.js';
 
 const usd = (n) => money(n);
-const STATE = { draft: 'draft: waiting for your approval', approved: 'approved by you', stale: 'edited after approval: approve again', rejected: 'rejected', withdrawn: 'withdrawn' };
+const STATE = { draft: 'draft: waiting for your approval', approved: 'approved by you', stale: 'edited after approval: approve again', rejected: 'rejected', withdrawn: 'withdrawn', 'off-roadmap': 'not on the approved roadmap: approve it yourself, or approve a roadmap with its item' };
+// R4: an issue PRODUCT-MANAGER wrote for an item of the approved roadmap is approved without a second approval
+const stateLabel = (i) => (i.state === 'approved' && i.via === 'roadmap' ? 'on the approved roadmap' : i.state === 'stale' && i.by === 'product-manager' ? 'edited after it was written: approve it yourself' : STATE[i.state] || i.state);
 const JOB_STATE = { queued: 'queued', running: 'running', approval: 'waiting for you', approved: 'approved: ready to pull', blocked: 'blocked', stopped: 'stopped', incomplete: 'incomplete', rejected: 'rejected by an agent', rejected_by_owner: 'rejected by you', archived: 'archived', done: 'done' };
-const tone = (s) => (['approved', 'done'].includes(s) ? 'ok' : ['blocked', 'rejected', 'rejected_by_owner'].includes(s) ? 'err' : ['approval', 'draft', 'stale', 'stopped', 'incomplete'].includes(s) ? 'warn' : '');
+const tone = (s) => (['approved', 'done'].includes(s) ? 'ok' : ['blocked', 'rejected', 'rejected_by_owner'].includes(s) ? 'err' : ['approval', 'draft', 'stale', 'stopped', 'incomplete', 'off-roadmap'].includes(s) ? 'warn' : '');
 const tag = (text, t = '') => '<span class="tag' + (t ? ' tag-' + t : '') + '">' + esc(text) + '</span>';
 const btn = (label, attrs, cls = '') => '<button class="btn btn-mini' + (cls ? ' ' + cls : '') + '" ' + attrs + '>' + esc(label) + '</button>';
 const data = (o) => Object.entries(o).map(([k, v]) => 'data-' + k + '="' + esc(v) + '"').join(' ');
@@ -49,20 +51,23 @@ function productHtml(p, v) {
     + '<span><span class="m">repo</span> ' + (p.repoEnvSet ? esc(p.repo || p.id) : '<b>' + esc(p.repoEnv) + ' is not set</b>') + '</span><span><span class="m">checks</span> ' + esc(p.runChecks.join(', ') || 'none') + ' (Docker, no network)</span>'
     + ((ln.waitingForYou || []).length ? '<span><span class="m">waiting for you</span> ' + ln.waitingForYou.length + '</span>' : '') + '</div></span></div>'
     + '<h3 class="eng-h">Issues <span class="eng-acts">' + btn('New issue…', data({ 'eng-new': p.id }), 'btn-ok') + btn('CTO triage…', data({ 'eng-triage': p.id }) + (approved.length ? '' : ' disabled title="approve an issue first"')) + '</span></h3>'
-    + '<div class="muted eng-help">Write an issue (free), approve it (free), let the CTO order the approved issues (a paid run, with its confirmation), then start the job (a paid run, with its confirmation). TECH-LEAD writes the spec as the job\'s first step.</div>'
+    + '<div class="muted eng-help">Write an issue (free), approve it (free), let the CTO order the approved issues (a paid run, with its confirmation), then start the job (a paid run, with its confirmation). TECH-LEAD writes the spec as the job\'s first step. PRODUCT-MANAGER\'s issues for items of the approved roadmap are approved without a second approval; DESIGNER\'s spec (a paid run) goes to TECH-LEAD with the issue.</div>'
     + (p.issues.length ? p.issues.slice().reverse().map((i) => issueHtml(p, i)).join('') : '<div class="muted">No issue yet.</div>')
     + '<h3 class="eng-h">Jobs</h3>' + (p.jobs.length ? p.jobs.map((j) => jobRow(j)).join('') : '<div class="muted">No job yet.</div>');
 }
 function issueHtml(p, i) {
   const t = i.triage, acts = [];
-  if (i.state === 'draft' || i.state === 'stale') acts.push(btn('Approve…', data({ 'eng-issue': i.id, decision: 'approve', product: p.id }), 'btn-ok'), btn('Reject…', data({ 'eng-issue': i.id, decision: 'reject', product: p.id }), 'btn-danger'));
+  if (i.state === 'draft' || i.state === 'stale' || i.state === 'off-roadmap') acts.push(btn('Approve…', data({ 'eng-issue': i.id, decision: 'approve', product: p.id }), 'btn-ok'), btn('Reject…', data({ 'eng-issue': i.id, decision: 'reject', product: p.id }), 'btn-danger'));
   if (i.state === 'approved') {
     if (!(i.startProblems || []).length) acts.push(btn('Start…', data({ 'eng-start': i.id, product: p.id }), 'btn-primary'));
     acts.push(btn('Withdraw…', data({ 'eng-issue': i.id, decision: 'withdraw', product: p.id })));
   }
+  // R4: DESIGNER's spec for the issue (a paid run, behind the spend confirmation)
+  if (!['rejected', 'withdrawn'].includes(i.state) && i.canDesign) acts.push(btn(i.design ? 'New design spec…' : 'Design spec…', data({ 'eng-design': i.id, product: p.id }) + (i.canDesign.length ? ' disabled title="' + esc(i.canDesign.join('; ')) + '"' : '')));
   return '<div class="bldg-floor eng-issue" style="cursor:default"><span class="fl-num" style="font-size:11px">' + (t ? '#' + esc(t.order) : '–') + '</span><span>'
-    + '<span class="fl-name">' + esc(i.title) + '</span> ' + tag(STATE[i.state] || i.state, tone(i.state)) + (i.model !== 'default' ? tag('model ' + i.model, 'warn') : '')
-    + '<div class="muted" style="font-size:11px"><span class="mono">' + esc(i.id) + '</span>' + (i.words ? ' · your words: “' + esc(i.words) + '”' : '') + '</div>'
+    + '<span class="fl-name">' + esc(i.title) + '</span> ' + tag(stateLabel(i), tone(i.state)) + (i.model !== 'default' ? tag('model ' + i.model, 'warn') : '')
+    + (i.by === 'product-manager' ? tag('PRODUCT-MANAGER' + (i.roadmapItem ? ' · ' + i.roadmapItem.id + ' ' + i.roadmapItem.title : '')) : '') + (i.design ? tag('design spec' + (i.design.stale ? ': for an earlier version' : ''), i.design.stale ? 'warn' : 'ok') : '')
+    + '<div class="muted" style="font-size:11px"><span class="mono">' + esc(i.id) + '</span>' + (i.words ? ' · your words: “' + esc(i.words) + '”' : '') + (i.design ? ' · spec from <span class="mono">' + esc(i.design.jobId) + '</span>' : '') + '</div>'
     + (t ? '<div style="font-size:11.5px">CTO triage: <b>#' + esc(t.order) + '</b> · size ' + esc(t.size) + (t.note ? ' · ' + esc(t.note) : '') + '</div>' : i.state === 'approved' ? '<div class="muted" style="font-size:11.5px">not triaged yet: run the CTO triage</div>' : '')
     + ((i.startProblems || []).length ? '<div class="eng-why">' + i.startProblems.map((x) => '<div>✕ ' + esc(x) + '</div>').join('') + '</div>' : '')
     + (acts.length ? '<div class="fl-stats">' + acts.join('') + '</div>' : '') + '</span></div>';
