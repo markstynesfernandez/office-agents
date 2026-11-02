@@ -58,7 +58,7 @@ test('1 (R1): etsy-shop is B0\'s business, derived from the archived Etsy depart
   const b = REAL.businesses[0];
   assert.deepEqual([b.name, b.floor, b.monthlyBudgetUsd, b.dailyCapUsd, b.dataDir, b.ownerApprovalRequired], ['TheStationShopFinds', 1, 200, null, '.', true]);
   assert.deepEqual(b.lines.sort(), ['genre-scout', 'research', 'room1-digital'], 'the Etsy lines are etsy-shop\'s');
-  assert.deepEqual(REAL.office.shared.lines.sort(), ['eng-triage', 'engineering'], 'R2: the engineering lines are B0\'s shared floor\'s');
+  assert.deepEqual(REAL.office.shared.lines.sort(), ['ceo-memo', 'coo-report', 'eng-triage', 'engineering'], 'R2: the engineering lines are B0\'s shared floor\'s; R3: the executives\' lines too');
   assert.deepEqual(b.departments, ['research', 'design', 'office']);
   assert.deepEqual(b.allowedOutbound, ['etsy:read-own-shop']);
   const B = building(REAL);
@@ -97,11 +97,11 @@ test('2: a job on the line: its job, runs, approval, ledger rows and events carr
   assert.deepEqual(col('jobs'), [{ b: 'etsy-shop', n: 1 }]);
   assert.ok(col('runs').every((x) => x.b === 'etsy-shop') && col('runs')[0].n > 3);
   assert.deepEqual(col('approvals'), [{ b: 'etsy-shop', n: 1 }]);
-  assert.deepEqual(col('routines'), [{ b: 'etsy-shop', n: 1 }, { b: 'shared', n: 1 }], 'the seeded genre-scout routine (Etsy) and the COO\'s report (HQ, R1)');
+  assert.deepEqual(col('routines'), [{ b: 'etsy-shop', n: 1 }, { b: 'shared', n: 2 }], 'the seeded genre-scout routine (Etsy), the COO\'s report (HQ, R1) and the CEO\'s memo (HQ, R3)');
   // R1: and product_id + department_id on every record
   const pd = (t2) => db.prepare('SELECT product_id p, department_id d, COUNT(*) n FROM ' + t2 + ' GROUP BY product_id, department_id').all().map((x) => ({ ...x }));
   assert.deepEqual(pd('jobs'), [{ p: 'etsy-shop', d: 'etsy', n: 1 }]); assert.deepEqual(pd('approvals'), [{ p: 'etsy-shop', d: 'etsy', n: 1 }]);
-  assert.deepEqual(pd('routines'), [{ p: 'etsy-shop', d: 'etsy', n: 1 }, { p: 'station', d: 'hq', n: 1 }]);
+  assert.deepEqual(pd('routines'), [{ p: 'etsy-shop', d: 'etsy', n: 1 }, { p: 'station', d: 'hq', n: 2 }], 'R3: the COO\'s report and the CEO\'s memo');
   assert.ok(pd('runs').every((x) => x.p === 'etsy-shop' && x.d === 'etsy')); assert.ok(pd('ledger_mirror').every((x) => x.p === 'etsy-shop' && x.d === 'etsy'));
   assert.ok(engine.ledger.rowsForJob(JOB_A).every((x) => x.businessId === 'etsy-shop'));
   assert.ok(col('ledger_mirror').every((x) => x.b === 'etsy-shop'));

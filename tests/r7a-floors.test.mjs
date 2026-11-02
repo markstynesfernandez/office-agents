@@ -58,13 +58,13 @@ test('1: the stack comes from the company model: each department on its config f
 test('2: hired agents at their desks (live status), not-hired agents at empty desks with their tag, archived agents only in the lobby', (t) => {
   const s = buildEngineSnapshot(engineOn(t, 'r7a2'));
   const six = planFloor(s, '6');
-  assert.deepEqual(six.seats.map((x) => [x.agentId, x.state, x.label]), [['ceo', 'not-hired', 'not hired yet (R3)'], ['cto', 'hired', 'active'], ['coo', 'not-hired', 'not hired yet (R3)'], ['compliance', 'not-hired', 'not hired yet (R5)']]);
-  assert.deepEqual([six.seats.find((x) => x.agentId === 'cto').work, six.seats.find((x) => x.agentId === 'ceo').work], ['idle', null]);
+  assert.deepEqual(six.seats.map((x) => [x.agentId, x.state, x.label]), [['ceo', 'hired', 'active'], ['cto', 'hired', 'active'], ['coo', 'hired', 'active'], ['compliance', 'not-hired', 'not hired yet (R5)']]);
+  assert.deepEqual([six.seats.find((x) => x.agentId === 'cto').work, six.seats.find((x) => x.agentId === 'ceo').work, six.seats.find((x) => x.agentId === 'compliance').work], ['idle', 'idle', null], 'R3: the CEO is hired');
   // COMPLIANCE in its own glass room: its desk is inside the glass on x = 7.4 and z = -2.0
   const comp = six.seats.find((x) => x.agentId === 'compliance');
   assert.ok(comp.x > 7.4 && comp.z < -2.0); assert.ok(six.props.some((p) => p.kind === 'glass' && p.x0 === 7.4 && p.x1 === 7.4));
   const v6 = floorSnapshot(s, '6');
-  assert.deepEqual([v6.agents.map((a) => a.id), v6.vacancies.map((x) => x.id)], [['cto'], ['ceo', 'coo', 'compliance']]);
+  assert.deepEqual([v6.agents.map((a) => a.id).sort(), v6.vacancies.map((x) => x.id)], [['ceo', 'coo', 'cto'], ['compliance']]);
   assert.deepEqual(planFloor(s, '4').seats.map((x) => [x.agentId, x.state, x.kind]), [['tech-lead', 'hired', 'standing'], ['developer', 'hired', 'standing'], ['reviewer', 'hired', 'standing'], ['tester', 'hired', 'standing']]);
   // the live status: a working agent's seat says so
   const w = clone(s); w.agents.find((a) => a.id === 'developer').status = 'working';
@@ -84,7 +84,7 @@ test('3: the floor menu and the lift reach every floor, top floor first', (t) =>
   assert.deepEqual([pickFloor(s, null), pickFloor(s, 'g'), pickFloor(s, '4'), pickFloor(s, '0'), pickFloor(s, '9')], ['6', 'G', '4', '6', '6'], 'the remembered floor if it exists, else the top floor');
   for (const f of FLOORS) { const v = floorSnapshot(s, f); assert.deepEqual([v.floorView.floor, v.plan.floor, v.floorView.tower], [f, f, true]); }
   const tot = buildingTotals(s);
-  assert.deepEqual(tot.map((r) => [r.floor, r.agents, r.notHired, r.trophy, r.retired]), [['6', 1, 3, 0, []], ['5', 1, 1, 0, []], ['4', 4, 0, 0, []], ['3', 0, 2, 0, []], ['2', 0, 4, 0, []], ['1', 0, 3, 0, []], ['G', 0, 0, 8, ['STATION-OVERSEER']]]);
+  assert.deepEqual(tot.map((r) => [r.floor, r.agents, r.notHired, r.trophy, r.retired]), [['6', 3, 1, 0, []], ['5', 1, 1, 0, []], ['4', 4, 0, 0, []], ['3', 0, 2, 0, []], ['2', 0, 4, 0, []], ['1', 0, 3, 0, []], ['G', 0, 0, 8, ['STATION-OVERSEER']]]);
   // the whole-building view is the lift: one button per floor, top floor first, the car at the floor shown
   const body = { innerHTML: '', querySelectorAll: () => [] }, root = { querySelector: () => body, classList: { add() {}, remove() {}, contains: () => true } };
   createBuildingView({ root }).render(s, '4');
@@ -223,7 +223,7 @@ test('6: R7a.2: the tag dot, the trophy cabinet plaque and the floor-aware task 
   assert.ok(!html.includes('OVERSEER'));
   assert.deepEqual(g.retired.map((a) => [a.name, a.label]), [['STATION-OVERSEER', 'retired into COO']]);
   // the task box per floor: the Etsy controls only in the archive (refused), New issue on Engineering, the phase elsewhere
-  const work = Object.fromEntries(FLOORS.map((f) => { const w = floorWork(floorSnapshot(s, f)); return [f, w.kind === 'etsy' ? 'etsy' + (w.archived ? ' (archived)' : '') : w.kind === 'eng' ? 'eng' : w.text]; }));
-  assert.deepEqual(work, { 6: 'No work line on this floor yet (opens in R3)', 5: 'No work line on this floor yet (opens in R6)', 4: 'eng', 3: 'No work line on this floor yet (opens in R4)', 2: 'No work line on this floor yet (opens in R5)', 1: 'No work line on this floor yet (opens in R6)', G: 'etsy (archived)' });
+  const work = Object.fromEntries(FLOORS.map((f) => { const w = floorWork(floorSnapshot(s, f)); return [f, w.kind === 'etsy' ? 'etsy' + (w.archived ? ' (archived)' : '') : w.kind === 'eng' ? 'eng' : w.kind === 'exec' ? 'exec' : w.text]; }));
+  assert.deepEqual(work, { 6: 'exec', 5: 'No work line on this floor yet (opens in R6)', 4: 'eng', 3: 'No work line on this floor yet (opens in R4)', 2: 'No work line on this floor yet (opens in R5)', 1: 'No work line on this floor yet (opens in R6)', G: 'etsy (archived)' });
   assert.equal(floorWork(s), null, 'off the stack the box is as it was');
 });

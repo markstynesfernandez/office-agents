@@ -22,7 +22,7 @@
 // files a request in the Owner's office and ends the run, auto runs the tool).
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { buildAgentPrompt, engineWrapper, engineeringWrapper } from './prompts.mjs';
+import { buildAgentPrompt, engineWrapper, engineeringWrapper, execWrapper } from './prompts.mjs';
 import { createToolbox, ToolError, PRE_NETWORK } from './tools/index.mjs';
 import { CapError, GuardRefusal } from './guard.mjs';
 import { makeRedactor } from './providers/anthropic.mjs';
@@ -95,7 +95,8 @@ export async function guardedTextCall({ guard, halt, providers, call, params, ct
 // verdictFiles (L3): a style-reference set review's file ids, which a revise's "redraw" list is checked against (tools submit_verdict)
 // eng / writes (R2): the engineering line's context for the tools (the worktree, run_check, the record checks, the verdict context) and the
 // step's write patterns, which replace the agent's own
-export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null, image = null, verdictKind = null, file1 = null, imageAttemptLimit = null, verdictFiles = null, eng = null, writes = null, wrapperNotes = null }) {
+// exec / validators (R3): an executive's run (execs.mjs): the COO's line_pause and the record's write action, and the records checked on write
+export async function runAgent(engine, { agentKey, job = null, step = null, pass = 1, folder, folderLabel, input, loopNote = null, line = null, runCapUsd = null, hooks = {}, stopSignal = null, contract = null, image = null, verdictKind = null, file1 = null, imageAttemptLimit = null, verdictFiles = null, eng = null, writes = null, wrapperNotes = null, exec = null, validators = null }) {
   const { store, guard, providers, halt, bus, log, cfg } = engine;
   const agent = effectiveAgent(engine, agentKey);
   // R1: the agent's status (config/agents status; building.mjs): not hired yet, or archived
@@ -120,7 +121,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
   // R1: the data area is the run's product's (products/<id>/; the archived Etsy layout for etsy-shop); B0's business area without one
   const pd = engine.productOf ? engine.productOf({ jobId: job ? job.id : null, line, agentKey }) : null, prod = pd && engine.company ? engine.company.product(pd.productId) : null;
   const businessArea = prod ? productDataArea(engine.J.dataRoot, prod) : bRec ? businessDataArea(engine.J.dataRoot, bRec) : null;
-  const ctx = { J: engine.J, folder, agent, job, model, businessId, businessArea, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, verdictFiles, eng, writes, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
+  const ctx = { J: engine.J, folder, agent, job, model, businessId, businessArea, cfg: { ...cfg, blocklist: cfg.blocklist }, guard, providers, run, halt, log, bus, line, contract, image, verdictKind, file1, imageAttempts, imageAttemptLimit, verdictFiles, eng, writes, exec, validators, sleep: engine.sleep || null, onVerdict: (v) => { verdict = v; }, onBlocked: (r) => { blockedReason = r; }, callModel: null };
   const box = createToolbox(ctx);
   // R1: the policy before any reservation: each of the run's tools declares its action (policy.mjs TOOL_ACTIONS); a forbidden one refuses the run
   const pol = engine.policy || null;
@@ -134,7 +135,7 @@ export async function runAgent(engine, { agentKey, job = null, step = null, pass
     if (lv === 'forbidden') throw new PolicyRefusal(name + ' refused: ' + act + ' is forbidden by the autonomy policy', { action: act, level: lv });
     if (lv === 'owner') { const r = await engine.actions.perform({ action: act, actor, productId: pd.productId, departmentId: pd.departmentId, jobId: job ? job.id : null, summary: agent.name + ': ' + name, payload: JSON.stringify(input || {}) }); if (!r.done) throw new PolicyRefusal(name + ' needs the owner (' + act + '): request ' + r.requestId + ' is in the Owner\'s office; the run ends here', { action: act, level: lv }); }
   }
-  const wrapper = eng ? engineeringWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, notes: wrapperNotes }) : engineWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, isQa: !!agent.verdict, loopNote });
+  const wrapper = exec ? execWrapper({ agent, job, tools: box.defs.map((d) => d.name), folderLabel }) : eng ? engineeringWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, notes: wrapperNotes }) : engineWrapper({ agent, job, step, pass, tools: box.defs.map((d) => d.name), folderLabel, isQa: !!agent.verdict, loopNote });
   const system = [{ type: 'text', text: prompt.soul + '\n' + prompt.text, ...(cfg.engine.runtime.promptCaching ? { cache_control: { type: 'ephemeral' } } : {}) }, { type: 'text', text: wrapper }];
   const promptSha256 = crypto.createHash('sha256').update(JSON.stringify(system)).digest('hex');
   store.insertRun({ runId, jobId: job ? job.id : null, agentKey, step, pass, model, provider, promptSha256, ...(businessId ? { businessId } : {}) });

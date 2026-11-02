@@ -34,7 +34,10 @@ export const SPEND_ACTIONS = {
   'eng-triage': { label: 'CTO triage of the approved issues', params: ['productId'] },
   'eng-start': { label: 'Start the engineering line on the issue', params: ['productId', 'issueId'] },
   // R2c: the owner's rework of a finished engineering job (back to DEVELOPER with the owner's notes, inside what is left of its cap)
-  'eng-rework': { label: 'Rework: back to DEVELOPER with your notes', params: ['jobId'] }
+  'eng-rework': { label: 'Rework: back to DEVELOPER with your notes', params: ['jobId'] },
+  // R3: the executives' standing reports, started now from the Owner's office (the routines fire them on their own once armed)
+  'coo-report': { label: 'COO daily operations report now', params: [] },
+  'ceo-memo': { label: 'CEO weekly memo now', params: [] }
 };
 const bind = (action, body) => JSON.stringify([action, ...SPEND_ACTIONS[action].params.map((k) => (body[k] == null ? null : String(body[k])))]);
 
@@ -80,6 +83,12 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
       return { line: waiting[0].line, jobId: null, headroomUsd: r6(waiting.reduce((s, j) => s + remaining(j), 0)), what: waiting.length + ' waiting job(s) start: ' + waiting.map((j) => j.id).join(', '), jobs: waiting.map((j) => j.id) };
     }
     if (action === 'routine-arm') return routineTarget(p('id'));
+    // R3: one executive run (the COO's report, the CEO's memo) on its own line, inside the HQ job cap and the agent's run cap
+    if (action === 'coo-report' || action === 'ceo-memo') {
+      const X = engine.execs; if (!X) throw err('this engine has no executives', 'BAD_REQUEST');
+      const k = action === 'coo-report' ? 'coo' : 'ceo', line = X.lineOf(k);
+      return { line, jobId: null, headroomUsd: jobCapOf(line), what: k === 'coo' ? 'the COO writes today\'s operations report from the engine\'s metrics (one COO run; it may pause a line on a breach the metrics list)' : 'the CEO writes this week\'s priorities memo and proposals from the engine\'s inputs (one CEO run; proposals are documents, never requests)', refuse: X.startProblems(k), estimate: estimateOf(line, 'job') };
+    }
     // R2: the engineering line (engine.engineering): the job cap of the line's product and department; why it cannot start, if it cannot
     if (action === 'eng-triage') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); return { line: 'eng-triage', jobId: null, headroomUsd: jobCapOf('eng-triage'), what: 'the CTO orders the approved issues of ' + p('productId') + ' (one CTO run, writes backlog/dev-queue.json)', estimate: estimateOf('eng-triage', 'job') }; }
     if (action === 'eng-start') { const E = engine.engineering; if (!E) throw err('this engine has no engineering line', 'BAD_REQUEST'); const sp = E.startProblems(p('productId'), p('issueId')); return { line: 'engineering', jobId: null, headroomUsd: jobCapOf('engineering'), what: 'job ' + (sp.jobId || '?') + ' on issue ' + p('issueId') + ': TECH-LEAD spec, DEVELOPER, checks in Docker, TESTER, REVIEWER, SECURITY, then a merge request for you (the engine never pushes)', refuse: sp.problems, estimate: estimateOf('engineering', 'job') }; }
@@ -101,7 +110,9 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
   function routineTarget(id) {
     const rt = store.getRoutine(id); if (!rt) throw err('no such routine: ' + id, 'BAD_REQUEST');
     if (rt.legacy) throw err('an imported legacy routine is read only', 'BAD_REQUEST');
-    const m = /^line:(.+)$/.exec(rt.target || ''), line = m && cfg.lines[m[1]] ? m[1] : null;
+    // R3: an agent routine (an executive's standing report) is priced on its executive's line
+    const m = /^line:(.+)$/.exec(rt.target || ''), ag = /^agent:(.+)$/.exec(rt.target || ''), at = ag ? (engine.routineTargets || []).find((t) => t.id === rt.target) : null;
+    const line = m && cfg.lines[m[1]] ? m[1] : at && at.line && cfg.lines[at.line] ? at.line : null;
     if (!line) throw err('this routine\'s target cannot run: ' + rt.target, 'BAD_REQUEST');
     const jobCap = jobCapOf(line), perFiring = r6(rt.per_run_cap_usd != null ? Math.min(rt.per_run_cap_usd, jobCap) : jobCap);
     const from = now(), until = from + 7 * 86400000, byDay = {};
@@ -207,5 +218,5 @@ export function createSpendDesk(engine, { ttlMs = null, now = () => Date.now() }
     if (q.refusals.length) throw err('refused: ' + q.refusals.join('; '), /e-stop/.test(q.refusals[0]) ? 'HALTED' : 'DAY_CAP');
     return q;
   }
-  return { quote, gate, assess, startCheck, pending: () => tokens.size };
+  return { quote, gate, assess, startCheck, jobCapOf, pending: () => tokens.size };
 }

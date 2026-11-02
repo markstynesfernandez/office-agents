@@ -63,8 +63,8 @@ test('after migrate:products on a live-shaped root: the enabled "Weekday researc
     assert.equal(e.guard.reservations().length, 0, 'no reservation'); assert.equal(e.guard.status().inFlight, 0);
     // nothing can enable an Etsy routine again
     for (const id of ['rt_fix_weekday-research', 'rt_seed_weekly-genre-scout']) { const x = e.store.getRoutine(id); assert.throws(() => e.routines.enable(id, true, { expectedVersion: x.version }), (err) => err.code === 'ARCHIVED' && /cannot be armed: archived/.test(err.message), id); }
-    const coo = e.store.getRoutine('rt_seed_coo-daily-report');
-    assert.throws(() => e.routines.enable(coo.id, true, { expectedVersion: coo.version }), (err) => err.code === 'ARCHIVED' && /COO is not hired yet/.test(err.message));
+    // R3: the COO and the CEO are hired: their routines can be armed by the owner, and both stay disabled until then
+    for (const id of ['rt_seed_coo-daily-report', 'rt_seed_ceo-weekly-memo']) assert.equal(e.store.getRoutine(id).enabled, false, id);
   } finally { e.close(); }
 });
 

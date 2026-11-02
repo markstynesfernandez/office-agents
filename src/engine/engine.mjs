@@ -32,7 +32,8 @@ import { company } from './building.mjs';
 import { createPolicy, recordPolicyChanges } from './policy.mjs';
 import { createRequests } from './requests.mjs';
 import { createActions } from './actions.mjs';
-import { createEngineering, ENG_KINDS } from './engineering.mjs';
+import { createEngineering, SIDE_KINDS } from './engineering.mjs';
+import { createExecs } from './execs.mjs';
 
 export class LockError extends Error { constructor(msg) { super(msg); this.code = 'LOCKED'; } }
 export class DemoConfigError extends Error { constructor(msg) { super(msg); this.code = 'DEMO_CONFIG'; } }
@@ -130,6 +131,8 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
     engine.orchestrator = createOrchestrator(engine, { hooks });
     // R2: the engineering line (issues, the CTO's triage, engineering jobs on a product's code); engineering = { checks, env } in tests
     engine.engineering = createEngineering(engine, { hooks, ...engineering });
+    // R3: the penthouse executives (the COO's daily report, the CEO's weekly memo), run by the engineering module's side-line runner
+    engine.execs = createExecs(engine, { now: clock });
     engine.spend = createSpendDesk(engine);   // L2: the spend confirmation in front of every page action that can spend
     // E6 b3: a scout job that restart recovery ended (blocked) still puts its notes' names on the scouting blocklist
     for (const j of rec.jobs.filter((x) => x.action === 'blocked')) engine.orchestrator.blocklistOnEnd(j.id);
@@ -139,16 +142,24 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
       if (engine.scriptRun) throw new Error('no routine runs in an engine opened by a script (' + engine.scriptRun.purpose + ')');
       const cap = routine.per_run_cap_usd ?? null;
       const rl = /^line:(.+)$/.exec(routine.target), rline = rl && cfg.lines[rl[1]];
-      // R1: an archived or paused line's routine skips; an agent routine (the COO's report) skips until its agent is hired (R3)
+      // R1: an archived or paused line's routine skips
       if (rline) { const h = engine.lineHold(rline.id); if (h) return { skipped: h }; }
-      const ra = /^agent:(.+)$/.exec(routine.target || '');
-      if (ra) { const st = C.agentStatus(ra[1]); return { skipped: (cfg.agents[ra[1]] || {}).name + ' is ' + (st === 'not-hired' ? 'not hired yet' : st) + ': its report runs from R3' }; }
       // the product key is data (owner, 17/10/2026): a shipped routine carries it in config/routines.json (productKey);
       // any other routine uses the line's config default; the orchestrator checks it against products.json at start
       const seed = (cfg.routines || []).find((s) => s.id === routine.id);
       // L3 (owner, 20/10/2026): a firing starts alongside another line's job within the job limits (on its own line it waits as next),
       // and only when the day caps and the Console estimate hold with every open job's worst case counted (spend.startCheck)
       const fits = (line) => { const c = engine.spend.startCheck({ line, headroomUsd: (cfg.engine.caps.perJobUsdByLine || {})[line] ?? cfg.engine.caps.perJobUsd }); return c.refusals.length ? 'the start would not fit: ' + c.refusals.join('; ') : null; };
+      // R3: an agent routine is an executive's standing report (the COO's daily report, the CEO's weekly memo): it skips while its agent is
+      // not hired, off duty or its line paused, or when the start would not fit the caps
+      const ra = /^agent:(.+)$/.exec(routine.target || '');
+      if (ra) {
+        const X = engine.execs, k = X && Object.keys(X.kinds).find((x) => X.kinds[x].agent === ra[1]);
+        if (!k) return { skipped: ((cfg.agents[ra[1]] || {}).name || ra[1]) + ' has no standing report' };
+        const no = X.startProblems(k); if (no.length) return { skipped: no.join('; ') };
+        const f = engine.spend.startCheck({ line: X.lineOf(k), headroomUsd: engine.spend.jobCapOf(X.lineOf(k)) }); if (f.refusals.length) return { skipped: 'the start would not fit: ' + f.refusals.join('; ') };
+        return X.start(k, { by: 'routine ' + routine.id, routineId: routine.id }, { actor: { kind: 'engine' } }).promise;
+      }
       if (rline) { const no = fits(rline.id); if (no) return { skipped: no }; }
       if (rline && rline.kind === 'research') { const r = engine.orchestrator.createResearchJob({ line: rline.id, input: routine.input || undefined, by: 'routine ' + routine.id, ...(seed && seed.productKey !== undefined ? { productKey: seed.productKey } : {}) }); store.updateJob(r.id, { data: { routineId: routine.id, ...(cap != null ? { runCapUsd: cap } : {}) } }); return engine.orchestrator.startJob(r.id); }
       if (routine.target === 'line:room1-digital') {
@@ -164,9 +175,10 @@ export function createEngine({ dataRoot, configDir = path.join(APP_ROOT, 'config
       throw new Error('routine target not supported: ' + routine.target);
     };
     // routines the page may create (ENGINE-PLAN.md §5.4); an off-duty first agent makes its line's routines skip
-    engine.routineTargets = Object.values(cfg.lines).filter((l) => !ENG_KINDS.includes(l.kind)).map((l) => ({ id: 'line:' + l.id, label: l.kind === 'research' ? (l.routineLabel || l.label + ' batch') + ' (' + l.id + ' line)' : 'Next verified brief (' + l.id + ' line)', firstAgent: firstAgentOf(l) }));
-    // R1: a routine may run one agent's standing report (the COO's daily report, seeded disabled; its live run is R3)
-    if (cfg.agents.coo) engine.routineTargets.push({ id: 'agent:coo', label: 'COO daily operations report (from R3)', firstAgent: 'coo', agent: true });
+    engine.routineTargets = Object.values(cfg.lines).filter((l) => !SIDE_KINDS.includes(l.kind)).map((l) => ({ id: 'line:' + l.id, label: l.kind === 'research' ? (l.routineLabel || l.label + ' batch') + ' (' + l.id + ' line)' : 'Next verified brief (' + l.id + ' line)', firstAgent: firstAgentOf(l) }));
+    // R1, R3: a routine may run an executive's standing report (the COO's daily report, the CEO's weekly memo; both seeded disabled)
+    if (cfg.agents.coo) engine.routineTargets.push({ id: 'agent:coo', label: 'COO daily operations report', firstAgent: 'coo', agent: true, line: 'coo-report' });
+    if (cfg.agents.ceo) engine.routineTargets.push({ id: 'agent:ceo', label: 'CEO weekly memo', firstAgent: 'ceo', agent: true, line: 'ceo-memo' });
     const routineHold = (routine) => {
       const t = engine.routineTargets.find((x) => x.id === routine.target); if (!t || !t.firstAgent) return null;
       return effectiveAgent(engine, t.firstAgent).enabled ? null : ((cfg.agents[t.firstAgent] || {}).name || t.firstAgent) + ' is off duty';

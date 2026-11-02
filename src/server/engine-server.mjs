@@ -98,9 +98,10 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
   }
   // R2c: the engineering line (engine.engineering): every call carries the owner's page session, and the engine refuses any other actor
   const E = () => { if (!engine.engineering) throw Object.assign(new Error('this engine has no engineering line'), { code: 'BAD_REQUEST' }); return engine.engineering; };
+  const X = () => { if (!engine.execs) throw Object.assign(new Error('this engine has no executives'), { code: 'BAD_REQUEST' }); return engine.execs; };
   const noPromise = (r) => { if (!r || typeof r !== 'object') return r; const { promise, ...rest } = r; return rest; };
   // the owner's session is checked first, before the spend gate: a server without it (a script engine) refuses every engineering control
-  const asOwner = (fn) => (body, key) => { if (!engine.requests || !engine.requests.isOwner(owner)) throw Object.assign(new Error('refused: only the owner, on the page, controls the engineering line (this server has no owner session)'), { code: 'LOCKED' }); return fn(body, key); };
+  const asOwner = (fn) => (body, key) => { if (!engine.requests || !engine.requests.isOwner(owner)) throw Object.assign(new Error('refused: only the owner, on the page, controls the engineering line and the executives (this server has no owner session)'), { code: 'LOCKED' }); return fn(body, key); };
   const ACTIONS = {
     // the e-stop: pressing it is never refused for a stale page; resuming needs the typed word and the current state
     'POST /api/engine/halt': (body) => engine.halt.press({ by: 'owner (office button)', reason: str(body.reason) }),
@@ -157,6 +158,11 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
     'POST /api/eng/resume': asOwner(spends('restart', (body) => E().resume(str(body.jobId, 120), { expectedVersion: ver(body), by: BY }))),
     'POST /api/eng/archive': asOwner((body) => E().archive(str(body.jobId, 120), { expectedVersion: ver(body) })),
     'POST /api/eng/decide': asOwner(async (body) => { const decision = str(body.decision, 20); if (decision === 'rework') engine.spend.gate('eng-rework', body); return noPromise(await E().ownerDecide({ jobId: str(body.jobId, 120), decision, words: str(body.words, 2000), expectedVersion: ver(body) }, { actor: owner })); }),
+    // R3: the executives (owner only, localhost): the COO's report or the CEO's memo now (each can spend: the spend gate first), and the
+    // owner's mark on a proposal (taken, declined or later: a note on a document, it approves or starts nothing)
+    'POST /api/exec/coo-report': asOwner(spends('coo-report', () => noPromise(X().start('coo', { by: BY }, { actor: owner })))),
+    'POST /api/exec/ceo-memo': asOwner(spends('ceo-memo', () => noPromise(X().start('ceo', { by: BY }, { actor: owner })))),
+    'POST /api/exec/proposal-mark': asOwner((body) => X().markProposal({ week: str(body.week, 20), proposal: str(body.proposal, 8), mark: str(body.mark, 10), words: str(body.words, 500) }, { actor: owner })),
     // E7a: the own-shop Etsy connection (read scopes only; nothing is written to Etsy and nothing spends)
     'POST /api/etsy/connect/start': () => etsyClient().startConnect(),
     'POST /api/etsy/connect/finish': (body) => etsyClient().finishConnect(str(body.pasted, 4000)),
@@ -189,7 +195,7 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       if (req.method === 'POST') {
         const act = ACTIONS['POST ' + p];
         if (!act && p !== '/api/spend/quote') return sendJson(res, { error: 'unknown action' }, 404);
-        if (p.startsWith('/api/eng/') && !loopback(req)) return refuse(res, p, 403, 'localhost only', { remote: (req.socket && req.socket.remoteAddress) || null });
+        if ((p.startsWith('/api/eng/') || p.startsWith('/api/exec/')) && !loopback(req)) return refuse(res, p, 403, 'localhost only', { remote: (req.socket && req.socket.remoteAddress) || null });
         if (!sameOrigin(req)) return refuse(res, p, 403, 'same-origin requests only', { origin: req.headers.origin || null });
         if (req.headers['x-station-action'] !== token) return refuse(res, p, 403, 'missing or stale action token: reload the page', { token: req.headers['x-station-action'] ? 'wrong' : 'missing' });
         if (!/^application\/json\b/.test(req.headers['content-type'] || '')) return refuse(res, p, 415, 'JSON only');
@@ -247,11 +253,13 @@ export function createEngineServer({ engine, log, snapshotTtlMs = 300, ext = nul
       if ((m = /^\/api\/office\/image\/legacy\/(\d{4}-\d{2}-\d{2}--[a-z0-9-]+)\/((?:work|package|rejected)\/[a-z0-9][a-z0-9._/-]*\.png)$/.exec(p)) && !m[2].includes('..')) { const buf = await legacyThumb(m[1], m[2]); return buf ? send(res, 200, buf, 'image/png', { 'Cache-Control': 'public, max-age=300' }) : send(res, 404, 'no such image', 'text/plain'); }
       if (p === '/api/etsy') return sendJson(res, etsyStatus());
       // R2c: the Engineering panel's reads: localhost, same origin, and the owner's page session (the action token), like a write
-      if (p.startsWith('/api/eng/')) {
+      if (p.startsWith('/api/eng/') || p.startsWith('/api/exec/')) {
         if (!loopback(req)) return refuse(res, p, 403, 'localhost only', { remote: (req.socket && req.socket.remoteAddress) || null });
         if (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') return refuse(res, p, 403, 'same-origin requests only');
         if (req.headers['x-station-action'] !== token || !engine.requests || !engine.requests.isOwner(owner)) return refuse(res, p, 403, "only the owner's page session: reload the page", { token: req.headers['x-station-action'] ? 'wrong' : 'missing' });
         if (p === '/api/eng/view') return sendJson(res, E().view());
+        // R3: one earlier report or memo (the Owner's office lists them)
+        if ((m = /^\/api\/exec\/(coo|ceo)\/([0-9A-Z-]{7,14})$/.exec(p))) { const d = X().record(m[1], m[2]); return d ? sendJson(res, d) : sendJson(res, { error: 'no such record' }, 404); }
         if ((m = /^\/api\/eng\/job\/([a-z0-9][a-z0-9-]{2,120})$/.exec(p))) { const d = await E().jobDetail(m[1]); return d ? sendJson(res, d) : sendJson(res, { error: 'no such engineering job' }, 404); }
         return sendJson(res, { error: 'unknown route' }, 404);
       }

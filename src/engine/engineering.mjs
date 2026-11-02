@@ -20,6 +20,8 @@
 //                                in "approval". The owner pulls dev/<job-id> from the mirror and merges, pushes and deploys by hand
 //               a TESTER fail, a REVIEWER or SECURITY revise sends the job back to DEVELOPER with the findings, at most reworkMax (2) times in
 //               all, then the job blocks; a REVIEWER or SECURITY refuse ends it rejected and no merge request is filed
+// R3: the same start, stop, resume, archive and running-jobs limit run the executives' jobs (the COO's report, the CEO's memo); execs.mjs
+// registers their runner (addRunner) and gets this module's kit (setJob, block, stopFrom, agentWait, mockOnLive).
 // The spend guard, the e-stop, the policy and the locked rules sit in front of every model call and tool call as on every line (runtime.mjs);
 // the job cap is the product's engineering cap (USD 3.00 for ReplyDesk, owner R0.3). The engine never pushes (lib/repo.mjs).
 // R2c: the owner's controls (the Engineering panel, POST /api/eng/*). Writing and deciding an issue, the triage, a start and the decision
@@ -39,8 +41,11 @@ import { composeIssue, readIssue, readDecisions, issueState, listIssues, devQueu
 import { secretContentHits } from './lib/secrets.mjs';
 import { foreignDataHits } from './business.mjs';
 import { dublinDay } from './time.mjs';
+import { EXEC_KINDS } from './lib/exec-inputs.mjs';
 
 export const ENG_KINDS = ['engineering', 'eng-triage'];
+// R3: the side lines this module runs: its own two, and the executives' (execs.mjs registers their runner with addRunner)
+export const SIDE_KINDS = [...ENG_KINDS, ...EXEC_KINDS];
 export const ENG_LINE = 'engineering', TRIAGE_LINE = 'eng-triage';
 const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 const r6 = (n) => Math.round((n || 0) * 1e6) / 1e6;
@@ -59,6 +64,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   const stops = new Map();    // job id -> AbortController
   const reworking = new Set(); // R2c: jobs whose merge request the owner is rejecting for a rework (the job goes back, it does not end)
   const isActive = (id) => active.has(id);
+  const runners = {};          // R3: kind -> run(id, signal, kit) for a side line of another module (the executives: execs.mjs)
   const productRoot = (pid) => path.join(dataRoot, 'products', pid);
   const jobDir = (job) => path.join(productRoot(job.product_id || job.data.productId), 'eng', job.id);
   const backlogDir = (pid) => path.join(productRoot(pid), 'backlog');
@@ -166,7 +172,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
 
   // ---- start: one job per line; the station's running-jobs limit counts the Etsy orchestrator's jobs too
   function start(id) {
-    const job = store.getJob(id); if (!job || !ENG_KINDS.includes(job.kind)) throw refuse('no such engineering job: ' + id);
+    const job = store.getJob(id); if (!job || !SIDE_KINDS.includes(job.kind)) throw refuse('no such engineering job: ' + id);
     if (job.state !== 'queued') throw refuse('job ' + id + ' is ' + job.state + ', not queued');
     if (halt.isHalted()) throw refuse('e-stop is on', 'HALTED');
     const hold = engine.lineHold ? engine.lineHold(job.line) : null; if (hold) throw refuse(hold, /^archived/.test(hold) ? 'ARCHIVED' : 'PAUSED');
@@ -179,7 +185,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     if (max && active.size + others >= max) { store.updateJob(id, { reason: 'next: at most ' + max + ' job' + (max === 1 ? '' : 's') + ' running at a time', data: { autoStart: true, next: true, nextFor: 'total', queuedAt: qd } }); return null; }
     if (job.data && job.data.next) store.updateJob(id, { data: { next: false, nextFor: null } });
     const ctl = new AbortController(); stops.set(id, ctl);
-    const promise = (job.kind === 'eng-triage' ? runTriage(id, ctl.signal) : runSteps(id, ctl.signal))
+    const promise = (runners[job.kind] ? runners[job.kind](id, ctl.signal, kit) : EXEC_KINDS.includes(job.kind) ? Promise.resolve(block(job, 'no runner for ' + job.kind + ' in this engine')) : job.kind === 'eng-triage' ? runTriage(id, ctl.signal) : runSteps(id, ctl.signal))
       .catch((e) => { log.error('engineering job crashed', { id, error: String(e && e.stack || e) }); try { block(store.getJob(id), 'engine error: ' + e.message); } catch (_) { /* store gone */ } })
       .finally(() => { stops.delete(id); active.delete(id); startNext(id); });
     active.set(id, { line: job.line, promise });
@@ -187,7 +193,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   }
   function startNext(endedId) {
     if (halt.isHalted()) return;
-    const waiting = store.listJobs({ states: ['queued'] }).filter((j) => ENG_KINDS.includes(j.kind) && j.id !== endedId && j.data && j.data.autoStart && !j.data.waitingFor && !isActive(j.id) && !/^interrupted/.test(j.reason || '')).sort((a, b) => ((a.data.queuedAt || 0) - (b.data.queuedAt || 0)));
+    const waiting = store.listJobs({ states: ['queued'] }).filter((j) => SIDE_KINDS.includes(j.kind) && j.id !== endedId && j.data && j.data.autoStart && !j.data.waitingFor && !isActive(j.id) && !/^interrupted/.test(j.reason || '')).sort((a, b) => ((a.data.queuedAt || 0) - (b.data.queuedAt || 0)));
     for (const j of waiting) { if ([...active.values()].some((a) => a.line === j.line)) continue; if (engine.scriptRun && !engine.scriptRun.own.has(j.id)) continue; try { start(j.id); } catch (e) { log.warn('next engineering job not started', { jobId: j.id, error: e.message }); } }
     if (engine.orchestrator && engine.orchestrator.startNext) { try { engine.orchestrator.startNext(endedId); } catch (_) { /* nothing waiting */ } }
   }
@@ -198,6 +204,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   const mockOnLive = (id) => !!(engine.providers && engine.providers.mode === 'mock') && ledger.rowsForJob(id).some((r) => r.provider && r.provider !== 'mock');
   const stopFrom = (run, who) => (run.status === 'stopped' ? { stopped: who + ' run stopped: ' + run.endReason } : run.status === 'cap' ? { blocked: run.endReason } : run.status === 'refused' ? { blocked: who + ' run refused: ' + run.endReason } : run.status === 'failed' ? { blocked: who + ' run failed: ' + run.error } : run.status === 'max-turns' ? { blocked: who + ' run hit ' + run.endReason } : run.status === 'incomplete' ? { incomplete: who + ' ' + run.endReason } : null);
   const rel = (job, f) => path.relative(jobDir(job), f).split(path.sep).join('/');
+  const kit = { setJob: (...a) => setJob(...a), block: (...a) => block(...a), stopFrom: (...a) => stopFrom(...a), agentWait: (...a) => agentWait(...a), mockOnLive: (...a) => mockOnLive(...a) };
   const agentName = (k) => (cfg.agents[k] || {}).name || k;
 
   // ---- the triage run
@@ -235,7 +242,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   function wakeWaiting(key) {
     if (halt.isHalted()) return [];
     const out = [];
-    for (const j of store.listJobs({ states: ['queued'] }).filter((x) => ENG_KINDS.includes(x.kind) && x.data && x.data.waitingFor === key)) { store.updateJob(j.id, { data: { waitingFor: null } }); try { start(j.id); out.push(j.id); } catch (e) { log.warn('waiting engineering job not started', { jobId: j.id, error: e.message }); } }
+    for (const j of store.listJobs({ states: ['queued'] }).filter((x) => SIDE_KINDS.includes(x.kind) && x.data && x.data.waitingFor === key)) { store.updateJob(j.id, { data: { waitingFor: null } }); try { start(j.id); out.push(j.id); } catch (e) { log.warn('waiting engineering job not started', { jobId: j.id, error: e.message }); } }
     return out;
   }
 
@@ -485,7 +492,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
 
   // ---- the owner's controls on a job
   function stop(id, { expectedVersion = null } = {}) {
-    const j = store.getJob(id); if (!j || !ENG_KINDS.includes(j.kind)) throw refuse('no such engineering job: ' + id);
+    const j = store.getJob(id); if (!j || !SIDE_KINDS.includes(j.kind)) throw refuse('no such engineering job: ' + id);
     if (expectedVersion != null && j.version !== expectedVersion) throw Object.assign(new Error('job ' + id + ' changed since you loaded it'), { code: 'STALE' });
     const c = stops.get(id);
     if (c) { c.abort(new Error('stopped by the owner')); return { jobId: id, stopping: true }; }
@@ -494,7 +501,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   }
   // resume a blocked, stopped or incomplete job at the step it ended on (a rework loop that is used up is not reset)
   function resume(id, { expectedVersion = null, by = 'owner (office)' } = {}) {
-    const j = store.getJob(id); if (!j || !ENG_KINDS.includes(j.kind)) throw refuse('no such engineering job: ' + id);
+    const j = store.getJob(id); if (!j || !SIDE_KINDS.includes(j.kind)) throw refuse('no such engineering job: ' + id);
     if (expectedVersion != null && j.version !== expectedVersion) throw Object.assign(new Error('job ' + id + ' changed since you loaded it'), { code: 'STALE' });
     if (!['blocked', 'stopped', 'incomplete', 'queued'].includes(j.state) || isActive(id)) throw refuse('job ' + id + ' is ' + j.state + ': only a blocked, stopped or incomplete job resumes');
     if (j.kind === 'engineering' && j.data.worktreeRemoved) throw refuse('job ' + id + ' has been committed and its worktree removed: nothing to resume');
@@ -504,7 +511,7 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
   }
   // archive an ended job: its worktree is removed (the branch stays in the mirror), its folder kept
   async function archive(id, { expectedVersion = null } = {}) {
-    const j = store.getJob(id); if (!j || !ENG_KINDS.includes(j.kind)) throw refuse('no such engineering job: ' + id);
+    const j = store.getJob(id); if (!j || !SIDE_KINDS.includes(j.kind)) throw refuse('no such engineering job: ' + id);
     if (expectedVersion != null && j.version !== expectedVersion) throw Object.assign(new Error('job ' + id + ' changed since you loaded it'), { code: 'STALE' });
     if (isActive(id) || ['running', 'approval'].includes(j.state)) throw refuse('job ' + id + ' is ' + j.state + ': stop it (or decide its merge request) first');
     if (j.kind === 'engineering' && fs.existsSync(repoOf(j))) await removeWorktree({ J, productId: j.product_id, dir: repoOf(j), ...GIT });
@@ -642,5 +649,5 @@ export function createEngineering(engine, { checks = null, env = process.env, ho
     return checker.buildImage({ J, product: p, requirementsText: req, signal });
   }
 
-  return { writeIssue, decideIssue, startTriage, startIssue, startProblems, start, stop, resume, archive, ownerDecide, approvalState: (id) => approvalState(store.getJob(id)), wakeWaiting, isActive, active: () => [...active.keys()], activeCount: () => active.size, view, jobView, jobDetail, card, buildCheckImage, checks: checker, close: () => unsub() };
+  return { addRunner: (kind, fn) => { if (!EXEC_KINDS.includes(kind)) throw new Error('not a side-line kind: ' + kind); runners[kind] = fn; }, handles: (kind) => SIDE_KINDS.includes(kind), writeIssue, decideIssue, startTriage, startIssue, startProblems, start, stop, resume, archive, ownerDecide, approvalState: (id) => approvalState(store.getJob(id)), wakeWaiting, isActive, active: () => [...active.keys()], activeCount: () => active.size, view, jobView, jobDetail, card, buildCheckImage, checks: checker, close: () => unsub() };
 }

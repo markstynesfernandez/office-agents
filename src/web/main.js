@@ -52,6 +52,12 @@ const building = createBuildingView({ root: $('#building'), onFloor: (n) => setF
     const v = await ctl.dialog({ title: (ok ? 'Approve' : 'Reject') + ' this request', intro: '<b>' + esc(r.summary) + '</b><br><span class="mono">' + esc(r.action) + ' · ' + esc(r.productId) + ' · ' + esc(r.departmentId) + '</span><br><br>' + (ok ? 'Records your approval of this exact payload (sha256 ' + esc(String(r.payloadSha256).slice(0, 12)) + '…); if the payload changes, the approval no longer matches. Nothing is sent from here.' : 'Records your rejection; nothing runs.'), fields: [{ name: 'words', label: 'Your words (logged with the decision)', type: 'textarea', required: true, rows: 3 }], confirm: ok ? 'Approve' : 'Reject', danger: !ok });
     if (v) await ctl.act('/api/requests/decide', { id: r.id, decision, words: v.words.trim(), expectedVersion: r.version }, { ok: (ok ? 'Approved: ' : 'Rejected: ') + r.summary });
   },
+  // R3: the executives: a report or memo now (the spend confirmation first), and the owner's mark on a proposal (a note, approving nothing)
+  onExec: async (what, d) => {
+    if (what === 'run') { await ctl.spendAct(d.action, d.action === 'coo-report' ? '/api/exec/coo-report' : '/api/exec/ceo-memo', {}, { ok: d.action === 'coo-report' ? 'The COO report has started' : 'The CEO memo has started' }); return; }
+    const v = await ctl.dialog({ title: 'Mark ' + d.proposal + ' as ' + d.mark, intro: 'A note on the CEO\'s proposal for the next memo. It approves, starts or changes nothing.', fields: [{ name: 'words', label: 'Your words (optional)', type: 'textarea', rows: 2 }], confirm: 'Mark it ' + d.mark });
+    if (v) await ctl.act('/api/exec/proposal-mark', { week: d.week, proposal: d.proposal, mark: d.mark, words: String(v.words || '').trim() }, { ok: d.proposal + ' marked ' + d.mark });
+  },
   onResume: async (line) => {
     const v = await ctl.dialog({ title: 'Resume the ' + line + ' line', intro: 'The line starts jobs again from now on.', fields: [{ name: 'words', label: 'Your words (logged)', type: 'textarea', required: true, rows: 2 }], confirm: 'Resume' });
     if (v) await ctl.act('/api/lines/resume', { line, words: v.words.trim() }, { ok: 'Resumed: ' + line });
@@ -306,7 +312,7 @@ function connectLive() {
   live.onopen = () => { liveOk = true; };
   live.onerror = () => { liveOk = false; };
   const onEv = (e) => { lastSeq = Number(e.lastEventId) || lastSeq; try { presenter.onEvent(JSON.parse(e.data)); } catch (_) { /* not JSON */ } if (pending) return; pending = setTimeout(() => { pending = null; load().catch(() => {}); }, 120); };
-  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused', 'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed', 'issue.written', 'issue.decided', 'eng.checks']) live.addEventListener(t, onEv);
+  for (const t of ['job.created', 'job.stage', 'job.blocked', 'job.queued-for-approval', 'job.decided', 'owner.action', 'job.stopped', 'job.rejected', 'run.start', 'run.tool', 'run.end', 'spend.row', 'cap.warn', 'cap.hit', 'routine.fire', 'routine.skip', 'halt.on', 'halt.off', 'agent.updated', 'engine.recovered', 'routine.changed', 'action.done', 'action.refused', 'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed', 'issue.written', 'issue.decided', 'eng.checks', 'exec.report', 'exec.memo', 'proposal.marked']) live.addEventListener(t, onEv);
 }
 // the e-stop (ENGINE-PLAN.md §5.5): one click and a confirmation stops everything; resuming is a second, explicit action
 // with the typed word, against the e-stop state the page loaded (a stale page is refused)

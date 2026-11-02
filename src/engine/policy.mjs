@@ -34,7 +34,7 @@ export const TOOL_ACTIONS = {
   metrics_read: 'metrics.read',
   support_ticket_read: 'product.read'
 };
-export const PLANNED_TOOLS = ['line_pause', 'metrics_read', 'support_ticket_read'];   // R2 built code_search, run_check (and fs_edit)
+export const PLANNED_TOOLS = ['metrics_read', 'support_ticket_read'];   // R2 built code_search, run_check (and fs_edit); R3 line_pause
 export const POLICY_FILE = 'autonomy.json';
 const ACTION_RE = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/;
 

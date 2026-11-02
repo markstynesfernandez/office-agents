@@ -6,7 +6,7 @@
   "reportsTo": "owner",
   "status": "active",
   "agents": ["ceo", "cto", "coo", "compliance", "overseer"],
-  "lines": [],
+  "lines": ["coo-report", "ceo-memo"],
   "rooms": ["finance", "compliance", "overseer"],
   "lounge": true
 }

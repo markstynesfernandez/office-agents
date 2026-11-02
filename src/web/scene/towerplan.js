@@ -124,7 +124,9 @@ const LAYOUTS = {
       { kind: 'coffeeTable', x: 5.2, z: 4.1, w: 1.8, d: 1.0 }, ...plants([[1.6, 7.0, 1], [8.8, 7.0, 1]]), { kind: 'counter', x: 10.6, z: 3.2, yaw: Math.PI / 2, w: 2.8 }, { kind: 'floorLamp', x: 9.4, z: 1.0 },
       LIFT
     ],
-    screens: [stand('requests', 'requests', -11.2, -4.4, -Math.PI / 2, 1.45, 2.4, 1.4), stand('finance', 'finance', -11.2, 2.0, -Math.PI / 2, 1.5, 3.2, 1.8), { id: 'compliance-sign', kind: 'compliance-sign', x: 10.8, y: 2.0, z: -1.98, yaw: Math.PI, w: 2.2, h: 0.46, style: 'glass-sign' }],
+    // R3: the CEO's memo board on the far side of the boardroom table, facing it and the room (the latest memo's proposals and the owner's
+    // marks)
+    screens: [stand('requests', 'requests', -11.2, -4.4, -Math.PI / 2, 1.45, 2.4, 1.4), stand('finance', 'finance', -11.2, 2.0, -Math.PI / 2, 1.5, 3.2, 1.8), stand('memo', 'memo', -6.0, 0.9, Math.PI, 1.5, 3.0, 1.6), { id: 'compliance-sign', kind: 'compliance-sign', x: 10.8, y: 2.0, z: -1.98, yaw: Math.PI, w: 2.2, h: 0.46, style: 'glass-sign' }],
     hub: 'finance'
   }),
   // 5: a dark room: the server room behind glass (two rows of racks with status lights, the services on the first row), the wall
@@ -302,6 +304,14 @@ export function screenContent(kind, snap, { floor = null, people = null } = {}) 
       const e = s.engine || {}, sp = (s.spend && s.spend.today) || null, cap = s.spend && s.spend.caps ? s.spend.caps.perDay : null;
       if (!s.engine) return { title: 'Engine', rows: [], empty: 'no engine' };
       return { title: 'Engine', rows: [{ label: 'state', value: e.halted ? 'E-STOP on' : 'running', tone: e.halted ? 'bad' : 'ok' }, { label: 'provider', value: e.provider || '—' }, { label: 'calls in flight', value: String(e.inFlight || 0) }, { label: 'spend today', value: sp ? money(sp.usd) + (cap ? ' / ' + money(cap) + ' cap' : '') : '—', bar: sp && cap ? Math.min(1, sp.usd / cap) : null, tone: 'ok' }, { label: 'ledger rows', value: String(((s.hub || {}).ledger || {}).rows ?? '—') }] };
+    }
+    // R3: the CEO's latest memo (its proposals, each with the owner's mark) and the date of the COO's latest report
+    case 'memo': {
+      const x = oo.execs || null, m = x && x.ceo ? x.ceo.latest : null, rep = x && x.coo ? x.coo.latest : null;
+      if (!x) return { title: 'CEO memo', rows: [], empty: 'no executives' };
+      const foot = rep ? 'COO report ' + rep.day : (x.coo && x.coo.status !== 'active' ? 'COO not hired yet' : 'no COO report yet');
+      if (!m) return { title: 'CEO memo', rows: [], empty: x.ceo && x.ceo.status !== 'active' ? 'CEO not hired yet' : 'no memo yet', foot };
+      return { title: 'CEO memo ' + m.week, rows: m.proposals.slice(0, 4).map((p) => ({ label: p.id + ' ' + p.title, value: p.mark ? p.mark.mark : 'open', tone: !p.mark ? 'warn' : p.mark.mark === 'taken' ? 'ok' : 'muted' })), empty: m.proposals.length ? null : 'no proposal this week', foot };
     }
     case 'policy': {
       const p = oo.policy;

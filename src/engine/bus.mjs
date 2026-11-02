@@ -15,7 +15,9 @@ export const EVENT_TYPES = ['job.created', 'job.stage', 'job.blocked', 'job.queu
   'routine.changed', 'action.done', 'action.refused',
   'policy.changed', 'request.filed', 'request.decided', 'request.void', 'line.paused', 'line.resumed',
   // R2: the engineering line (engineering.mjs): the owner's issues and their decisions, a checks pass
-  'issue.written', 'issue.decided', 'eng.checks'];
+  'issue.written', 'issue.decided', 'eng.checks',
+  // R3: the executives (execs.mjs): the COO's report written, the CEO's memo written, the owner's mark on a proposal
+  'exec.report', 'exec.memo', 'proposal.marked'];
 
 export function createBus({ J, dir = path.join(J.dataRoot, 'events'), log, ringSize = 1000, businessOf = null, productOf = null }) {
   const ring = [], subs = new Set();

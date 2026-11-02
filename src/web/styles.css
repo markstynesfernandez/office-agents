@@ -473,6 +473,9 @@ body[data-theme="dark"] .badge-dev { background: #7cc4a0; color: #0d2a1c; border
 .plaque { font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em; text-align: center; padding: 2px 3px; border-radius: 3px; background: linear-gradient(#e7cf9c, #c9a462); color: #3a2c14; border: 1px solid #a88446; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lbl-plaque .lbl-name { border-color: #b8955a; }
 /* R7a.2: the task box on a floor without the Etsy controls: Engineering's New issue, or the floor's phase */
-.tp-floor { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0 2px; }
-.tp-floor .tp-floor-text { white-space: normal; font-size: 12px; }
+.tp-floor { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0 2px; }
+.tp-floor .tp-floor-text { white-space: normal; font-size: 12px; flex: 1 1 180px; min-width: 0; }
 .tp-floor .btn { flex: none; }
+/* R3: the executives in the Owner's office: the COO's report and the CEO's memo as written, and the proposals */
+.exec-text { white-space: pre-wrap; font-size: 12px; line-height: 1.45; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; max-height: 340px; overflow: auto; margin: 4px 0 8px; }
+.exec-prop .fl-stats .btn-mini { text-transform: capitalize; }

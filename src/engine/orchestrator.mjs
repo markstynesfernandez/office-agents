@@ -58,6 +58,7 @@ import { briefFileProblems, briefFileList } from './lib/brief-files.mjs';
 import { strictCleanFile, writeFlattened, writeAfterPreviews } from './lib/strict-cleanup.mjs';
 import { stationPlan, withStationPlan, keptSections } from './lib/design-plan.mjs';
 import { freezeInputs, readInputs, amendmentsNote, amendmentRefs } from './lib/job-inputs.mjs';
+import { EXEC_KINDS } from './lib/exec-inputs.mjs';
 
 // the listing record: the legacy listings.csv columns, with print_files renamed deliverables (ENGINE-PLAN.md §4.1)
 export const TRACKER_COLUMNS = LEGACY_COLUMNS.map((c) => (c === 'print_files' ? 'deliverables' : c));
@@ -87,7 +88,8 @@ export function createOrchestrator(engine, { hooks = {} } = {}) {
   const isActive = (id) => [...active.values()].some((a) => a.jobId === id);
   // R2: engineering and CTO-triage jobs belong to the engineering line (engineering.mjs): this orchestrator hands them over and never runs
   // them; the running-jobs limit counts both
-  const engJob = (j) => !!j && (j.kind === 'engineering' || j.kind === 'eng-triage');
+  // R3: and the executives' jobs (the COO's report, the CEO's memo: execs.mjs), which run through the same side-line runner
+  const engJob = (j) => !!j && (j.kind === 'engineering' || j.kind === 'eng-triage' || EXEC_KINDS.includes(j.kind));
   const engCount = () => (engine.engineering ? engine.engineering.activeCount() : 0);
   const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 

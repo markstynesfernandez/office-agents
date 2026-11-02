@@ -81,7 +81,7 @@ test('migrate:products on the live-shaped root: the engine refuses it first; the
     assert.deepEqual(e.store.productGaps(), { missingColumn: [], nullRows: {} }); assert.equal(e.store.hasProductColumns(), true);
     const by = (t2) => e.store.db.prepare('SELECT product_id || \'/\' || department_id k, COUNT(*) n FROM ' + t2 + ' GROUP BY k').all().reduce((o, x) => ({ ...o, [x.k]: x.n }), {});
     // the first R1 start also seeds the COO's report routine (station/hq), disabled like every seed
-    assert.deepEqual(Object.fromEntries(PRODUCT_TABLES.map((t2) => [t2, by(t2)])), { ...EXPECT, routines: { 'etsy-shop/etsy': 4, 'station/hq': 1 } });
+    assert.deepEqual(Object.fromEntries(PRODUCT_TABLES.map((t2) => [t2, by(t2)])), { ...EXPECT, routines: { 'etsy-shop/etsy': 4, 'station/hq': 2 } });
     assert.equal(e.store.getRoutine('rt_seed_coo-daily-report').enabled, false);
     assert.equal(e.ledger.totals.rows, 509); assert.equal(e.requests.list().length, 0, 'the requests table exists and is empty');
     const month = (p) => Object.entries(e.ledger.totals.byProductMonth).filter(([k]) => k.startsWith(p + '|')).reduce((s, [, v]) => s + v, 0);

@@ -123,8 +123,8 @@ test('ceo-recommends-only (runtime): the CEO cannot decide a request, file one, 
   const req = fileMerge(engine);
   assert.throws(() => engine.requests.decide(req.id, { decision: 'approve', words: 'as the CEO', expectedVersion: req.version, actor: ceo }), isLocked('owner-only-approver'));
   assert.throws(() => engine.actions.pauseLine('research', { actor: ceo, reason: 'the CEO thinks so' }), isLocked('ceo-recommends-only'));
-  // the CEO is not hired yet: the engine refuses to run it, before anything is recorded or spent
-  await assert.rejects(runAgent(engine, { agentKey: 'ceo', folder: path.join(r.dataRoot, CEO_FOLDER), input: 'memo' }), (e) => e.code === 'NOT_HIRED' && /CEO is not hired yet \(R3\)/.test(e.message));
+  // R3: the CEO is hired; a run outside its memos folder is refused before anything is recorded or spent
+  await assert.rejects(runAgent(engine, { agentKey: 'ceo', folder: path.join(r.dataRoot, 'products', 'replydesk'), input: 'memo' }), isLocked('ceo-recommends-only'));
   assert.equal(engine.store.runsOf({ agentKey: 'ceo' }).length, 0); assert.equal(engine.ledger.totals.rows, 0);
   assert.equal(engine.requests.get(req.id).status, 'pending');
 });
@@ -173,8 +173,10 @@ test('coo-pause-only (runtime): a hired COO pauses a line and nothing starts on 
   assert.ok(engine.bus.recent(80).some((e) => e.type === 'line.paused') && engine.bus.recent(80).some((e) => e.type === 'line.resumed'));
 });
 
-test('coo-pause-only (runtime): the COO cannot pause while it is not hired yet', (t) => {
-  const { engine } = engineOn(t, { tag: 'r1coonot' });
+test('coo-pause-only (runtime): the COO cannot pause while it is not hired yet (a test copy with the COO not hired: R3 hired it)', (t) => {
+  const r0 = tempRoot('r1coonothired'); t.after(r0.cleanup);
+  const dir = configCopy(r0.base, { 'agents/coo.json': (o) => { o.status = 'not-hired'; o.enabled = false; } });
+  const { engine } = engineOn(t, { tag: 'r1coonot', configDir: dir });
   assert.throws(() => engine.actions.pauseLine('research', { actor: { kind: 'agent', key: 'coo' }, reason: 'x' }), (e) => e instanceof PolicyRefusal && /COO is not-hired \(not hired yet\)/.test(e.message));
   assert.equal(engine.lineHold('research') && /^paused/.test(engine.lineHold('research')), false);
 });

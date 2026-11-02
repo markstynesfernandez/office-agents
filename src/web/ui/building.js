@@ -16,7 +16,9 @@ const when = (ms) => (ms ? new Date(ms).toLocaleString('en-IE', { timeZone: 'Eur
 
 // R2c: a git.merge request of an engineering job has three buttons (approve, rework with notes, reject) and opens in the Engineering
 // panel; the panel itself is one click from the top of this view.
-export function createBuildingView({ root, onFloor = () => {}, onDecide = () => {}, onResume = () => {}, onEng = () => {} }) {
+// R3: the executives in the Owner's office: the COO's latest daily report and the CEO's latest memo, each with a button to run it now
+// (behind the spend confirmation) and its routine's state; the memo's proposals with the owner's three marks (a note: nothing is approved)
+export function createBuildingView({ root, onFloor = () => {}, onDecide = () => {}, onResume = () => {}, onEng = () => {}, onExec = () => {} }) {
   const body = root.querySelector('#building-body');
   let reqs = [];
   function render(snap, cur = null) {
@@ -38,6 +40,8 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
     body.querySelectorAll('[data-req]').forEach((el) => el.addEventListener('click', () => { const r = reqs.find((x) => x.id === el.dataset.req); if (r) onDecide(r, el.dataset.decision); }));
     body.querySelectorAll('[data-resume]').forEach((el) => el.addEventListener('click', () => onResume(el.dataset.resume)));
     body.querySelectorAll('[data-eng-open]').forEach((el) => el.addEventListener('click', () => onEng(el.dataset.engOpen || null)));
+    body.querySelectorAll('[data-exec-run]').forEach((el) => el.addEventListener('click', () => onExec('run', { action: el.dataset.execRun })));
+    body.querySelectorAll('[data-mark]').forEach((el) => el.addEventListener('click', () => onExec('mark', { week: el.dataset.week, proposal: el.dataset.proposal, mark: el.dataset.mark })));
   }
 
   // R7a: the lift: one slab per floor in the floor's own colours, the car at the floor shown
@@ -82,10 +86,32 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
       + (pending.length ? pending.map((r) => reqRow(r, true)).join('') : '<div class="muted">No request is waiting.</div>')
       + (recent.length ? '<div class="muted" style="margin-top:8px;font-size:12px">Decided</div>' + recent.map((r) => reqRow(r, false)).join('') : '')
       + (paused.length ? '<div style="margin-top:8px">' + paused.map((p) => '<div class="bldg-total"><b>' + esc(p.line) + '</b> paused by ' + esc(p.paused.by) + ': ' + esc(p.paused.reason) + ' <button class="btn btn-mini" data-resume="' + esc(p.line) + '">Resume…</button></div>').join('') + '</div>' : '')
+      + execs(oo.execs)
       + '<h3 style="margin:18px 0 6px">Finance (from the ledger)</h3><div class="bldg-total">' + (fin || '<span class="muted">no products</span>') + '</div>'
       + (pol ? '<h3 style="margin:18px 0 6px">Autonomy policy</h3><div class="bldg-total muted">' + pol.counts.auto + ' auto · ' + pol.counts.owner + ' owner · ' + pol.counts.forbidden + ' forbidden · <span class="mono">' + esc(String(pol.sha256).slice(0, 12)) + '</span> · ' + esc(pol.source)
         + ((pol.log || []).filter((x) => !x.first).slice(-5).map((x) => '<div>' + esc(x.at.slice(0, 16).replace('T', ' ')) + ' ' + esc(x.action) + ': ' + esc(x.old) + ' → ' + esc(x.new) + '</div>').join('')) + '</div>' : '')
       + '<h3 style="margin:18px 0 6px">The company (floors are display order only)</h3>' + floors;
+  }
+  // R3: the COO's report and the CEO's memo (text as written, capped by the server), the run buttons, the proposals and their marks
+  function execs(x) {
+    if (!x) return '';
+    const st = (a) => (a.status !== 'active' ? '<span class="tag tag-warn">' + esc(a.status === 'not-hired' ? 'not hired yet' : a.status) + '</span>' : a.onDuty ? '' : '<span class="tag tag-warn">off duty</span>');
+    const rt = (r) => (r ? '<span class="muted" style="font-size:11px">routine "' + esc(r.name) + '": ' + (r.enabled ? 'armed, ' + esc(r.schedule) : 'not armed (arm it on the calendar)') + (r.lastStatus ? ' · last ' + esc(r.lastStatus) + ' ' + esc(when(r.lastFireAt)) : '') + '</span>' : '');
+    const run = (a, action, label) => '<button class="btn btn-mini btn-primary" data-exec-run="' + action + '"' + (a.canStart && a.canStart.length ? ' disabled title="' + esc(a.canStart.join('; ')) + '"' : '') + '>' + label + '</button>' + (a.estimateUsd != null ? ' <span class="muted" style="font-size:11px">plan estimate ' + money(a.estimateUsd) + '</span>' : '');
+    const text = (t) => '<div class="exec-text">' + esc(t) + '</div>';
+    const markBtns = (week, p) => ['taken', 'declined', 'later'].map((m) => '<button class="btn btn-mini' + (p.mark && p.mark.mark === m ? ' btn-ok' : '') + '" data-mark="' + m + '" data-week="' + esc(week) + '" data-proposal="' + esc(p.id) + '">' + m + '</button>').join('');
+    const prop = (week, p) => '<div class="bldg-floor exec-prop" style="cursor:default"><span class="fl-num" style="font-size:12px">' + esc(p.id) + '</span><span><span class="fl-name">' + esc(p.title) + '</span>'
+      + '<div class="muted" style="font-size:11px">' + p.options.map((o) => '· ' + esc(o)).join('<br>') + '</div>'
+      + '<div style="font-size:12px"><b>Recommendation</b> ' + esc(p.recommendation) + '</div><div style="font-size:12px"><b>Cost</b> ' + esc(p.cost) + '</div>'
+      + '<div class="fl-stats">' + markBtns(week, p) + (p.mark ? '<span class="muted" style="font-size:11px">you: ' + esc(p.mark.mark) + (p.mark.words ? ' “' + esc(p.mark.words) + '”' : '') + ' ' + esc(String(p.mark.at || '').slice(0, 10)) + '</span>' : '') + '</div></span></div>';
+    const c = x.coo, m = x.ceo, last = c.latest, memo = m.latest;
+    return '<h3 style="margin:18px 0 6px">COO · daily operations report ' + st(c) + '</h3>'
+      + '<div class="bldg-total">' + run(c, 'coo-report', 'Run the report now…') + ' ' + rt(c.routine) + '</div>'
+      + (last ? '<div class="muted" style="font-size:12px;margin:4px 0">' + esc(last.day) + (last.breaches && last.breaches.length ? ' · ' + last.breaches.length + ' breach(es): ' + esc(last.breaches.map((b) => b.id + ' ' + b.text).join('; ')) : ' · no breach') + '</div>' + text(last.text) : '<div class="muted">No report yet.</div>')
+      + '<h3 style="margin:18px 0 6px">CEO · weekly memo and proposals ' + st(m) + '</h3>'
+      + '<div class="bldg-total">' + run(m, 'ceo-memo', 'Write the memo now…') + ' ' + rt(m.routine) + '</div>'
+      + '<div class="muted" style="font-size:12px;margin:4px 0">The CEO recommends only. A proposal is a document: mark it taken, declined or later; that is a note for the next memo, and it approves, starts or changes nothing.</div>'
+      + (memo ? (memo.proposals.length ? memo.proposals.map((p) => prop(memo.week, p)).join('') : '<div class="muted">No proposal this week.</div>') + '<details style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">The memo, ' + esc(memo.week) + '</summary>' + text(memo.text) + '</details>' : '<div class="muted">No memo yet.</div>');
   }
   return { render, show: () => root.classList.remove('hidden'), hide: () => root.classList.add('hidden'), isOpen: () => !root.classList.contains('hidden') };
 }

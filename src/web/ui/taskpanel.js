@@ -44,6 +44,8 @@ export function floorWork(snap, deptKey = null) {
     const archived = sel.status === 'archived' || (sel.lines || []).some((l) => l && l.archived);
     return { kind: 'etsy', archived, text: archived ? 'archived: the Etsy lines are in the archive; nothing starts on them' : null };
   }
+  // R3: the penthouse: the COO's daily report and the CEO's weekly memo, each a one-agent line (each run asks for the spend confirmation)
+  if (all.some((d) => lineIds(d).includes('coo-report'))) return { kind: 'exec', text: "the COO's daily operations report and the CEO's weekly memo: one run each, behind the spend confirmation; read them in the Owner's office (G)" };
   if (all.some((d) => lineIds(d).includes('engineering'))) return { kind: 'eng', text: 'an issue for the engineering line: saving it costs nothing; you approve it next' };
   const phases = all.flatMap((d) => (d.agents || []).filter((a) => a.status === 'not-hired').map((a) => a.phase)).filter(Boolean).sort((a, b) => phaseNo(a) - phaseNo(b));
   return { kind: 'none', phase: phases[0] || null, text: 'No work line on this floor yet' + (phases[0] ? ' (opens in ' + phases[0] + ')' : '') };
@@ -118,6 +120,9 @@ export function createTaskPanel({ root, onOpenJob, ctl = null, onNewIssue = null
   root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); go(b.dataset.go); }));
   const newIssueBtn = root.querySelector('#task-new-issue');
   if (newIssueBtn) newIssueBtn.addEventListener('click', (e) => { e.preventDefault(); if (onNewIssue && live()) onNewIssue(); });
+  // R3: the executives' runs (the server's spend gate and the owner's session hold them as on every spending action)
+  const execBtns = [...root.querySelectorAll('[data-exec-now]')];
+  for (const b of execBtns) b.addEventListener('click', (e) => { e.preventDefault(); if (!ctl || !live()) return; const a = b.dataset.execNow; ctl.spendAct(a, a === 'coo-report' ? '/api/exec/coo-report' : '/api/exec/ceo-memo', {}, { ok: a === 'coo-report' ? 'The COO report has started' : 'The CEO memo has started' }); });
   research.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go('research'); } });
 
   function renderBox() {
@@ -165,7 +170,8 @@ export function createTaskPanel({ root, onOpenJob, ctl = null, onNewIssue = null
     }
     root.querySelector('#task-floor-text').textContent = w.text;
     newIssueBtn.classList.toggle('hidden', w.kind !== 'eng'); newIssueBtn.disabled = !live();
-    m.textContent = w.kind === 'eng' ? 'Engineering' : 'floor ' + s.floorView.floor; m.title = w.text;
+    for (const b of execBtns) { b.classList.toggle('hidden', w.kind !== 'exec'); b.disabled = !live(); }
+    m.textContent = w.kind === 'eng' ? 'Engineering' : w.kind === 'exec' ? 'Penthouse' : 'floor ' + s.floorView.floor; m.title = w.text;
   }
 
   // ---- the list

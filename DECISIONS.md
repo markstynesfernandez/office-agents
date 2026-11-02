@@ -3314,3 +3314,51 @@ untouched; no new dependency (Playwright was already a dev dependency). Not depl
    checks screen shows the newest job only), the CEO's memo board, a roadmap per product and the metrics aggregates (their screens
    show the empty state), walking agents in the lobby lounge (no agent works on G). UX-DESIGNER's config name is "DESIGNER"; the
    page shows the config name.
+
+## R3 (30/10/2026): the penthouse executives
+
+Dev only, mock provider, $0, no model call; the live worktree and every `.env` untouched; no new dependency. Not deployed. The owner
+chose R3 as the next phase on 30/10/2026 (after the R7a.2 deploy); its scope is RESTRUCTURE.md §8 R3.
+
+1. **The CEO and the COO are hired** (`config/agents/ceo.json`, `coo.json`: status active, hired R3, enabled). Model, effort and
+   thinking as the owner set them in R0.2 and R0.3 (Sonnet; the CEO medium, the COO low; thinking off). `maxOutputTokens` is set at
+   hiring: CEO 8,000, COO 4,000 (**proposals**, like every limit there; the run caps stay CEO USD 0.50 and COO USD 0.20, proposals).
+   Their prompts are new (`prompts/agents/ceo.md`, `coo.md`). COMPLIANCE stays not hired until R5. The COO's tools gain `fs_list`
+   (inside the locked set `COO_TOOLS`) and the `line_pause` tool is built.
+2. **Two one-agent lines on HQ, for the Station** (`config/lines/coo-report.json`, `ceo-memo.json`; department hq, product station;
+   `src/engine/execs.mjs`). Each is a mechanical step (the engine writes the agent's inputs file) then the agent's run. They run on the
+   engineering module's side-line runner (`engineering.mjs addRunner`), so start, stop, resume, archive and the running-jobs limit are
+   the CTO triage's. The job cap is the station's HQ cap (USD 0.50, the R1.1 proposal); the plan's estimates (USD 0.07 a report, USD
+   0.21 a memo) are in the line files, shown in the spend dialog, not measured.
+3. **What the COO sees: `reports/metrics-<day>.json`** (`lib/exec-inputs.mjs cooMetrics`): spend today and this month per product,
+   department and line against the budgets and caps; every routine with its last firing; blocked jobs and stuck ones (running, or
+   starting by itself, with no change for 6 hours: a **proposal**); requests as counts and ids only (never their text); the policy's
+   changes and the refusals of the last 24 hours; the paused lines; and **the breaches**. A breach is the only ground for a pause:
+   a product at its monthly budget or its day cap (its active, non-executive lines), a line at its day cap, or 3 jobs ended blocked
+   or incomplete on one line in 24 hours (the threshold is a **proposal**). The COO writes `reports/<day>.md` (fixed first line and
+   seven sections), checked on write; **every USD figure in it must be a figure of that day's metrics**, so the report cannot invent
+   or compute a number (a report that does is not written; the COO gets the figure back and writes it again).
+4. **The COO's pause** (`line_pause`, locked rule coo-pause-only): only for a breach id the day's metrics list, and only on one of that
+   breach's lines; the reason is recorded with the breach. The pause itself goes through `actions.mjs pauseLine` (the locked rule and
+   the policy again). The COO cannot resume a line (only the owner, on the page, with words) and has no way to change a cap or a
+   budget. With no breach listed, it cannot pause anything.
+5. **What the CEO sees: `memos/inputs-<YYYY-Www>.json`** (`ceoInputs`): Finance per product (MRR "not connected" until R6), the COO's
+   reports of the last 7 days, Engineering in counts and issue titles, the roadmap, pipeline, ANALYST and Customer Success slots
+   (each "none yet" until its phase), requests as counts by action and status, the owner's marks on earlier proposals and the last
+   memo. **Never a request's text or payload, a ticket, a customer record or a named contact** (tested with a request whose summary
+   names a person and an address). The CEO writes `memos/<YYYY-Www>.md`: priorities per active product (a heading for each), then
+   proposals P1..Pn, each with options (at least two), a recommendation and a cost, checked on write. A second memo or report in the
+   same period is `<period>-2`; an earlier record is never overwritten.
+6. **A proposal is a document, never a request** (locked rule ceo-recommends-only). The owner marks it taken, declined or later in the
+   Owner's office (`POST /api/exec/proposal-mark`, the owner's page session only), with optional words; the mark is appended to
+   `memos/proposal-marks.jsonl` and goes into the next memo's inputs. A mark approves, starts or changes nothing.
+7. **Routines.** The COO's seed (`rt_seed_coo-daily-report`, 08:00 Dublin daily) can now be armed; the CEO's is new
+   (`rt_seed_ceo-weekly-memo`, Mondays 09:00 Dublin: a **proposal**), seeded disabled at the next start of any data root. Arming
+   either is the owner's, behind the spend confirmation (priced on its line: USD 0.50 a firing at worst). A firing skips while its
+   agent is off duty, its line is paused, or the start would not fit the caps.
+8. **The page.** The Owner's office (the building view, G) shows the COO's latest report as written, with its breaches, and the CEO's
+   latest memo, with each proposal's options, recommendation, cost and the three mark buttons; each has a "run now" button behind the
+   spend confirmation and its routine's state. Floor 6's task box offers the same two runs. The penthouse has a memo board on the far
+   side of the boardroom table (the latest memo's proposals and the owner's marks, and the date of the COO's latest report).
+9. **Not in R3:** COMPLIANCE (R5), the roadmaps the CEO will read (R4), the pipeline counts (R5), ANALYST's aggregates and MRR (R6). No
+   live model call was made: the first live report and memo measure the real cost.
