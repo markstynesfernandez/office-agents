@@ -2,6 +2,7 @@
   "$comment": "R1: the Etsy shop, archived (owner, 22/10/2026: Etsy production stops). All its history keeps business_id etsy-shop and gets product etsy-shop, department etsy; it is shown on G as the trophy room. Starts on its lines are refused with \"archived\"; the own-shop connection (E7a, read scopes only, the owner's click) stays viewable. Its files stay where they are: dataDir \".\" is today's layout under the data root, minus businesses/ and products/. The budget is B0's (owner, 21/10/2026).",
   "id": "etsy-shop",
   "name": "TheStationShopFinds",
+  "color": "#e07a2f",
   "status": "archived",
   "repo": null,
   "monthlyBudgetUsd": 200,

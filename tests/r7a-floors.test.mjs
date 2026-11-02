@@ -110,12 +110,20 @@ test('4: the screens show only what the snapshot has, and an honest empty state 
   engine.requests.file({ action: 'dependency.add', productId: 'replydesk', departmentId: 'engineering', summary: 'add ruff', payload: 'ruff', actor: { kind: 'engine' } });
   const d = buildEngineSnapshot(engine);
   d.engineering = { ...d.engineering, current: { jobId: 'eng-1', title: 'Lock approved replies', state: 'running', step: 'tester' }, lastChecks: { jobId: 'eng-1', pass: 2, results: [{ check: 'test', passed: true }, { check: 'lint', passed: false }] } };
-  d.jobs = [...(d.jobs || []), { id: 'eng-1', kind: 'engineering', state: 'running', title: 'Lock approved replies' }];
+  d.jobs = [...(d.jobs || []), { id: 'eng-1', kind: 'engineering', state: 'running', title: 'Lock approved replies', productId: 'replydesk' }];
   assert.deepEqual([c('requests', d).big, c('requests', d).empty, c('requests', d).rows[0].label], ['1', null, 'add ruff']);
-  assert.deepEqual(c('checks', d).rows.map((r) => [r.label, r.value]), [['job', 'Lock approved replies'], ['step', 'tester'], ['last sandbox run', 'pass 2'], ['test', 'passed'], ['lint', 'failed']]);
-  assert.deepEqual([c('kanban', d).empty, c('kanban', d).columns.find((x) => x.name === 'In progress').cards], [null, ['Lock approved replies']]);
+  // R7b: the CI wall: per product of the engineering line; the colour tags (ReplyDesk's colour from its config)
+  assert.deepEqual(c('checks', d).rows, [], 'byProduct from the server: ReplyDesk has no checks yet');
+  d.engineering.byProduct = [{ id: 'replydesk', name: 'ReplyDesk', color: '#2a9d8f', current: d.engineering.current, lastChecks: d.engineering.lastChecks }];
+  assert.deepEqual(c('checks', d).rows.map((r) => [r.label, r.value, r.swatch || null]), [['ReplyDesk', 'failing', '#2a9d8f'], ['running: Lock approved replies', 'tester', null], ['test · pass 2', 'passed', null], ['lint · pass 2', 'failed', null]]);
+  assert.deepEqual([c('checks', d).title, c('checks', d).foot], ['CI wall', 'each product\'s last sandbox checks']);
+  const r7a = { ...d, engineering: { ...d.engineering } }; delete r7a.engineering.byProduct;
+  assert.deepEqual(c('checks', r7a).rows.map((r) => [r.label, r.value]), [['job', 'Lock approved replies'], ['step', 'tester'], ['last sandbox run', 'pass 2'], ['test', 'passed'], ['lint', 'failed']], 'without byProduct: as R7a');
+  const inProg = c('kanban', d).columns.find((x) => x.name === 'In progress');
+  assert.deepEqual([c('kanban', d).empty, inProg.cards, inProg.swatches], [null, ['Lock approved replies'], ['#2a9d8f']]);
+  assert.deepEqual([c('requests', d).rows[0].swatch, c('finance', d).rows.find((r) => r.label === 'emty-inbox').swatch], ['#2a9d8f', '#7b61ff']);
   // the server's checks-screen data: none until an engineering job has run its checks
-  assert.deepEqual([s.engineering.current, s.engineering.lastChecks], [null, null]);
+  assert.deepEqual([s.engineering.current, s.engineering.lastChecks, s.engineering.byProduct.map((x) => [x.id, x.color, x.current, x.lastChecks])], [null, null, [['replydesk', '#2a9d8f', null, null]]]);
 });
 
 // ---- 5. the page in a real (headless) browser

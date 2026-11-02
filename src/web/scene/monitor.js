@@ -1,5 +1,6 @@
 // scene/monitor.js — a canvas texture per monitor, drawn only when it is shown (zoomed in or the desk is selected).
-// Few, large lines so it stays legible at close zoom: status + agent, job, stage, spend today (calendar day).
+// Few, large lines so it stays legible at close zoom: status + agent, job, stage, spend today (calendar day). R7b: the job line starts
+// with the product's colour tag and name (prod: { name, color } from the company model; none on B0's floors).
 import * as THREE from 'three';
 import { PALETTE } from '../config/palette.js';
 import { money, isMoneyHidden } from '../ui/format.js';
@@ -13,8 +14,8 @@ export function makeMonitorTexture() {
   const ctx = canvas.getContext('2d');
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.generateMipmaps = true;
   let drawnKey = null;
-  function draw(agent, theme = 'light') {
-    const key = JSON.stringify([agent.status, agent.statusText, agent.currentJob, agent.spendToday, agent.synthetic, theme, isMoneyHidden()]);
+  function draw(agent, theme = 'light', prod = null) {
+    const key = JSON.stringify([agent.status, agent.statusText, agent.currentJob, agent.spendToday, agent.synthetic, theme, isMoneyHidden(), prod]);
     if (key === drawnKey) return; drawnKey = key;
     const dark = theme === 'dark';
     const bg = dark ? '#0d1220' : '#172033', bar = dark ? '#141c2e' : '#1f2a42', fg = '#eef2f8', dim = '#93a0b8';
@@ -31,7 +32,9 @@ export function makeMonitorTexture() {
     ctx.fillText(fit(ctx, (agent.status === 'waiting' ? 'NEEDS MY OK' : agent.status.toUpperCase()) + (stage ? ' · ' + stage : ''), W - 60), 36, 140);
     // job
     const job = agent.currentJob ? agent.currentJob.id.replace(/^\d{4}-\d{2}-\d{2}--/, '') : 'no current job';
-    ctx.fillStyle = agent.currentJob ? fg : dim; ctx.font = '600 36px ' + MONO; ctx.fillText(fit(ctx, job, W - 60), 36, 194);
+    ctx.fillStyle = agent.currentJob ? fg : dim; ctx.font = '600 36px ' + MONO;
+    if (agent.currentJob && prod) { ctx.fillStyle = prod.color || '#9aa3ad'; ctx.fillRect(36, 176, 26, 36); ctx.fillStyle = fg; ctx.fillText(fit(ctx, prod.name + ' · ' + job, W - 104), 76, 194); }
+    else ctx.fillText(fit(ctx, job, W - 60), 36, 194);
     if (agent.synthetic) { ctx.font = '700 24px ' + SANS; const t = 'SYNTHETIC'; const w = ctx.measureText(t).width + 18; ctx.strokeStyle = '#e8b53e'; ctx.lineWidth = 3; ctx.strokeRect(W - w - 16, 226, w, 34); ctx.fillStyle = '#e8b53e'; ctx.fillText(t, W - w - 7, 244); }
     // footer: spend today (calendar day)
     ctx.fillStyle = bar; ctx.fillRect(0, H - 56, W, 56);

@@ -2,7 +2,8 @@
 // towerplan.js screenContent (only what the snapshot has; the empty state when there is none) in the screen's style: screen (a dark
 // display), board (a whiteboard), sign (the lobby's stone sign), glass-sign (lettering on a glass door), plate (brass), portrait
 // (a framed picture of a retired agent: an abstract figure, no likeness), strip (the trophy cabinet's name plates). Redrawn only
-// when its content, theme or the money-hidden state (the presenter view) changes.
+// when its content, theme or the money-hidden state (the presenter view) changes. R7b: a row or a kanban card may carry its product's
+// colour (swatch: a square before the row's label, a strip on the left edge of a kanban card, from the column's swatches).
 import * as THREE from 'three';
 import { isMoneyHidden } from '../ui/format.js';
 
@@ -47,13 +48,14 @@ function screenStyle({ g, W, H, theme, pal }, c, sc, light = false) {
       const x = u * 0.5 + i * cw;
       g.fillStyle = light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)'; g.fillRect(x + u * 0.1, y - u * 0.2, cw - u * 0.2, H - y - u * 0.3);
       g.fillStyle = dim; g.font = '700 ' + Math.round(u * 0.62) + 'px ' + SANS; g.fillText(fit(g, col.name + ' · ' + col.cards.length, cw - u * 0.5), x + u * 0.3, y + u * 0.3);
-      col.cards.slice(0, 4).forEach((t, k) => { const cy = y + u * 0.95 + k * u * 1.35; g.fillStyle = ['#ffe066', '#a0e7e5', '#f7a8b8', '#b4f8c8', '#fbe7c6'][i % 5]; g.fillRect(x + u * 0.25, cy, cw - u * 0.5, u * 1.15); g.fillStyle = '#2b2a28'; g.font = '600 ' + Math.round(u * 0.55) + 'px ' + SANS; g.fillText(fit(g, t, cw - u * 0.8), x + u * 0.4, cy + u * 0.58); });
+      col.cards.slice(0, 4).forEach((t, k) => { const sw = (col.swatches || [])[k] || null, cy = y + u * 0.95 + k * u * 1.35; g.fillStyle = ['#ffe066', '#a0e7e5', '#f7a8b8', '#b4f8c8', '#fbe7c6'][i % 5]; g.fillRect(x + u * 0.25, cy, cw - u * 0.5, u * 1.15); if (sw) { g.fillStyle = sw; g.fillRect(x + u * 0.25, cy, u * 0.18, u * 1.15); } g.fillStyle = '#2b2a28'; g.font = '600 ' + Math.round(u * 0.55) + 'px ' + SANS; g.fillText(fit(g, t, cw - u * 0.8), x + u * 0.4 + (sw ? u * 0.1 : 0), cy + u * 0.58); });
     });
   } else if (c.rows && c.rows.length) {
     const rh = Math.min(u * 1.25, (H - y - (c.foot ? u * 1.2 : u * 0.4)) / c.rows.length);
     c.rows.forEach((r, i) => {
       const ry = y + i * rh + rh / 2;
-      g.font = '600 ' + Math.round(rh * 0.6) + 'px ' + SANS; g.fillStyle = dim; g.fillText(fit(g, r.label, W * 0.46), u * 0.7, ry);
+      let lx = u * 0.7; if (r.swatch) { g.fillStyle = r.swatch; g.fillRect(lx, ry - rh * 0.22, rh * 0.44, rh * 0.44); lx += rh * 0.66; }
+      g.font = (r.head ? '700 ' : '600 ') + Math.round(rh * 0.6) + 'px ' + SANS; g.fillStyle = r.head ? fg : dim; g.fillText(fit(g, r.label, W * 0.46 + u * 0.7 - lx), lx, ry);
       const v = String(r.value == null ? '' : r.value); g.font = '700 ' + Math.round(rh * 0.62) + 'px ' + SANS; g.fillStyle = (r.tone && TONE[r.tone]) || fg;
       const vt = fit(g, v, W * 0.46); g.fillText(vt, W - u * 0.7 - g.measureText(vt).width, ry);
       if (r.bar != null) { const bx = u * 0.7, bw = W - u * 1.4; g.fillStyle = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)'; g.fillRect(bx, ry + rh * 0.36, bw, rh * 0.12); g.fillStyle = (r.tone && TONE[r.tone]) || acc; g.fillRect(bx, ry + rh * 0.36, bw * Math.max(0, Math.min(1, r.bar)), rh * 0.12); }

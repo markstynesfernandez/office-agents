@@ -2,8 +2,9 @@
 // rejected and blocked lanes. Active jobs show progress; lane jobs show a status pill and the status reason.
 // R2: the Rejected lane is collapsed by default to its count and the 3 most recent jobs, with "show all".
 // E5 (engine mode): cards carry their job's controls: Approve / Reject in the approval queue, Stop on a running job,
-// Restart / Archive on a blocked or stopped one (the same actions and dialogs as the job panel).
-import { esc, money, duration, when, statusPill, synthTag, legacyTag } from './format.js';
+// Restart / Archive on a blocked or stopped one (the same actions and dialogs as the job panel). R7b: a card carries its product's colour
+// tag (the company model; none for a job without a product, as on B0's floors).
+import { esc, money, duration, when, statusPill, synthTag, legacyTag, productOf, productTag } from './format.js';
 import { PALETTE } from '../config/palette.js';
 import { runJobAction } from './sidepanel.js';
 
@@ -14,7 +15,7 @@ export function createBoard({ root, onOpenJob, ctl = null }) {
   let lastSnap = null;
   function card(j, agents, now) {
     const a = agents.find((x) => x.id === j.agentId);
-    const head = (j.progress != null ? '<span class="pct">' + j.progress + '%</span>' : statusPill(j)) + legacyTag(j);
+    const head = (j.progress != null ? '<span class="pct">' + j.progress + '%</span>' : statusPill(j)) + legacyTag(j) + productTag(productOf(lastSnap, j.productId));
     return '<div class="card' + (j.lane ? ' card-' + j.lane : '') + '" data-id="' + esc(j.id) + '"><div class="top">' + head + synthTag(j) + (j.warnings && j.warnings.length ? '<span class="warn-dot" title="' + esc(j.warnings.join('\n')) + '">⚠</span>' : '') + '</div>'
       + '<div class="t" title="' + esc(j.title + (j.niche ? '\n' + j.niche : '')) + '">' + esc(j.title) + '</div><div class="id">' + esc(j.id) + '</div>'
       + (j.statusReason ? '<div class="r" title="' + esc(j.statusReason) + '">' + esc(j.statusReason) + '</div>' : '')

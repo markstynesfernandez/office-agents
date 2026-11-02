@@ -53,6 +53,7 @@ export function validateCompany({ company, agents = {}, lines = {}, engine = {},
     else if (dir === LEGACY_DATA_DIR) { legacyDirs++; if (p.status !== 'archived') bad.push(who + ': dataDir "." is the archived Etsy layout only; an active product keeps products/' + p.id + '/'); }
     else if (dir !== 'products/' + p.id) bad.push(who + ': dataDir must be products/' + p.id + '/ (under the data root)');
     if (p.proposals != null && !Array.isArray(p.proposals)) bad.push(who + ': proposals must be a list of the figures still proposed');
+    if (p.color != null && !/^#[0-9a-fA-F]{6}$/.test(String(p.color))) bad.push(who + ': color must be #rrggbb (R7b: the product\'s colour tag on the page)');
   }
   if (legacyDirs > 1) bad.push('only one product may keep the archived Etsy layout (dataDir ".")');
   if (!pid.has(STATION)) bad.push('config/products/' + STATION + '.json is required (HQ and station-wide records belong to it)');

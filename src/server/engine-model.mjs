@@ -98,7 +98,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     const def = stepDef(j, j.step) || {};
     const myRuns = runs.filter((r) => r.job_id === j.id).sort((a, b) => a.started_at - b.started_at);
     const bizId = j.business_id || B.ofLine(j.line) || (j.legacy ? DEFAULT_BUSINESS : SHARED);
-    const out = { businessId: bizId, floor: floorOf(bizId), id: j.id, title: j.title || j.id, niche: null, slogan: null, briefStatus: null, priceRange: null, stage: def.column || 'brief', lane: null, status: 'backlog', flag: null, statusReason: j.reason, agentId: def.agent || null, hops: [], files: [], images: [], costUsd: r6(ledger.spent.job(j.id)), startedAt: j.started_at || j.created_at, updatedAt: j.updated_at, endedAt: j.ended_at || null, tracker: null, queue: null, warnings: [], synthetic: false, line: j.line, kind: j.kind, state: j.state, step: j.step, loops: j.loops, version: j.version };
+    const out = { businessId: bizId, floor: floorOf(bizId), id: j.id, title: j.title || j.id, niche: null, slogan: null, briefStatus: null, priceRange: null, stage: def.column || 'brief', lane: null, status: 'backlog', flag: null, statusReason: j.reason, agentId: def.agent || null, hops: [], files: [], images: [], costUsd: r6(ledger.spent.job(j.id)), startedAt: j.started_at || j.created_at, updatedAt: j.updated_at, endedAt: j.ended_at || null, tracker: null, queue: null, warnings: [], synthetic: false, line: j.line, kind: j.kind, state: j.state, step: j.step, loops: j.loops, version: j.version, productId: j.product_id || null };
     const brief = j.kind === 'research' ? '' : (() => { try { return fs.readFileSync(path.join(dir, 'brief.md'), 'utf8'); } catch (_) { return ''; } })();
     out.niche = (/^# Niche\s*\n([^\n]+)/m.exec(brief) || [])[1] || null;
     out.briefStatus = (/^status:\s*(\S+)/m.exec(brief) || [])[1] || null;
@@ -208,7 +208,7 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
       id: a.key, name: a.name, model: providers.mode === 'mock' ? 'mock (' + t.model + ')' : t.model, provider: providers.mode === 'mock' ? 'mock' : t.provider, role: roleLabel(a.role, { dept: deptOf[a.key] ? deptOf[a.key].name : null, name: a.name }), modelSource: 'config/agents/' + a.key + '.json + config/engine.json tiers',
       color: a.color || null, gear: a.tools, tier, effort, enabled, version, tierModel: t.model || null, warnings: [], dept: deptOf[a.key] ? deptOf[a.key].key : null, deptName: deptOf[a.key] ? deptOf[a.key].name : null, desk, status, statusText,
       since: live ? live.started_at : last ? (last.ended_at || last.started_at) : null, services: live ? [providers.mode === 'mock' ? 'mock' : t.provider] : [], synthetic: false, syntheticWhat: null,
-      currentJob: liveJob ? { id: liveJob.id, stage: liveJob.stage, stageLabel: liveJob.stageLabel, status: liveJob.status, pass: live.pass } : null,
+      currentJob: liveJob ? { id: liveJob.id, stage: liveJob.stage, stageLabel: liveJob.stageLabel, status: liveJob.status, pass: live.pass, productId: liveJob.productId || null } : null,
       // L3: every running job this agent has a step in (EVIDENCE-CHECKER can work on the research and the genre-scout line at once)
       currentJobs: lives.map((r) => r.job_id).filter(Boolean), onStep: !!stepJobs[a.key], stepJobs: stepJobs[a.key] || [], place: stepJobs[a.key] ? 'desk' : 'lounge',
       lastOutput: last && last.status !== 'running' ? { text: last.status + (last.end_reason ? ' · ' + last.end_reason : '') + ' · ' + last.turns + ' turns · tools: ' + (last.tools.join(', ') || 'none'), at: last.ended_at, jobId: last.job_id } : null,
@@ -313,21 +313,25 @@ export function buildEngineSnapshot(engine, { now = Date.now(), host = {} } = {}
     company: C ? companyView(engine, C, { agents, jobs }) : null,
     // R2c: the Engineering panel's entry (the Floors menu, the building view): its products and how many jobs wait for the owner; the panel
     // itself reads GET /api/eng/view with the owner's session
-    engineering: engine.engineering && cfg.lines.engineering ? { products: (cfg.lines.engineering.products || []).map((id) => (C && C.product(id)) || { id, name: id }).map((p) => ({ id: p.id, name: p.name })), waitingForYou: store.listJobs({ states: ['approval'] }).filter((j) => j.kind === 'engineering').length, ...engCheckScreen(store) } : null,
+    engineering: engine.engineering && cfg.lines.engineering ? { products: (cfg.lines.engineering.products || []).map((id) => (C && C.product(id)) || { id, name: id }).map((p) => ({ id: p.id, name: p.name })), waitingForYou: store.listJobs({ states: ['approval'] }).filter((j) => j.kind === 'engineering').length, ...engCheckScreen(store, (cfg.lines.engineering.products || []).map((id) => (C && C.product(id)) || { id, name: id })) } : null,
     jobLimit: { maxRunning: engine.maxRunningJobs || null, perLine: Object.fromEntries(Object.values(cfg.lines).map((l) => [l.id, l.maxConcurrentJobs || 1])), running: jobs.filter((j) => j.kind !== 'legacy' && j.state === 'running').map((j) => j.id), next: jobs.filter((j) => j.next).map((j) => j.id) }
   };
 }
 
 
 // R7a: the Engineering floor's checks screen: the newest engineering job (its step while it runs) and the last checks the sandbox ran
-// (job.data.checks, written by engineering.mjs after each pass); null when there is none
-function engCheckScreen(store) {
+// (job.data.checks, written by engineering.mjs after each pass); null when there is none. R7b: the CI wall: the same per product of the
+// engineering line (byProduct, in the line's order), from that product's jobs only
+function engCheckScreen(store, products = []) {
   const eng = store.listJobs().filter((j) => j.kind === 'engineering').sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
-  const cur = eng.find((j) => j.state === 'running') || eng[0] || null, ck = eng.find((j) => j.data && Array.isArray(j.data.checks) && j.data.checks.length) || null;
-  return {
-    current: cur ? { jobId: cur.id, title: cur.title || cur.id, state: cur.state, step: cur.step || null } : null,
-    lastChecks: ck ? { jobId: ck.id, pass: ck.data.checksPass || null, at: ck.updated_at || null, results: ck.data.checks.map((c) => ({ check: c.check, passed: !!c.passed })) } : null
+  const pick = (list) => {
+    const cur = list.find((j) => j.state === 'running') || list[0] || null, ck = list.find((j) => j.data && Array.isArray(j.data.checks) && j.data.checks.length) || null;
+    return {
+      current: cur ? { jobId: cur.id, title: cur.title || cur.id, state: cur.state, step: cur.step || null } : null,
+      lastChecks: ck ? { jobId: ck.id, pass: ck.data.checksPass || null, at: ck.updated_at || null, results: ck.data.checks.map((c) => ({ check: c.check, passed: !!c.passed })) } : null
+    };
   };
+  return { ...pick(eng), byProduct: products.map((p) => ({ id: p.id, name: p.name, color: p.color || null, ...pick(eng.filter((j) => j.product_id === p.id)) })) };
 }
 
 // R1: the company view: floors top to bottom, each agent with its status; products; the Owner's office (requests, decisions, policy)
@@ -340,7 +344,7 @@ function companyView(engine, C, { agents, jobs }) {
   const pol = engine.policy, levels = pol ? pol.levels : {}, count = (lv) => Object.values(levels).filter((x) => x === lv).length;
   return {
     floors,
-    products: C.list.map((p) => ({ id: p.id, name: p.name, status: p.status, repo: p.repo || null, budgetUsd: p.monthlyBudgetUsd, dailyCapUsd: p.dailyCapUsd || null, jobCapUsdByDepartment: p.jobCapUsdByDepartment || {}, proposals: p.proposals || [], decided: p.decided || {}, syntheticDataOnly: !!p.syntheticDataOnly })),
+    products: C.list.map((p) => ({ id: p.id, name: p.name, color: p.color || null, status: p.status, repo: p.repo || null, budgetUsd: p.monthlyBudgetUsd, dailyCapUsd: p.dailyCapUsd || null, jobCapUsdByDepartment: p.jobCapUsdByDepartment || {}, proposals: p.proposals || [], decided: p.decided || {}, syntheticDataOnly: !!p.syntheticDataOnly })),
     ownersOffice: {
       requests: req.map(reqView), pending: req.filter((r) => r.status === 'pending').length,
       decisions: engine.requests ? engine.requests.decisions(50) : [],

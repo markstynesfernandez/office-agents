@@ -18,6 +18,9 @@
 // R7a: the seven-floor stack. A floor view with a plan (ui/floors.js towerSnapshot) is drawn from the shared kit (kit.js) instead of
 // B0's floor plan: one floor at a time, its screens from boards.js; the people, monitors, status lights, camera and quality tiers are
 // the same. B0's floors (and the baked areas) remain for a snapshot without the company model (the legacy and fixtures views).
+// R7b: the lobby lounge: on G every hired agent not on a step sits on its seat (towerplan.js lobbyLounge); one that gets a step walks
+// back to the lift and is not drawn (it is at its desk on its own floor), and walks back in when it is free. A monitor shows the
+// product of the agent's job in its colour.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -513,9 +516,16 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   const PARTS = [...PEOPLE_PARTS, 'blobs'];
   const dirOf = (a, d = 0) => [-Math.sin(a) * Math.sin(d), -Math.cos(a), -Math.sin(a) * Math.cos(d)];
   const add = (p, d, l) => [p[0] + d[0] * l, p[1] + d[1] * l, p[2] + d[2] * l];
+  function hideWorker(q, w) {
+    const k = w.i; for (const n of ['pelvis', 'torso', 'head', 'blobs']) if (q[n]) setInst(q[n], k, 0, -10, 0, 0, 0, 0);
+    if (q['hair' + w.style]) setInst(q['hair' + w.style], w.hairI, 0, -10, 0, 0, 0, 0);
+    for (const j of [0, 1]) for (const n of ['upperArm', 'forearm', 'hand', 'thigh', 'shin', 'shoe']) setInst(q[n], k * 2 + j, 0, -10, 0, 0, 0, 0);
+    if (w.pick) { w.pick.scale.setScalar(0.001); w.pick.updateMatrixWorld(true); }
+  }
   function poseWorkers(t) {
     const q = inst; if (!q.torso) return;
     for (const w of workers) {
+      if (w.away && !w.walk && w.place === 'desk') { hideWorker(q, w); continue; }   // R7b: a lobby visitor at work on its own floor
       let x, z, yaw, mode;
       if (w.walk) { const p = pointAt(w.path, w.walk.s); x = p.x; z = p.z; const want = w.walk.dir > 0 ? p.yaw : p.yaw + Math.PI; w.yaw = angLerp(w.yaw, want, 0.35); yaw = w.yaw; mode = 'walk'; }
       else if (w.place === 'lounge') { x = w.seat.x; z = w.seat.z; yaw = w.yaw = w.seat.yaw; mode = 'sofa'; }
@@ -591,13 +601,18 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     }
   }
 
-  // monitors: status-colour glow at overview zoom; canvas text when zoomed in or selected
+  // monitors: status-colour glow at overview zoom; canvas text when zoomed in or selected. R7b: the product of the agent's job (its name
+  // and colour), from the company model; none on B0's floors
+  function productOfAgent(a) {
+    const id = a.currentJob && a.currentJob.productId, p = id && data && data.company ? (data.company.products || []).find((x) => x.id === id) : null;
+    return p ? { name: p.name, color: p.color || null } : null;
+  }
   function updateScreens() {
     const textual = view.zoom >= TEXT_ZOOM, p = P(), sp = inst.screenPool;
     for (const s of screens) {
       const a = data && data.agents.find((x) => x.id === s.agentId); if (!a) continue;
       const want = textual || s.agentId === selectedId;
-      if (want) s.tex.draw(a, theme);
+      if (want) s.tex.draw(a, theme, productOfAgent(a));
       const c = new THREE.Color(PALETTE.status[a.status] || PALETTE.status.idle);
       s.glowMat.color.copy(theme === 'dark' ? c : c.clone().lerp(new THREE.Color('#ffffff'), 0.12));
       if (want !== s.textured) { s.mesh.material = want ? s.texMat : s.glowMat; s.textured = want; }
@@ -660,7 +675,8 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
     // people and their desks: the hired agents (the snapshot's agents) only; an empty desk has its tag (labels.js) and no person
     const hired = T.seats.filter((s) => s.state === 'hired' && snap.agents.some((a) => a.id === s.agentId)), n = hired.length;
     const light = makeInst('light', G.light, M.light, n, { shadow: false }), lightBase = makeInst('lightBase', G.lightBase, M.lightBase, n, { shadow: false });
-    const P0 = makePeople(hired.map((s) => s.agentId)), shirts = shirtColours(hired.map((s) => ({ id: s.agentId, color: (snap.agents.find((a) => a.id === s.agentId) || {}).color })));
+    const vis = T.lounge ? T.lounge.visitors : [], ids = [...hired.map((s) => s.agentId), ...vis.map((v) => v.agentId)];
+    const P0 = makePeople(ids), shirts = shirtColours(ids.map((id) => ({ id, color: (snap.agents.find((a) => a.id === id) || vis.find((v) => v.agentId === id) || {}).color })));
     hired.forEach((s, i) => {
       const a = snap.agents.find((x) => x.id === s.agentId), f = s.frame, on = PT + f.topY + 0.03;
       const look = colourPerson(P0, i, s.agentId, shirts[s.agentId]);
@@ -673,6 +689,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
       anchors.agents[s.agentId] = tagAnchor(s);
       anchors.desks[s.agentId] = { x: s.x, z: s.z, min: new THREE.Vector3(s.x - 1.15, PT, s.z - 0.65), max: new THREE.Vector3(s.x + 1.15, top - 0.1, s.z + 1.4) };
       const pick = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.3, 2.7)); pick.position.set(s.x, PT + 1.1, s.z + 0.35); pickRoot.add(pick); pickables.push({ object: pick, kind: 'agent', id: s.agentId });
+    });
+    // R7b: the lobby lounge's visitors: no desk; "desk" is the lift (not drawn), "lounge" their seat; the walk runs from the lift door
+    vis.forEach((v, k) => {
+      const i = n + k, a = v, st = T.lounge.seats[v.seat], look = colourPerson(P0, i, v.agentId, shirts[v.agentId]);
+      workers.push({ agentId: v.agentId, i, x: st.path[0].x, z: st.path[0].z, chair: st.path[0], desk: null, away: true, seat: { x: st.x, z: st.z, yaw: st.yaw, cushion: { top: PT + st.top } }, path: st.path, len: pathLength(st.path), phase: (i * 1.7) % (Math.PI * 2), status: a.status, onStep: a.onStep, place: 'desk', walk: null, yaw: 0, pick: null, style: look.style, hairI: look.hairI });
+      const wp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.9)); pickRoot.add(wp); pickables.push({ object: wp, kind: 'agent', id: v.agentId }); workers[workers.length - 1].pick = wp;
     });
     for (const s of T.seats.filter((x) => x.state === 'not-hired')) {
       anchors.vacant[s.agentId] = tagAnchor(s);
@@ -711,12 +733,12 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   function setTowerData(snap) {
     const plan = snap.plan, first = !T;
     T = plan;
-    const key = JSON.stringify([plan.floor, plan.design, plan.seats.map((s) => [s.agentId, s.state, s.x, s.z, snap.agents.some((a) => a.id === s.agentId)]), plan.figurines.map((f) => [f.agentId, f.color]), plan.screens.map((s) => s.id), plan.services ? snap.services.map((s) => s.id) : []]);
+    const key = JSON.stringify([plan.floor, plan.design, plan.seats.map((s) => [s.agentId, s.state, s.x, s.z, snap.agents.some((a) => a.id === s.agentId)]), plan.figurines.map((f) => [f.agentId, f.color]), plan.screens.map((s) => s.id), plan.services ? snap.services.map((s) => s.id) : [], plan.lounge ? plan.lounge.visitors.map((v) => [v.agentId, v.seat]) : []]);
     if (key !== towerKey || first) {
       towerKey = key; structureKey = null; buildTower(snap);
       if (first) { Object.assign(bounds, TOWER_BOUNDS); HOME.copy(TOWER_HOME); homeZoom = TOWER_ZOOM; view.wantTarget.copy(HOME); view.target.copy(HOME); view.wantZoom = view.zoom = homeZoom; cameraDirty = true; }
     } else for (const b of towerBoards) { const sc = plan.screens.find((x) => x.id === b.sc.id); if (sc) b.sc = sc; }
-    for (const w of workers) { const a = snap.agents.find((x) => x.id === w.agentId); if (a) { w.status = a.status; w.onStep = a.onStep; inst.light.setColorAt(w.i, new THREE.Color(PALETTE.status[a.status] || PALETTE.status.idle)); } }
+    for (const w of workers) { const a = w.away ? plan.lounge.visitors.find((x) => x.agentId === w.agentId) : snap.agents.find((x) => x.id === w.agentId); if (a) { w.status = a.status; w.onStep = a.onStep; if (!w.away) inst.light.setColorAt(w.i, new THREE.Color(PALETTE.status[a.status] || PALETTE.status.idle)); } }
     if (inst.light && inst.light.instanceColor) inst.light.instanceColor.needsUpdate = true;
     syncPlaces(false); poseWorkers(performance.now() / 1000);
     for (const t of terminals) { const s = snap.services.find((x) => x.id === t.id); if (s) t.status = s.status; }
@@ -988,7 +1010,7 @@ export function createOffice({ canvas, theme = 'light', onPick = () => {}, optio
   function people() { return workers.map((w) => ({ agentId: w.agentId, status: w.status, place: w.walk ? 'walking' : w.place, seat: w.seat ? L.lounge.seats.indexOf(w.seat) : null })); }
 
   // R7a: what the floor shows (read-only; the tests and the screenshot script)
-  function towerState() { return T ? { floor: T.floor, design: T.design, seats: T.seats.map((s) => ({ agentId: s.agentId, state: s.state, person: workers.some((w) => w.agentId === s.agentId) })), cabinet: T.figurines.map((f) => f.agentId), retired: T.retired.map((r) => r.agentId), screens: towerBoards.map((b) => ({ id: b.sc.id, kind: b.sc.kind, empty: b.sc.content.empty || null, title: b.sc.content.title })), meshes: towerStatics.length } : null; }
+  function towerState() { return T ? { floor: T.floor, design: T.design, seats: T.seats.map((s) => ({ agentId: s.agentId, state: s.state, person: workers.some((w) => w.agentId === s.agentId) })), cabinet: T.figurines.map((f) => f.agentId), retired: T.retired.map((r) => r.agentId), screens: towerBoards.map((b) => ({ id: b.sc.id, kind: b.sc.kind, empty: b.sc.content.empty || null, title: b.sc.content.title })), meshes: towerStatics.length, lounge: workers.filter((w) => w.away).map((w) => ({ agentId: w.agentId, place: w.walk ? 'walking' : w.place === 'lounge' ? 'seat' : 'away', x: w.seat.x, z: w.seat.z })) } : null; }
 
   resize(); updateCamera(0); paintBackdrop();
   return { towerState, renderer, scene, camera, setData, setTheme, setQuality, get quality() { return quality; }, resize, tick, invalidate, pan, zoomBy, resetView, focus, project, obstacles, setSelected, pulseHub, anchors, getStats, bench, setAnimate, setPaused, isPaused: () => paused, people, bakedState, get view() { return view; }, get selected() { return selectedId; }, get size() { return size; } };

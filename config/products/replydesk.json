@@ -2,6 +2,7 @@
   "$comment": "R1 (RESTRUCTURE.md §1.3, §8 R1): a product owns its budget, repo, data, roadmap and policy overrides; departments work on many products. Every job, run, routine, request, ledger row and event carries product_id and department_id. Figures marked in `proposals` are proposals awaiting the owner (RESTRUCTURE.md §9.2 item 3); the rest are owner decisions with their source in `decided`. A product's `policy` may only make an action stricter than config/autonomy.json (auto < owner < forbidden): a looser override stops the engine.",
   "id": "replydesk",
   "name": "ReplyDesk",
+  "color": "#2a9d8f",
   "status": "active",
   "phase": "R2",
   "repo": "markstynesfernandez/Review-Service",

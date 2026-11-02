@@ -127,6 +127,9 @@ svg.leaders circle { fill: var(--leader); }
 .pill-backlog { color: var(--muted); }
 body[data-theme="dark"] .pill-done { color: #7fdc9c; } body[data-theme="dark"] .pill-waiting { color: #f0cd6e; }
 .tag { display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); margin-left: 4px; vertical-align: middle; flex: none; }
+/* R7b: a product's colour tag (cards, requests) */
+.ptag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 0 6px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); margin-left: 4px; vertical-align: middle; flex: none; white-space: nowrap; }
+.ptag i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .tag-err { color: var(--err); border-color: var(--err); } .tag-warn { color: #8f6a10; border-color: var(--warn); } .tag-ok { color: #2f7d4a; border-color: var(--ok); }
 
 /* side panel */

@@ -2,6 +2,7 @@
   "$comment": "R1: the template for a new product. NEVER loaded (a file whose name starts with _ is skipped). Copy it to config/products/<id>.json and fill in every field. Every figure is the owner's: list a figure still under discussion in `proposals`.",
   "id": "the product id: lowercase letters, digits and hyphens, the same as the file name; stored as product_id on every job, run, routine, request, ledger row and event",
   "name": "the name shown in the Owner's office and Finance",
+  "color": "optional (R7b): the product's colour tag on desk monitors, task cards, request cards and the floor screens, #rrggbb; without one the page uses grey",
   "status": "active or archived (an archived product's lines refuse every start)",
   "repo": "the product repository (owner/name), or null",
   "monthlyBudgetUsd": "a positive number: the most this product may spend in a Dublin calendar month; the guard refuses a call past it",

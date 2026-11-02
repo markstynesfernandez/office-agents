@@ -3428,3 +3428,38 @@ advice, R6 for paying customers). Its scope is §8 R4.
 10. **Not in R4:** Customer Success signals into the backlog (R6), a Station roadmap (no Product & Design cap for the Station), routines
     for PRODUCT-MANAGER or DESIGNER, a locked rule for DESIGNER (site.change is held by the policy and the absence of any tool; a locked
     rule would be the owner's call). No live model call was made: the first live runs measure the real cost.
+
+## R7b (02/11/2026): the office finish
+
+Dev only, mock provider, $0, no model call; the live worktree and every `.env` untouched; no new dependency. Not deployed.
+The owner chose R7b on 02/11/2026 after the R4 deploy ("continue development": every other buildable phase is on live; R5 waits for legal
+advice and its setup, R6 for paying customers). Its scope is the RESTRUCTURE.md §7 items R7a left out (DECISIONS.md "R7a" point 9), less
+the CEO's memo board (R3) and the roadmap per product (R4), which are built.
+
+1. **Product colours.** Each product's config has an optional `color` (`#rrggbb`, checked at start: anything else stops the engine).
+   Set: ReplyDesk `#2a9d8f` (teal), emty-inbox `#7b61ff` (violet), The Station `#5b6b82` (slate), TheStationShopFinds `#e07a2f`
+   (orange, archived). A display choice Claude made, not a brand decision; the owner may change any of them in the file. Without one the
+   page uses grey. `_template.json` documents the field. The company model carries the colour; every job carries `productId`, and an
+   agent's current job carries its product.
+2. **Where the tag shows.** A board card and a request card in the Owner's office lead with the product's tag (a colour square and the
+   name; only a `#rrggbb` colour reaches the style). A desk monitor's job line starts with the product's colour and name while the agent
+   has a current job. On the floors' screens a row about one product carries its colour: the requests screen, Finance, the roadmap board,
+   the CI wall; a kanban card has a colour strip on its left edge.
+3. **The CI wall** (floor 4, the checks screen, renamed): per product of the engineering line (`config/lines/engineering.json`
+   products, today ReplyDesk only), its last sandbox checks from that product's jobs only ("passing" only when every check passed), the
+   step of its running job, each check with its pass. The server adds `engineering.byProduct`; `current` and `lastChecks` stay for an
+   older page. A snapshot without `byProduct` shows the R7a screen.
+4. **The lobby lounge.** In the floor view of G, every hired agent with a person drawn sits in the lobby lounge (top floor first, in desk
+   order; one seat per cushion: the two couches, the two armchairs, then the two benches by reception, 12 seats; more agents than seats
+   are counted, not seated). An agent with a step in a running job walks from its seat to the lift and is not drawn (it is at its desk on
+   its own floor); free again, it walks back in. On its own floor an agent keeps its desk whatever it is doing, as in R7a: only one floor
+   is drawn at a time, so nobody is drawn twice. Each walk leaves the lift door and keeps to the aisles, tested clear of the lobby's
+   furniture. The visitors carry their live status in the floor plan (the floor view of G holds no other floor's agents). No tags on
+   the lounge's people (a click on one opens its agent, as on a desk).
+5. **Not in R7b:** the metrics board (Security & Data) keeps its empty state: its aggregates come from ANALYST (R6). The pipeline,
+   leaderboard, support and onboarding boards wait for R5 and R6. No product colour on the Engineering panel's issue list or the
+   calendar.
+6. **Tests:** `tests/r7b-office.test.mjs` (5, one of them in headless Chromium: every hired agent seated in the lobby in both themes, the
+   walk to the lift and back, no page error); `tests/r7a-floors.test.mjs` test 4 now checks the CI wall (and the R7a screen without
+   `byProduct`) and the colour on the requests, Finance and kanban screens. npm test 622/622. Frame time on G unchanged (6.06 ms,
+   headless, Intel UHD, default tier).

@@ -8,7 +8,7 @@
 // R7a: with the seven-floor stack, the floors are a lift: a section of the building, the penthouse at the top and the lobby at the
 // bottom, each floor with who works there (hired, not hired yet; the lobby's archived agents) and its jobs; the lift car marks the floor
 // the page shows; a click goes to that floor. Spend per product is in Finance below (the floors have no budget of their own).
-import { esc, money } from './format.js';
+import { esc, money, productOf, productTag } from './format.js';
 import { buildingTotals, floorWord } from './floors.js';
 import { FLOOR_PALETTES } from '../scene/towerplan.js';
 
@@ -68,13 +68,14 @@ export function createBuildingView({ root, onFloor = () => {}, onDecide = () => 
   function company(snap) {
     const c = snap.company; if (!c) return '';
     const oo = c.ownersOffice || {}; reqs = oo.requests || [];
-    const prodName = Object.fromEntries((c.products || []).map((p) => [p.id, p.name]));
+    // R7b: a request card leads with its product's colour tag
+    const prod = (id) => productTag(productOf(snap, id));
     const pending = reqs.filter((r) => r.status === 'pending'), recent = reqs.filter((r) => r.status !== 'pending').slice(0, 8);
     const merge = (r) => r.action === 'git.merge' && !!r.jobId, eng = snap.engineering;
     const verdict = (v, who) => (v ? '<span class="tag' + (v.verdict === 'pass' || v.verdict === 'approve' ? '' : ' tag-warn') + '">' + esc(who) + ': ' + esc(v.verdict) + '</span>' : '');
     const reqRow = (r, live) => '<div class="bldg-floor" style="cursor:default"><span class="fl-num" style="font-size:12px">' + esc(r.status) + '</span><span>'
       + '<span class="fl-name">' + esc(r.summary) + '</span> <span class="tag">' + esc(r.action) + '</span> ' + verdict(r.compliance, 'COMPLIANCE') + ' ' + verdict(r.security, 'SECURITY')
-      + '<div class="muted" style="font-size:11px">' + esc(prodName[r.productId] || r.productId) + ' · ' + esc(r.departmentId) + (r.jobId ? ' · job <span class="mono">' + esc(r.jobId) + '</span>' : '') + ' · filed by ' + esc(r.filedBy) + ' ' + esc(when(r.filedAt)) + ' · payload <span class="mono">' + esc(String(r.payloadSha256 || '').slice(0, 12)) + '</span></div>'
+      + '<div class="muted" style="font-size:11px">' + prod(r.productId) + ' · ' + esc(r.departmentId) + (r.jobId ? ' · job <span class="mono">' + esc(r.jobId) + '</span>' : '') + ' · filed by ' + esc(r.filedBy) + ' ' + esc(when(r.filedAt)) + ' · payload <span class="mono">' + esc(String(r.payloadSha256 || '').slice(0, 12)) + '</span></div>'
       + (r.words ? '<div class="muted" style="font-size:11px">the owner: “' + esc(r.words) + '” ' + esc(when(r.decidedAt)) + '</div>' : '')
       + (live ? '<div class="fl-stats"><button class="btn btn-mini btn-ok" data-req="' + esc(r.id) + '" data-decision="approve">Approve…</button>' + (merge(r) ? '<button class="btn btn-mini" data-req="' + esc(r.id) + '" data-decision="rework">Rework with notes…</button>' : '') + '<button class="btn btn-mini btn-danger" data-req="' + esc(r.id) + '" data-decision="reject">Reject…</button>' + (merge(r) ? '<button class="btn btn-mini" data-eng-open="' + esc(r.jobId) + '">Open in Engineering</button>' : '') + '</div>' : '')
       + '</span></div>';

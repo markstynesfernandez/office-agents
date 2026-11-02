@@ -37,4 +37,7 @@ export const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export const statusPill = (j) => '<span class="pill pill-' + esc(j.lane || j.status) + '">' + esc(j.flag === 'stopped' ? 'stopped' : j.lane || jobStatusLabel[j.status] || j.status) + '</span>';
 // imported from the legacy station (E4): read-only history, never engine work
 export const legacyTag = (o) => (o && o.kind === 'legacy' ? '<span class="leg" title="imported from the legacy station (read only)">legacy</span>' : '');
+// R7b: a product's colour tag (config/products/<id>.json color; grey without one) and the product of an id in the company model
+export const productOf = (snap, id) => (id && snap && snap.company ? (snap.company.products || []).find((p) => p.id === id) || { id, name: id, color: null } : null);
+export const productTag = (p) => (p ? '<span class="ptag" title="product: ' + esc(p.name) + '"><i style="background:' + esc(/^#[0-9a-fA-F]{6}$/.test(p.color || '') ? p.color : '#9aa3ad') + '"></i>' + esc(p.name) + '</span>' : '');
 export const synthTag = (o) => (o && o.synthetic ? '<span class="syn" title="' + esc('synthetic test state: ' + (o.syntheticWhat || '')) + '">synthetic</span>' : '');

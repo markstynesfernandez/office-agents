@@ -7,6 +7,9 @@
 //                 or the retired wall for one retired into another agent, OVERSEER)
 //   planFloor     one floor's plan for the renderer (office.js, kit.js): palette, walls, props, desks and who sits there, screens
 //   screenContent what a screen says: only data the snapshot has; an honest empty state where there is none ("no leads yet")
+//   lobbyLounge   R7b: the lobby lounge's seats, each with its walk from the lift door, and who sits there: every hired agent not on a
+//                 step of a running job (in the floor view of G only; on its own floor the agent keeps its desk)
+// R7b: a row, a request or a kanban card about one product carries the product's colour (config/products/<id>.json color; grey without)
 // Coordinates: the isometric camera looks from +x/+z, so the two back walls stand on the slab's -x edge (the 'x' wall, facing +x)
 // and -z edge (the 'z' wall, facing +z); the front edges are open (a cutaway). yaw 0 faces -z, PI/2 faces -x, -PI/2 faces +x.
 import { money } from '../ui/format.js';
@@ -224,6 +227,34 @@ const LAYOUTS = {
   generic: () => ({ walls: { x: 'solid', z: 'solid' }, slots: [], props: [LIFT], screens: [] })
 };
 
+// R7b: the lobby lounge. The seats are the lobby's couches, armchairs and benches (their cushions as kit.js draws them: hips 0.04 behind
+// the cushion centre, facing the way the furniture faces); each walk leaves the lift door, keeps to the aisles (z 2.6 across the floor,
+// x 4.1 between the armchairs and the coffee table, x 8.6 before the far couch, z -0.1 in front of the benches) and ends on the seat.
+export const LIFT_DOOR = { x: SLAB.x0 + T_WALL_T + 0.9, z: LIFT.z };
+const onFurn = (o, lx, lz) => ({ x: o.x + lx * Math.cos(o.yaw || 0) + lz * Math.sin(o.yaw || 0), z: o.z - lx * Math.sin(o.yaw || 0) + lz * Math.cos(o.yaw || 0) });
+const cushionsOf = (p) => { if (p.kind === 'armchair') return [0]; const len = p.len || 2.4; if (p.kind === 'bench') return [-len / 4, len / 4]; const n = len > 2.4 ? 3 : 2, cw = (len - 0.36) / n; return Array.from({ length: n }, (_, i) => -len / 2 + 0.18 + cw * (i + 0.5)); };
+const SEAT_TOP = { couch: 0.55, armchair: 0.545, bench: 0.49 };
+function loungeVia(p, a) {
+  if (p.kind === 'bench') return [{ x: -5.6, z: -0.1 }];
+  if (p.kind === 'armchair') return [{ x: -8.0, z: 2.6 }, { x: a.x, z: 2.6 }];
+  if (p.yaw) return [{ x: -8.0, z: 2.6 }, { x: 8.6, z: 2.6 }, { x: 8.6, z: a.z }];
+  return [{ x: -8.0, z: 2.6 }, { x: 4.1, z: 2.6 }, { x: 4.1, z: a.z }];
+}
+export function lobbyLounge(snap, props) {
+  const seats = [];
+  const ORDER = ['couch', 'armchair', 'bench'];   // the lounge fills first, the benches by reception last
+  for (const p of props.filter((q) => ORDER.includes(q.kind)).sort((x, y) => ORDER.indexOf(x.kind) - ORDER.indexOf(y.kind))) for (const lx of cushionsOf(p)) {
+    const st = onFurn(p, lx, 0.04), a = onFurn(p, lx, -1.0);
+    seats.push({ x: st.x, z: st.z, yaw: p.yaw || 0, top: SEAT_TOP[p.kind], kind: p.kind, path: [LIFT_DOOR, ...loungeVia(p, a), a, st] });
+  }
+  // who: the hired agents with a person drawn, top floor first, in desk order; one seat each while seats last. Each carries its live
+  // status, step and colour (the floor view of G holds no other floor's agents)
+  const hired = towerFloors(snap).filter((f) => f.floor !== 'G').flatMap((f) => floorPeople(snap, f.floor).desks.filter((d) => d.state === 'hired' && d.drawn));
+  const live = Object.fromEntries(((snap && snap.agents) || []).map((a) => [a.id, a]));
+  const visitors = hired.slice(0, seats.length).map((d, i) => { const a = live[d.agentId] || {}; return { agentId: d.agentId, name: d.name, seat: i, here: !a.onStep, status: a.status || 'idle', onStep: !!a.onStep, color: a.color || null }; });
+  return { door: LIFT_DOOR, seats, visitors, unseated: Math.max(0, hired.length - seats.length) };
+}
+
 // seats beyond a design's slots (a department grew): rows of desks across the front of the floor
 function extraSlots(n, used) {
   const out = [];
@@ -266,35 +297,48 @@ export function planFloor(snap, floor) {
     floor: fl.floor, level: fl.level, id: fl.id, design: fl.design, palette: fl.palette, name: fl.name, departments: fl.departments, archived: fl.archived,
     slab: SLAB, walls: L.walls, skyline: !!L.skyline, terrace: !!L.terrace, dark: !!L.dark,
     props: L.props, racks: L.racks || [], owner: L.owner || null, seats, screens, figurines, cabinet: L.trophy ? people.cabinet : [], retired: L.trophy ? people.retired : [],
-    services: !!L.services, hub: L.hub || null, eng: L.eng || null, trophy: !!L.trophy
+    services: !!L.services, hub: L.hub || null, eng: L.eng || null, trophy: !!L.trophy, lounge: L.lobby ? lobbyLounge(snap, L.props) : null
   };
 }
 
 // ---- what each screen says (the content model; boards.js draws it). Rows: { label, value, tone: ok|warn|bad|muted, bar: 0..1 }
 const ENG_COLUMNS = [['Queued', (s) => !['running', 'approval', 'blocked', 'stopped', 'done', 'approved'].includes(s)], ['In progress', (s) => s === 'running'], ['Blocked', (s) => s === 'blocked' || s === 'stopped'], ['Waiting for you', (s) => s === 'approval'], ['Done', (s) => s === 'done' || s === 'approved']];
+const GREY = '#9aa3ad';
+const colourOf = (snap, id) => { const p = (((snap && snap.company) || {}).products || []).find((x) => x.id === id); return p ? p.color || GREY : null; };
 const agentLabel = (snap, id) => { for (const d of ((snap && snap.company) || {}).floors || []) for (const a of d.agents || []) if (a.id === id) return a; return null; };
 export function screenContent(kind, snap, { floor = null, people = null } = {}) {
   const s = snap || {}, c = s.company || {}, oo = c.ownersOffice || {};
   switch (kind) {
     case 'requests': {
       const pending = (oo.requests || []).filter((r) => r.status === 'pending');
-      return { title: 'Requests waiting', big: String(pending.length), bigLabel: pending.length === 1 ? 'request waits for your decision' : 'requests wait for your decision', rows: pending.slice(0, 3).map((r) => ({ label: r.summary, value: r.action })), empty: pending.length ? null : 'nothing waiting' };
+      return { title: 'Requests waiting', big: String(pending.length), bigLabel: pending.length === 1 ? 'request waits for your decision' : 'requests wait for your decision', rows: pending.slice(0, 3).map((r) => ({ label: r.summary, value: r.action, swatch: colourOf(s, r.productId) })), empty: pending.length ? null : 'nothing waiting' };
     }
     case 'finance': {
       const prods = (s.spend && s.spend.byProduct) || [];
-      return { title: 'Spend this month', rows: prods.map((p) => { const pct = p.budgetUsd ? p.monthUsd / p.budgetUsd : null; return { label: p.name + (p.status === 'archived' ? ' (archived)' : ''), value: money(p.monthUsd) + (p.budgetUsd != null ? ' / ' + money(p.budgetUsd) : ''), bar: pct == null ? null : Math.min(1, pct), tone: pct == null ? 'muted' : pct >= 1 ? 'bad' : pct >= 0.8 ? 'warn' : 'ok' }; }), empty: prods.length ? null : 'no products yet', foot: 'from the ledger · against each product\'s budget' };
+      return { title: 'Spend this month', rows: prods.map((p) => { const pct = p.budgetUsd ? p.monthUsd / p.budgetUsd : null; return { swatch: colourOf(s, p.id), label: p.name + (p.status === 'archived' ? ' (archived)' : ''), value: money(p.monthUsd) + (p.budgetUsd != null ? ' / ' + money(p.budgetUsd) : ''), bar: pct == null ? null : Math.min(1, pct), tone: pct == null ? 'muted' : pct >= 1 ? 'bad' : pct >= 0.8 ? 'warn' : 'ok' }; }), empty: prods.length ? null : 'no products yet', foot: 'from the ledger · against each product\'s budget' };
     }
+    // R7b: the CI wall: per product of the engineering line, its last sandbox checks (passing only when every check passed) and the step
+    // of its running job; a snapshot without byProduct shows the newest job and checks as R7a did
     case 'checks': {
-      const e = s.engineering; if (!e) return { title: 'Checks', rows: [], empty: 'no engineering line' };
-      const cur = e.current || null, last = e.lastChecks || null;
-      const rows = [];
-      if (cur) rows.push({ label: 'job', value: cur.title }, { label: 'step', value: cur.state === 'running' ? (cur.step || '—') : cur.state, tone: cur.state === 'running' ? 'ok' : 'muted' });
-      if (last) { rows.push({ label: 'last sandbox run', value: 'pass ' + (last.pass || '—'), tone: 'muted' }); for (const r of last.results) rows.push({ label: r.check, value: r.passed ? 'passed' : 'failed', tone: r.passed ? 'ok' : 'bad' }); }
-      return { title: 'Checks', rows, empty: rows.length ? null : 'no checks run yet', foot: cur ? null : 'no job yet' };
+      const e = s.engineering; if (!e) return { title: 'CI wall', rows: [], empty: 'no engineering line' };
+      if (!Array.isArray(e.byProduct)) {
+        const cur = e.current || null, last = e.lastChecks || null, rows = [];
+        if (cur) rows.push({ label: 'job', value: cur.title }, { label: 'step', value: cur.state === 'running' ? (cur.step || '—') : cur.state, tone: cur.state === 'running' ? 'ok' : 'muted' });
+        if (last) { rows.push({ label: 'last sandbox run', value: 'pass ' + (last.pass || '—'), tone: 'muted' }); for (const r of last.results) rows.push({ label: r.check, value: r.passed ? 'passed' : 'failed', tone: r.passed ? 'ok' : 'bad' }); }
+        return { title: 'CI wall', rows, empty: rows.length ? null : 'no checks run yet', foot: cur ? null : 'no job yet' };
+      }
+      const rows = [], any = e.byProduct.some((p) => p.lastChecks || (p.current && p.current.state === 'running'));
+      for (const p of e.byProduct) {
+        const last = p.lastChecks, cur = p.current, ok = last ? last.results.every((r) => r.passed) : null;
+        rows.push({ head: true, swatch: p.color || GREY, label: p.name, value: last ? (ok ? 'passing' : 'failing') : 'no checks yet', tone: last ? (ok ? 'ok' : 'bad') : 'muted' });
+        if (cur && cur.state === 'running') rows.push({ label: 'running: ' + cur.title, value: cur.step || '—', tone: 'ok' });
+        if (last) for (const r of last.results) rows.push({ label: r.check + ' · pass ' + (last.pass || '—'), value: r.passed ? 'passed' : 'failed', tone: r.passed ? 'ok' : 'bad' });
+      }
+      return { title: 'CI wall', rows: any ? rows.slice(0, 7) : [], empty: any ? null : 'no checks run yet', foot: e.byProduct.length ? 'each product\'s last sandbox checks' : 'no product on the engineering line' };
     }
     case 'kanban': {
       const jobs = (s.jobs || []).filter((j) => j.kind === 'engineering' && j.state !== 'archived');
-      return { title: 'Engineering board', columns: ENG_COLUMNS.map(([name, f]) => ({ name, cards: jobs.filter((j) => f(j.state)).map((j) => j.title || j.id) })), empty: jobs.length ? null : 'no jobs yet' };
+      return { title: 'Engineering board', columns: ENG_COLUMNS.map(([name, f]) => { const js = jobs.filter((j) => f(j.state)); return { name, cards: js.map((j) => j.title || j.id), swatches: js.map((j) => colourOf(s, j.productId)) }; }), empty: jobs.length ? null : 'no jobs yet' };
     }
     case 'services': {
       const sv = s.services || [];
@@ -327,7 +371,7 @@ export function screenContent(kind, snap, { floor = null, people = null } = {}) 
     case 'roadmap': {
       const a = agentLabel(s, 'product-manager'), pd = oo.productDesign, order = { Now: 0, Next: 1, Later: 2 };
       if (!pd || (a && a.status !== 'active') || !pd.products.some((p) => p.roadmap || p.pending)) return { title: 'Roadmap', rows: [], empty: 'no roadmap yet', foot: a && a.status !== 'active' ? 'PRODUCT-MANAGER: ' + a.label : pd && pd.products.length ? 'PRODUCT-MANAGER drafts it; you approve it' : null };
-      const rows = pd.products.flatMap((p) => (p.roadmap ? p.roadmap.items.slice().sort((x, y) => order[x.horizon] - order[y.horizon]).slice(0, 3).map((i) => ({ label: p.name + ' ' + i.id + ' ' + i.title, value: i.horizon, tone: i.horizon === 'Now' ? 'ok' : 'muted' })) : [{ label: p.name, value: p.pending ? 'draft waiting for you' : 'no roadmap yet', tone: p.pending ? 'warn' : 'muted' }])).slice(0, 6);
+      const rows = pd.products.flatMap((p) => (p.roadmap ? p.roadmap.items.slice().sort((x, y) => order[x.horizon] - order[y.horizon]).slice(0, 3).map((i) => ({ swatch: colourOf(s, p.id), label: p.name + ' ' + i.id + ' ' + i.title, value: i.horizon, tone: i.horizon === 'Now' ? 'ok' : 'muted' })) : [{ swatch: colourOf(s, p.id), label: p.name, value: p.pending ? 'draft waiting for you' : 'no roadmap yet', tone: p.pending ? 'warn' : 'muted' }])).slice(0, 6);
       const waiting = pd.products.filter((p) => p.pending).length;
       return { title: 'Roadmap', rows, empty: rows.length ? null : 'no roadmap yet', foot: waiting ? waiting + ' draft' + (waiting === 1 ? '' : 's') + ' waiting in the Owner\'s office' : 'approved by the owner' };
     }
